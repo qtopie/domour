@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 
 	cfg "github.com/qtopie/homa/internal/app/config"
+	"github.com/qtopie/homa/internal/assistant/agent"
 	"github.com/qtopie/homa/internal/assistant/plugins/copilot/shared"
 	"golang.org/x/net/proxy"
 	"google.golang.org/genai"
@@ -19,13 +21,18 @@ var (
 	geminiApiKey string
 
 	codeCompletionPrompt string
+	
+	agentInstance *agent.Agent
+	agentOnce     sync.Once
 )
 
 func init() {
 	geminiApiKey = cfg.GetAppConfig().GetString("services.gemini.api-key")
 	if geminiApiKey == "" {
 		geminiApiKey = os.Getenv("GOOGLE_API_KEY")
-		log.Fatal("GOOGLE_API_KEY environment variable not set")
+		if geminiApiKey == "" {
+			log.Println("Warning: GOOGLE_API_KEY environment variable not set")
+		}
 	}
 
 	proxyUrl := cfg.GetAppConfig().GetString("app.proxy-url")
@@ -69,50 +76,59 @@ The full code content of the file is:
 
 Your response should be a clean, single block of code that logically follows the cursor position. Do not include any extra text, explanations, or conversational filler. Just the code.
 	`
-
-	
-
 }
 
 // GeminiCopilotPlugin is a mock implementation of the CopilotPlugin interface
 type GeminiCopilotPlugin struct{}
+
+func getAgent() *agent.Agent {
+	agentOnce.Do(func() {
+		ctx := context.Background()
+		var err error
+		// Use "gemini-2.0-flash-exp" or similar for tools
+		agentInstance, err = agent.NewAgent(ctx, geminiApiKey, "gemini-2.0-flash-exp")
+		if err != nil {
+			log.Printf("Failed to create agent: %v", err)
+			return
+		}
+		
+		// Load skills
+		cwd, _ := os.Getwd()
+		skillsPath := cwd + "/skills" // Assuming running from root
+		if err := agentInstance.LoadSkills(skillsPath); err != nil {
+			log.Printf("Failed to load skills from %s: %v", skillsPath, err)
+		}
+	})
+	return agentInstance
+}
 
 // Chat simulates streaming data chunks to the client
 func (p GeminiCopilotPlugin) Chat(req shared.UserRequest) (<-chan shared.ChunkData, error) {
 	ch := make(chan shared.ChunkData)
 	ctx := context.Background()
 
+	ag := getAgent()
+	if ag == nil {
+		go func() {
+			ch <- shared.ChunkData{Content: "Error: Agent not initialized (check API Key)"}
+			close(ch)
+		}()
+		return ch, nil
+	}
+
 	go func() {
-		defer close(ch) // Ensure the channel is closed when done
+		defer close(ch) 
 
-		client, err := genai.NewClient(ctx, &genai.ClientConfig{
-			APIKey:     geminiApiKey,
-			Backend:    genai.BackendGeminiAPI,
-			HTTPClient: httpClient,
-		})
+		stream, err := ag.Run(ctx, req)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("Agent run error: %v", err)
+			ch <- shared.ChunkData{Content: "Error running agent"}
+			return
 		}
 
-		// Marshal full request (including History) so model receives session context
-		data, err := json.Marshal(req)
-		if err != nil {
-			log.Printf("failed to marshal request for streaming: %v", err)
-			// fallback to message only
-			data = []byte(req.Message)
-		}
-
-		stream := client.Models.GenerateContentStream(
-			ctx,
-			"gemini-2.5-flash",
-			genai.Text(string(data)),
-			nil,
-		)
-
-		for chunk := range stream {
-			part := chunk.Candidates[0].Content.Parts[0]
+		for content := range stream {
 			ch <- shared.ChunkData{
-				Content: part.Text,
+				Content: content,
 			}
 		}
 	}()

@@ -28,3 +28,7 @@ grpcurl -plaintext -d '{"message": "Hello, Service Two!"}' localhost:1234 assist
   "content": "Hello, Service Two! - Response 2025-08-28T22:14:12+08:00"
 }
 ```
+
+## License
+
+GPL-3.0
