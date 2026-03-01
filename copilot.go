@@ -21,20 +21,25 @@ type CopilotServiceServerImpl struct {
 	currentPlugin CopilotPlugin
 	currentName   string
 	mu            sync.Mutex
-	sessionStore  *session.EtcdStore
+	sessionStore  session.Store
 }
 
 // NewCopilotServiceServerImpl creates a new instance of CopilotServiceServerImpl
 func NewCopilotServiceServerImpl(pluginManager *PluginManager) *CopilotServiceServerImpl {
-	endpoints := cfg.GetAppConfig().GetStringSlice("etcd.endpoints")
-	if len(endpoints) == 0 {
-		endpoints = []string{"localhost:2379"}
+	var store session.Store
+	var err error
+
+	// Default to buntdb
+	dbPath := cfg.GetAppConfig().GetString("buntdb.path")
+	if dbPath == "" {
+		dbPath = "sessions.db"
 	}
-	store, err := session.NewEtcdStore(endpoints, 10, 0)
+	store, err = session.NewBuntDBStore(dbPath, 10, 0)
 	if err != nil {
-		log.Printf("failed to create etcd session store: %v", err)
+		log.Printf("failed to create buntdb session store: %v", err)
 		store = nil
 	}
+
 	return &CopilotServiceServerImpl{
 		pluginManager: pluginManager,
 		sessionStore:  store,

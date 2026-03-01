@@ -12,7 +12,6 @@ import (
 )
 
 func main() {
-	go startEtcd()
 	// Initialize the PluginManager
 	pluginManager := NewPluginManager("/opt/homa/plugins")
 
