@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package assistant.autopilot;
+option go_package = "github.com/qtopie/homa/gen/assistant/autopilot";
+
+service AutopilotService {
+  rpc Autopilot(AutopilotRequest) returns (AutopilotResponse);
+}
+
+message AutopilotRequest {
+  string session_id = 1;
+  int32 seq = 2;
+  string workspace = 3;
+  string goal = 4;
+  repeated string constraints = 5;
+  int32 max_steps = 6;
+}
+
+message AutopilotResponse {
+  string session_id = 1;
+  int32 seq = 2;
+  string status = 3;            // e.g., "accepted", "running", "completed", "failed"
+  string result = 4;            // final output or summary
+  map<string, string> meta = 5;
+}

@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package assistant.chat;
+option go_package = "github.com/qtopie/homa/gen/assistant/chat";
+
+service ChatService {
+  rpc Chat(ChatRequest) returns (stream ChatResponse);
+}
+
+message ChatRequest {
+  string session_id = 1;
+  int32 seq = 2;
+  string workspace = 3;
+  string message = 4;
+  string front_part = 5;
+  string back_part = 6;
+  string filename = 7;
+}
+
+message ChatResponse {
+  string session_id = 1;
+  int32 seq = 2;
+  string content = 3;
+  bool done = 4;
+  map<string, string> meta = 5;
+}

@@ -8,9 +8,9 @@ PLUGIN_FLAGS := -buildmode=plugin
 PLUGINS := gemini.so mock.so eino.so
 
 # Define the source paths for each plugin using target-specific variable names
-PLUGIN_SRC_enio.so := internal/assistant/plugins/copilot/eino/eino_copilot_plugin.go
-PLUGIN_SRC_gemini.so := internal/assistant/plugins/copilot/gemini/gemini_copilot_plugin.go
-PLUGIN_SRC_mock.so := internal/assistant/plugins/copilot/mock/mock_copilot_plugin.go
+PLUGIN_SRC_eino.so := cmd/plugins/copilot/eino/main.go
+PLUGIN_SRC_gemini.so := cmd/plugins/copilot/gemini/main.go
+PLUGIN_SRC_mock.so := cmd/plugins/copilot/mock/main.go
 
 # Define the installation directory
 INSTALL_DIR := /opt/homa/plugins/copilot

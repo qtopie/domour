@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 
-	"github.com/qtopie/homa/internal/assistant/plugins/copilot/shared"
+	"github.com/qtopie/domour/pkg/copilot/shared"
 )
 
 type Store interface {
