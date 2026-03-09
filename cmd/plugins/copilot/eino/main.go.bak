@@ -19,8 +19,8 @@ import (
 	"github.com/cloudwego/eino/flow/agent"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
-	cfg "github.com/qtopie/homa/internal/app/config"
-	"github.com/qtopie/homa/pkg/copilot/shared"
+	cfg "github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/pkg/copilot/shared"
 	"golang.org/x/net/proxy"
 	"google.golang.org/genai"
 )

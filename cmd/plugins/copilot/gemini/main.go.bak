@@ -9,9 +9,9 @@ import (
 	"os"
 	"sync"
 
-	cfg "github.com/qtopie/homa/internal/app/config"
-	"github.com/qtopie/homa/internal/pkg/agent"
-	"github.com/qtopie/homa/pkg/copilot/shared"
+	cfg "github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/internal/pkg/agent"
+	"github.com/qtopie/domour/pkg/copilot/shared"
 	"golang.org/x/net/proxy"
 	"google.golang.org/genai"
 )

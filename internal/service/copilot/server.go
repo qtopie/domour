@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qtopie/domour/gen/assistant" // Import the generated code
+	assistant "github.com/qtopie/domour/gen/assistant/copilot" // Import the generated code
 	cfg "github.com/qtopie/domour/internal/app/config"
 	"github.com/qtopie/domour/internal/pkg/plugin"
 	"github.com/qtopie/domour/internal/session"
@@ -16,7 +16,7 @@ import (
 	"github.com/qtopie/domour/pkg/copilot/shared"
 )
 
-// ServiceServerImpl is the implementation of the ChatService
+// ServiceServerImpl is the implementation of the CopilotService
 type ServiceServerImpl struct {
 	assistant.UnimplementedCopilotServiceServer
 	pluginManager *plugin.PluginManager
@@ -34,8 +34,8 @@ func NewServiceServerImpl(pluginManager *plugin.PluginManager, store session.Sto
 	}
 }
 
-// Chat implements the server streaming method for ChatService
-func (s *ServiceServerImpl) Chat(req *assistant.UserRequest, stream assistant.CopilotService_ChatServer) error {
+// Copilot implements the Copilot RPC for streaming responses.
+func (s *ServiceServerImpl) Copilot(req *assistant.CopilotRequest, stream assistant.CopilotService_CopilotServer) error {
 	err := s.loadAndRefreshPlugin()
 	if err != nil {
 		log.Println("failed to load plugin", err)
@@ -51,13 +51,12 @@ func (s *ServiceServerImpl) Chat(req *assistant.UserRequest, stream assistant.Co
 		_ = s.sessionStore.AppendHistory(context.Background(), req.SessionId, shared.Message{Role: "user", Content: req.Message, Time: time.Now().Unix()})
 	}
 
-	// Forward the request to the plugin's Chat method
 	pluginStream, err := s.currentPlugin.Chat(shared.UserRequest{
 		SessionId: req.SessionId,
 		Seq:       req.Seq,
 		Message:   req.Message,
-		FrontPart: req.FrontPart,
-		BackPart:  req.BackPart,
+		FrontPart: req.CodeBefore,
+		BackPart:  req.CodeAfter,
 		Filename:  req.Filename,
 		Workspace: req.Workspace,
 		History:   hist,
@@ -66,12 +65,14 @@ func (s *ServiceServerImpl) Chat(req *assistant.UserRequest, stream assistant.Co
 		log.Printf("Error calling Chat on plugin %s: %v", s.currentName, err)
 		return err
 	}
-	// Consume the plugin's stream and forward to gRPC stream
+
 	var replyBuilder strings.Builder
 	for chunk := range pluginStream {
-		// Send each chunk to the gRPC stream
-		resp := &assistant.StreamResponse{
-			Content: chunk.Content,
+		resp := &assistant.CopilotResponse{
+			SessionId: req.SessionId,
+			Seq:       req.Seq,
+			Patch:     chunk.Content,
+			Complete:  chunk.IsLast,
 		}
 		if err := stream.Send(resp); err != nil {
 			log.Printf("Error sending response to gRPC stream: %v", err)
@@ -79,66 +80,19 @@ func (s *ServiceServerImpl) Chat(req *assistant.UserRequest, stream assistant.Co
 		}
 		replyBuilder.WriteString(chunk.Content)
 
-		// Check if this is the last chunk
 		if chunk.IsLast {
 			log.Printf("Received end signal from plugin %s", s.currentName)
 			break
 		}
 	}
 
-	// Persist assistant reply to session history
 	if s.sessionStore != nil {
 		reply := replyBuilder.String()
 		_ = s.sessionStore.AppendHistory(context.Background(), req.SessionId, shared.Message{Role: "assistant", Content: reply, Time: time.Now().Unix()})
 	}
 
-	log.Printf("Chat request completed for message: %s", req.Message)
+	log.Printf("Copilot request completed for message: %s", req.Message)
 	return nil
-}
-
-// AutoComplete implements the unary method for AutoComplete
-func (s *ServiceServerImpl) AutoComplete(ctx context.Context, req *assistant.UserRequest) (*assistant.AgentResponse, error) {
-	err := s.loadAndRefreshPlugin()
-	if err != nil {
-		log.Println("failed to load plugin", err)
-		return nil, err
-	}
-
-	// Load session history and persist user message
-	var hist []shared.Message
-	if s.sessionStore != nil {
-		if h, err := s.sessionStore.GetHistory(context.Background(), req.SessionId); err == nil {
-			hist = h
-		}
-		_ = s.sessionStore.AppendHistory(context.Background(), req.SessionId, shared.Message{Role: "user", Content: req.Message, Time: time.Now().Unix()})
-	}
-
-	// Forward the request to the plugin's AutoComplete method
-	reply, err := s.currentPlugin.AutoComplete(shared.UserRequest{
-		SessionId: req.SessionId,
-		Seq:       req.Seq,
-		Message:   req.Message,
-		FrontPart: req.FrontPart,
-		BackPart:  req.BackPart,
-		Filename:  req.Filename,
-		Workspace: req.Workspace,
-		History:   hist,
-	})
-	if err != nil {
-		log.Printf("Error calling Chat on plugin %s: %v", s.currentName, err)
-		return nil, err
-	}
-	log.Println("autocomplete", req.Message, "response", reply)
-
-	resp := &assistant.AgentResponse{
-		Content: reply,
-	}
-
-	// Persist assistant reply
-	if s.sessionStore != nil {
-		_ = s.sessionStore.AppendHistory(ctx, req.SessionId, shared.Message{Role: "assistant", Content: reply, Time: time.Now().Unix()})
-	}
-	return resp, nil
 }
 
 func (s *ServiceServerImpl) loadAndRefreshPlugin() error {

@@ -19,7 +19,7 @@ INSTALL_DIR := /opt/homa/plugins/copilot
 # Targets
 #------------------------------------------------------------------------------
 
-.PHONY: all build-plugins gen clean install
+.PHONY: all build-plugins gen clean install surrealdb nats
 
 # The default target that builds everything
 all: build-plugins
@@ -49,3 +49,35 @@ install: build-plugins
 	@mkdir -p $(INSTALL_DIR)
 	@cp $(PLUGINS) $(INSTALL_DIR)
 	@echo "Installation complete."
+
+# SurrealDB helper values
+SURREAL_BIND := 127.0.0.1:8000
+SURREAL_USER := root
+SURREAL_PASS := root
+SURREAL_ENGINE := memory
+
+# Target to start a local SurrealDB instance for development/testing.
+surrealdb:
+	@command -v surreal >/dev/null 2>&1 || { echo "SurrealDB CLI is missing. Install it via 'brew install surrealdb' or https://surrealdb.com/download."; exit 1; }
+	@echo "Starting SurrealDB on $(SURREAL_BIND) (press Ctrl+C to stop)..."
+	surreal start \
+		--user $(SURREAL_USER) \
+		--pass $(SURREAL_PASS) \
+		--bind $(SURREAL_BIND) \
+		--log debug \
+		$(SURREAL_ENGINE)
+
+# Target to start a local NATS server with JetStream enabled for development/testing.
+NATS_PORT := 4222
+NATS_HTTP_PORT := 8222
+NATS_STORE := /tmp/domour-nats
+
+nats:
+	@command -v nats-server >/dev/null 2>&1 || { echo "NATS Server is missing. Install it via 'brew install nats-server' or https://nats.io/download/."; exit 1; }
+	@echo "Starting NATS Server with JetStream on 0.0.0.0:$(NATS_PORT) (press Ctrl+C to stop)..."
+	@mkdir -p $(NATS_STORE)
+	nats-server \
+		-js \
+		--port $(NATS_PORT) \
+		--http_port $(NATS_HTTP_PORT) \
+		--jetstream_store_dir $(NATS_STORE)

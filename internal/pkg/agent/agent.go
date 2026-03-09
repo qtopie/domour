@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/qtopie/homa/pkg/copilot/shared"
+	"github.com/qtopie/domour/pkg/copilot/shared"
 	"google.golang.org/genai"
 )
 

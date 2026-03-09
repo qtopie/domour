@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package assistant.chat;
-option go_package = "github.com/qtopie/homa/gen/assistant/chat";
+option go_package = "github.com/qtopie/domour/gen/assistant/chat";
 
 service ChatService {
   rpc Chat(ChatRequest) returns (stream ChatResponse);

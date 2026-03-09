@@ -7,11 +7,11 @@ import (
 	"log"
 	"time"
 
-	"github.com/qtopie/homa/pkg/copilot/shared"
-	"github.com/qtopie/homa/internal/infra/cache/l1"
-	"github.com/qtopie/homa/internal/infra/cache/l2"
-	"github.com/qtopie/homa/internal/infra/db"
-	"github.com/qtopie/homa/internal/infra/eventbus"
+	"github.com/qtopie/domour/internal/infra/cache/l1"
+	"github.com/qtopie/domour/internal/infra/cache/l2"
+	"github.com/qtopie/domour/internal/infra/db"
+	"github.com/qtopie/domour/internal/infra/eventbus"
+	"github.com/qtopie/domour/pkg/copilot/shared"
 )
 
 type Manager struct {
@@ -51,17 +51,17 @@ func (m *Manager) AppendHistory(ctx context.Context, sessionID string, msg share
 			History:   []shared.Message{},
 		}
 	}
-	
+
 	sess.History = append(sess.History, msg)
 	sess.UpdatedAt = time.Now()
-	
+
 	return m.Set(ctx, sess)
 }
 
 func (m *Manager) Close() error {
-    m.l1.Clear()
-    // L2 and DB handles are closed by main
-    return nil
+	m.l1.Clear()
+	// L2 and DB handles are closed by main
+	return nil
 }
 
 func (m *Manager) Get(ctx context.Context, id string) (Session, error) {
@@ -80,35 +80,35 @@ func (m *Manager) Get(ctx context.Context, id string) (Session, error) {
 
 	// 3. Check DB
 	// SurrealDB query
-	res, err := m.db.Select(id) // Assuming id is the record ID like "session:123"
+	res, err := m.db.Select(ctx, id) // Assuming id is the record ID like "session:123"
 	if err != nil {
 		return Session{}, fmt.Errorf("failed to get from db: %w", err)
 	}
-	
+
 	// Convert result to Session
 	// Note: res is interface{}, need to cast or unmarshal
 	// Assuming SurrealDB returns []interface{} or map[string]interface{}
 	// This part needs careful handling of the specific return type of the library
-    // For simplicity, let's assume we can marshal/unmarshal via JSON to convert
-    bytes, _ := json.Marshal(res)
-    var sessions []Session
-    if err := json.Unmarshal(bytes, &sessions); err == nil && len(sessions) > 0 {
-        s := sessions[0]
-        m.l2.Set(id, s)
-        m.l1.Set(id, s)
-        return s, nil
-    }
+	// For simplicity, let's assume we can marshal/unmarshal via JSON to convert
+	bytes, _ := json.Marshal(res)
+	var sessions []Session
+	if err := json.Unmarshal(bytes, &sessions); err == nil && len(sessions) > 0 {
+		s := sessions[0]
+		m.l2.Set(id, s)
+		m.l1.Set(id, s)
+		return s, nil
+	}
 
 	return Session{}, fmt.Errorf("session not found")
 }
 
 func (m *Manager) Set(ctx context.Context, session Session) error {
 	// 1. Write to DB (Strong Consistency)
-	if _, err := m.db.Update(session.ID, session); err != nil {
-        // Try Create if update fails (or use Upsert logic if available)
-        if _, err := m.db.Create("session", session); err != nil {
-             return fmt.Errorf("failed to save to db: %w", err)
-        }
+	if _, err := m.db.Update(ctx, session.ID, session); err != nil {
+		// Try Create if update fails (or use Upsert logic if available)
+		if _, err := m.db.Create(ctx, "session", session); err != nil {
+			return fmt.Errorf("failed to save to db: %w", err)
+		}
 	}
 
 	// 2. Update L2
@@ -119,19 +119,19 @@ func (m *Manager) Set(ctx context.Context, session Session) error {
 	// 3. Update L1
 	m.l1.Set(session.ID, session)
 
-    // 4. Publish Event
-    data, _ := json.Marshal(session)
-    if err := m.eventBus.Publish(ctx, "session.updated", data); err != nil {
-        log.Printf("Failed to publish event: %v", err)
-    }
+	// 4. Publish Event
+	data, _ := json.Marshal(session)
+	if err := m.eventBus.Publish(ctx, "session.updated", data); err != nil {
+		log.Printf("Failed to publish event: %v", err)
+	}
 
 	return nil
 }
 
 func (m *Manager) DispatchTask(ctx context.Context, taskType string, payload interface{}) error {
-    data, err := json.Marshal(payload)
-    if err != nil {
-        return err
-    }
-    return m.eventBus.Publish(ctx, fmt.Sprintf("task.%s", taskType), data)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return m.eventBus.Publish(ctx, fmt.Sprintf("task.%s", taskType), data)
 }

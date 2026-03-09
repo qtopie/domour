@@ -11,7 +11,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino-ext/components/model/qwen"
 	"github.com/cloudwego/eino/components/model"
-	homa "github.com/qtopie/domour/internal/assistant/llm"
+	// homa "github.com/qtopie/domour/internal/assistant/llm"
 	"google.golang.org/genai"
 )
 
@@ -31,10 +31,10 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 	}
 
 	switch cfg.Provider {
-	case "homa":
-		return homa.NewHomaChatModel(&homa.HomaChatModelConfig{
-			APIKey: cfg.APIKey,
-		})
+	// case "homa":
+	// 	return homa.NewHomaChatModel(&homa.HomaChatModelConfig{
+	// 		APIKey: cfg.APIKey,
+	// 	})
 	case "openai":
 		c := &openai.ChatModelConfig{
 			APIKey: cfg.APIKey,

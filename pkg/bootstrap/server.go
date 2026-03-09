@@ -1,8 +1,8 @@
-package main
+package bootstrap
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"net"
 
 	assistant "github.com/qtopie/domour/gen/assistant/copilot"
@@ -18,7 +18,9 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-func main() {
+// Run starts the Domour server.
+// It blocks until the context is canceled or an error occurs.
+func Run(ctx context.Context) error {
 	// Load configuration
 	appConfig := cfg.GetAppConfig()
 
@@ -28,7 +30,7 @@ func main() {
 		appConfig.GetDuration("cache.l1.ttl"),
 	)
 	if err != nil {
-		log.Fatalf("Failed to initialize L1 cache: %v", err)
+		return fmt.Errorf("failed to initialize L1 cache: %w", err)
 	}
 
 	// Initialize L2 Cache (BadgerDB)
@@ -37,7 +39,7 @@ func main() {
 		appConfig.GetDuration("cache.l2.ttl"),
 	)
 	if err != nil {
-		log.Fatalf("Failed to initialize L2 cache: %v", err)
+		return fmt.Errorf("failed to initialize L2 cache: %w", err)
 	}
 	defer l2Cache.Close()
 
@@ -50,7 +52,7 @@ func main() {
 		Database:  appConfig.GetString("surrealdb.database"),
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize SurrealDB: %v", err)
+		return fmt.Errorf("failed to initialize SurrealDB: %w", err)
 	}
 	defer surrealDB.Close()
 
@@ -61,7 +63,7 @@ func main() {
 		SubjectPrefix: appConfig.GetString("nats.subject_prefix"),
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize NATS: %v", err)
+		return fmt.Errorf("failed to initialize NATS: %w", err)
 	}
 	defer eb.Close()
 
@@ -79,15 +81,22 @@ func main() {
 	address := cfg.GetAppConfig().GetString("app.address")
 	lis, err := net.Listen("tcp", address)
 	if err != nil {
-		log.Fatalf("Failed to listen on %s: %v", address, err)
+		return fmt.Errorf("failed to listen on %s: %w", address, err)
 	}
 
 	grpcServer := grpc.NewServer()
 	assistant.RegisterCopilotServiceServer(grpcServer, copilotService)
 	reflection.Register(grpcServer)
 
+	// Graceful shutdown on context cancellation
+	go func() {
+		<-ctx.Done()
+		grpcServer.GracefulStop()
+	}()
+
 	fmt.Println("Starting process on", address)
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve gRPC server: %v", err)
+		return fmt.Errorf("failed to serve gRPC server: %w", err)
 	}
+	return nil
 }

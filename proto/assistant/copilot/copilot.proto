@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package assistant.copilot;
-option go_package = "github.com/qtopie/homa/gen/assistant/copilot";
+option go_package = "github.com/qtopie/domour/gen/assistant/copilot";
 
 service CopilotService {
   rpc Copilot(CopilotRequest) returns (stream CopilotResponse);

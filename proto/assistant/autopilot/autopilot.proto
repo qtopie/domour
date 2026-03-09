@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package assistant.autopilot;
-option go_package = "github.com/qtopie/homa/gen/assistant/autopilot";
+option go_package = "github.com/qtopie/domour/gen/assistant/autopilot";
 
 service AutopilotService {
   rpc Autopilot(AutopilotRequest) returns (AutopilotResponse);
