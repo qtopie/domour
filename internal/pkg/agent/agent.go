@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/qtopie/domour/pkg/copilot/shared"
+	"github.com/qtopie/domour/internal/pkg/copilot/shared"
 	"google.golang.org/genai"
 )
 
@@ -36,30 +36,30 @@ func (a *Agent) LoadSkills(path string) error {
 
 func (a *Agent) Run(ctx context.Context, req shared.UserRequest) (<-chan string, error) {
 	ch := make(chan string)
-	
+
 	go func() {
 		defer close(ch)
-		
+
 		// Simple generation for now
-		// Note: The original implementation likely used streaming. 
+		// Note: The original implementation likely used streaming.
 		// Here we just generate once and send it.
 		// For true streaming, we'd need to use client.Models.GenerateContentStream
-		
+
 		// But wait, the original code used `ag.Run` which returned a channel.
 		// Let's assume it was streaming.
-		
+
 		// Mock implementation for now to pass compilation
 		// In a real scenario, we would stream.
-		
+
 		resp, err := a.client.Models.GenerateContent(ctx, a.model, genai.Text(req.Message), nil)
 		if err != nil {
 			log.Printf("Error generating content: %v", err)
 			ch <- fmt.Sprintf("Error: %v", err)
 			return
 		}
-		
+
 		ch <- resp.Text()
 	}()
-	
+
 	return ch, nil
 }

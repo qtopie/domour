@@ -84,4 +84,3 @@ func (pm *PluginManager) ListPlugins() map[string][]string {
 	}
 	return result
 }
-

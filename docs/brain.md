@@ -1,109 +1,379 @@
-## 1. 核心架构：自适应多级调度
+# Brain 设计
 
-框架将任务处理分为三层路径，根据 **复杂度评估 (Observer)** 结果动态分流：
+## 1. 目标
 
-* **L1 (简单):** 规则或单次 Tool 调用，追求零延迟。
-* **L2 (一般):** 线性 Chain，处理标准化的多步流程。
-* **L3 (复杂):** 采用 **Planner-Worker** 模式，进入状态循环。
+Brain 是 Domour 的**思考层**，负责理解、规划、补全和建议生成，但**不直接拥有最终输出权、工具执行权或渲染权**。  
+在目标架构中，Brain 会从当前的本地实现演进为一个可水平扩展的集群服务，并通过 Dapr 参与服务发现、状态协作和事件治理。
 
----
+一句话定义：
 
-## 2. 关键模式：递归式 Planner-Worker
-
-这是框架的“大脑”逻辑：
-
-* **Planner (PM):** 负责将大目标拆解为 `TaskSteps`。如果子任务依然复杂，则**递归调用**框架自身进行二次拆解。
-* **Worker (执行者):** 具体的原子能力（工具、API、代码执行）。
-* **Observer (监考官):** 实时监控 Worker 输出。若报错或发现用户新输入，立即打断执行，并将当前快照回传给 Planner 进行**增量重规划 (Re-planning)**。
+- **Brain 负责“怎么想”**
+- **Motor 负责“能不能做、怎么做、怎么对外返回”**
 
 ---
 
-## 3. 状态管理：树状上下文 (State Tree)
+## 2. 职责边界
 
-为了支撑“执行中修改”和“断点续传”，状态存储设计为三层：
+### Brain 负责
 
-* **短期 (Eino State):** 节点间传递的实时上下文。
-* **中期 (Redis/DB):** 每一个关键步骤的 `ExecutionLog` 持久化快照。
-* **长期 (Vector DB):** 历史任务的成功编排路径，作为后续 Planner 的 Few-shot 经验。
+- 对用户输入做语义理解与意图补全
+- 生成对话回复草稿、代码建议、任务计划、图结构草案
+- 将复杂目标拆成可执行的中间意图或步骤
+- 在需要时持续流式输出 chunk，供 Motor 旁路监听和裁决
+- 当上游模型不可用时，返回规则化 fallback 结果，避免链路中断
+
+### Brain 不负责
+
+- 不直接面向客户端返回最终结果
+- 不直接调用高权限工具
+- 不直接做最终渲染
+- 不直接决定是否执行危险动作
+- 不持有 session 的最终 owner 身份
+
+这条边界是整个系统的核心安全约束：**Brain 可以想错，但 Motor 不能做错。**
 
 ---
 
-## 4. 工程实践与规范
+## 3. 当前实现
 
-* **项目结构:** 采用标准的 Go 项目布局，核心逻辑放在 `pkg/brain`（对外开放接口）和 `internal/`（私有算法）。
-* **Eino 深度集成:** * 利用 `compose.Graph` 实现带环路的自适应逻辑。
-* 通过 `WithState` 管理层级化任务流。
-* 利用 `Aspect`（切面）注入持久化和监控。
+当前 Brain 仍以内嵌本地 client 方式存在，主要能力通过 `internal/pkg/agent/local_brain.go` 暴露：
 
+- `StreamChat`
+- `StreamCopilot`
+- `StreamAutopilot`
+- `ChatReply`
+- `PlanDiagram`
+- `Copilot`
+- `Autopilot`
 
+当前行为特点：
+
+- Chat active 路径中，Brain 以 goroutine 方式向 `SessionBridge.BrainOut` 写入事件
+- Copilot active 路径中，Brain 也可流式输出 `copilot_chunk`
+- Autopilot / Copilot normal 路径中，Brain 作为 Motor 的旁路思考器，仅在 Motor 判定任务复杂时参与
+- 图类请求由 Brain 产出 D2/结构化草案，再交给 Motor 统一渲染
+- CLI provider 失败时，Brain 会退回本地规则化 fallback
+
+当前实现已经具备未来集群化最关键的抽象前提：**Agent 依赖的是 `BrainClient` 接口，而不是具体本地实现。**
 
 ---
 
-## 5. 设计的亮点总结
+## 4. 目标架构
 
-| 维度 | 传统编排 | 我们的设计 (Eino-Brain) |
-| --- | --- | --- |
-| **灵活性** | 静态 DAG，一旦开始无法回头。 | **动态流转**，支持执行中根据反馈重画图谱。 |
-| **容错性** | 出错即停止。 | **自适应纠偏**，基于 Log 自动生成补丁计划。 |
-| **扩展性** | 代码耦合。 | **插件化 Worker**，支持递归嵌套子 Agent。 |
+### 4.1 服务角色
 
+集群版建议拆成以下角色：
+
+- `agent-gateway`：对外入口，维持客户端连接
+- `motor-service`：session owner、最终输出与安全网关
+- `brain-service`：思考与规划集群
+- `relay-service`：承接实时流式桥接
+- `state-store`：保存 session owner、lease、bridge 元数据
+
+其中 Brain 的定位是：
+
+- 可水平扩展
+- 尽量无状态
+- 专注生成中间结果
+- 不与真实工具权限耦合
+
+### 4.2 集群关系图
 
 ```d2
 direction: right
 theme: 200
 
-# 1. 入口与分流层
-Dispatcher: 复杂度评估器 (Observer) {
-  shape: diamond
-  label: "Task Complexity?\n(Cost/Latency/Logic)"
+Client: Client {
+  shape: person
 }
 
-# 2. 三级执行路径
-# --- L1: 简单路径 ---
-L1_Path: L1 (Simple) {
-  style: { stroke: "#4caf50"; stroke-dash: 5 }
-  Router: 规则引擎 (Rules)
-  Tool: 单次 Tool 调用
-  
-  Router -> Tool: 匹配命中
-}
-
-# --- L2: 一般路径 ---
-L2_Path: L2 (Standard) {
-  style: { stroke: "#2196f3" }
-  Chain: 线性 Chain (Linear) {
-    Step1 -> Step2 -> Step3
+AgentGateway: agent-gateway {
+  style: {
+    fill: "#e3f2fd"
+    stroke: "#1e88e5"
   }
+  API: "gRPC / HTTP"
 }
 
-# --- L3: 复杂路径 (Cosmos Star 核心) ---
-L3_Path: L3 (Complex Brain) {
-  style: { stroke: "#9c27b0"; stroke-width: 3 }
-  
-  Planner: 递归规划者 (PM)
-  Worker: 原子执行者 (Executor)
-  Monitor: 实时监考官 (Observer)
-
-  Planner -> Worker: 任务拆解
-  Worker -> Monitor: 结果反馈
-  Monitor -> Planner: 动态重规划 (Loop)
-  
-  # 递归：子任务过大时重回 Planner
-  Planner -> L3_Path: 递归调用自身
+MotorPod: motor-service {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#fb8c00"
+  }
+  MotorCore: "motor core\n(final owner)"
+  MotorDapr: "dapr sidecar"
 }
 
-# 3. 支撑层
-State_Tree: 状态树 (Eino State) {
-  Short_Term: 实时上下文
-  Mid_Term: 持久化快照 (Redis)
+BrainPod: brain-service {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#8e24aa"
+  }
+  BrainCore: "brain core\n(plan / suggest / stream)"
+  BrainDapr: "dapr sidecar"
 }
 
-# 连线关系
-Dispatcher -> L1_Path: "低复杂度\n(零延迟追求)"
-Dispatcher -> L2_Path: "中等/标准化\n(多步流程)"
-Dispatcher -> L3_Path: "高复杂度\n(状态循环/未知)"
+Relay: relay-service {
+  style: {
+    fill: "#e8f5e9"
+    stroke: "#43a047"
+  }
+  Bridge: "stream relay\n(SessionBridge remote)"
+}
 
-L1_Path -> State_Tree.Short_Term
-L2_Path -> State_Tree.Short_Term
-L3_Path -> State_Tree.Mid_Term: "关键步骤快照"
+StateStore: state-store {
+  style: {
+    fill: "#ede7f6"
+    stroke: "#5e35b1"
+  }
+  SessionMeta: "session owner / lease / bridge"
+}
+
+PubSub: pubsub {
+  style: {
+    fill: "#fce4ec"
+    stroke: "#d81b60"
+  }
+  Audit: "audit / async events"
+}
+
+Client -> AgentGateway.API: request
+AgentGateway.API -> MotorCore: session traffic
+
+MotorCore -> BrainDapr: invoke brain via Dapr
+BrainDapr -> BrainCore: service discovery
+
+BrainCore -> Bridge: chunk / plan / diagram
+MotorCore -> Bridge: read stream / send control
+
+MotorDapr -> SessionMeta: owner / lease
+BrainDapr -> SessionMeta: request metadata
+
+MotorDapr -> Audit: refusal / completion
+BrainDapr -> Audit: brain lifecycle
+
+MotorCore -> Client: final output only
+
+note: {
+  label: "Rule:\nBrain produces intermediate results.\nMotor owns final output, tool execution, and safety."
+}
+
+note -> MotorCore
+note -> BrainCore
 ```
+
+### 4.3 推荐链路
+
+#### Chat active
+
+`agent -> motor -> brain(stream) -> motor -> client`
+
+- 客户端只连接 agent / motor
+- motor 启动 brain 请求
+- brain 连续输出 chunk
+- motor 旁路监听 brain 输出，并决定：
+  - 原样转发
+  - 补充工具结果
+  - 渲染
+  - 拒绝
+  - 中断
+
+#### Copilot normal / Autopilot normal
+
+`agent -> motor -> brain -> motor`
+
+- motor 先做一轮本地筛选
+- 简单任务直接由 motor 返回
+- 复杂任务再请求 brain 给出计划/建议
+- 最终仍只由 motor 对外输出
+
+---
+
+## 5. Brain 的流式协议定位
+
+Brain 不应该直接暴露“给用户看”的流，而应该暴露“给 Motor 消费”的流。  
+因此 Brain 输出的不是最终 UI 结果，而是**中间语义事件**。
+
+建议统一为以下事件模型：
+
+| 事件 | 含义 |
+| --- | --- |
+| `chunk` | 普通文本/建议片段 |
+| `done` | Brain 输出完成 |
+| `refine` | 建议 Motor 做补充或修正 |
+| `plan` | 结构化任务计划 |
+| `diagram` | 图草案或结构描述 |
+| `error` | Brain 侧错误 |
+
+Motor 到 Brain 的控制事件建议保留：
+
+| 控制 | 含义 |
+| --- | --- |
+| `stop` | 终止当前流 |
+| `refuse` | Brain 输出被安全策略拒绝 |
+| `retry` | 请求更换表达或缩小范围 |
+
+这样本地实现可以继续用 channel，集群实现则可以换成独立 relay，而不改上层语义。
+
+---
+
+## 6. Dapr 在 Brain 设计中的位置
+
+推荐把 Dapr 作为**控制面**，而不是唯一的数据面。
+
+### 适合交给 Dapr 的部分
+
+- Brain 服务发现与服务调用
+- 配置分发
+- Secret 管理
+- Session 元数据持久化
+- 事件审计与异步通知
+- Trace / Metrics / Resiliency
+
+### 不建议完全依赖 Dapr 的部分
+
+- token/chunk 级别的高频实时流
+- `SessionBridge` 的逐片段双向控制
+- provider runtime 的本地恢复语义
+
+原因很简单：Brain 到 Motor 的交互是高频、低延迟、强时序的；如果完全依赖通用 service invocation 或 pubsub，会让流控、背压、取消和 owner 管理都变复杂。
+
+所以更推荐：
+
+- **Dapr 负责发现和治理**
+- **专用 gRPC relay 负责 stream**
+
+---
+
+## 7. 集群版 Brain 的状态策略
+
+Brain 本身应尽量保持无状态，但以下状态需要可追踪：
+
+- `session_id`
+- `bridge_id`
+- `motor_owner`
+- `brain_request_id`
+- `mode`
+- `provider`
+- `provider_runtime_id`
+
+推荐分三层：
+
+### 短期状态
+
+- 当前请求上下文
+- 已输出 chunk 计数
+- 当前 cancellation token
+
+只保存在进程内。
+
+### 中期状态
+
+- session owner
+- lease
+- bridge 元信息
+- 最近一次 brain 响应摘要
+
+放入 Dapr state store。
+
+### 长期状态
+
+- 可复用的成功规划模板
+- 历史任务样例
+- 审计日志
+
+可进入外部 DB / 向量库，但不应阻塞主链路。
+
+---
+
+## 8. Provider Runtime 与集群约束
+
+当前 Brain 的 CLI provider runtime 是按 `session + provider` 绑定到本地目录的。  
+这对单机可行，但在集群中会引出两个问题：
+
+当前代码里已经把所有 LLM 调用收口到 `diencephalon`（间脑）层：  
+`brain` 只负责语义组织与路由，provider 选择、模型构造、文本生成、tool binding 等外部细节统一由间脑执行。
+
+1. 同一个 session 被调度到不同 Brain pod 时，resume/continue 语义会失效
+2. provider 的本地认证态和缓存态无法天然跨 pod 共享
+
+因此集群版建议分阶段处理：
+
+### 阶段一：session sticky
+
+- 同一 `session_id` 尽量路由到同一个 Brain 实例
+- 先保证 CLI runtime 可继续工作
+
+### 阶段二：runtime 外置或专门化
+
+- 将 provider runtime 单独抽成 worker / actor
+- 普通 brain-service 只负责语义编排，不直接持有 provider 本地状态
+
+如果不这样分，Brain 看起来能扩容，但实际会被本地 runtime 粘住。
+
+---
+
+## 9. 安全模型
+
+Brain 的安全设计不是“自己绝对安全”，而是“默认不拥有危险能力”。
+
+推荐规则：
+
+- Brain 只输出建议，不直接执行
+- Brain 输出默认视为**不可信中间结果**
+- Motor 必须对 Brain 输出做：
+  - 策略审查
+  - 结构补全
+  - 工具执行授权
+  - 渲染与最终包装
+
+这也意味着：
+
+- Brain 可以更激进地探索答案
+- Motor 负责把探索结果收敛到安全可执行结果
+
+---
+
+## 10. 演进路线
+
+### 第一步：接口稳定
+
+先稳定 `BrainClient` 的远程语义，不急着上完整集群能力：
+
+- 保持 chat/copilot/autopilot 三类 Brain 能力接口一致
+- 将本地事件抽象成更通用的远程事件模型
+
+### 第二步：Dapr unary 化
+
+先让非流式路径走 Dapr：
+
+- `Autopilot` normal
+- `Copilot` normal
+
+这一步最容易验证服务发现和跨实例调用是否可靠。
+
+### 第三步：接入 relay
+
+把 active chat / active copilot 的 Brain 流式输出从本地 `SessionBridge` 迁移到远程 relay：
+
+- Brain 写 relay
+- Motor 读 relay
+- Motor 保持最终 owner
+
+### 第四步：runtime 去本地化
+
+把 provider runtime 从普通 Brain pod 中解耦出来，降低 sticky 依赖。
+
+---
+
+## 11. 结论
+
+Brain 在集群版里应该是一个**可扩展的思考服务**，而不是一个“直接回答用户、直接执行工具”的全权 Agent。
+
+最关键的设计原则只有三条：
+
+1. **Brain 只负责生成中间结果**
+2. **Motor 永远持有最终输出和执行权**
+3. **Dapr 负责治理，stream 走专用通道**
+
+按这个边界推进，当前本地 goroutine + `SessionBridge` 架构可以自然演进到集群版，而不用推翻重做。

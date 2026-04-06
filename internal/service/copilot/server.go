@@ -12,8 +12,8 @@ import (
 	cfg "github.com/qtopie/domour/internal/app/config"
 	"github.com/qtopie/domour/internal/pkg/plugin"
 	"github.com/qtopie/domour/internal/session"
-	copilotPkg "github.com/qtopie/domour/pkg/copilot"
-	"github.com/qtopie/domour/pkg/copilot/shared"
+	copilotPkg "github.com/qtopie/domour/internal/pkg/copilot"
+	"github.com/qtopie/domour/internal/pkg/copilot/shared"
 )
 
 // ServiceServerImpl is the implementation of the CopilotService

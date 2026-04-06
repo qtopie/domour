@@ -1,0 +1,159 @@
+package diencephalon
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	appconfig "github.com/qtopie/domour/internal/app/config"
+	brainllm "github.com/qtopie/domour/internal/pkg/brain/llm"
+)
+
+type Config struct {
+	Provider string
+	APIKey   string
+	BaseURL  string
+	Model    string
+	ProxyURL string
+}
+
+type Response struct {
+	Content  string
+	Provider string
+	Model    string
+}
+
+type Client interface {
+	Provider() string
+	Model() string
+	GenerateMessage(ctx context.Context, messages []*schema.Message) (*schema.Message, error)
+	GenerateText(ctx context.Context, messages []*schema.Message) (Response, error)
+	BindTools(tools []*schema.ToolInfo) error
+}
+
+type chatClient struct {
+	provider string
+	model    string
+	client   model.ChatModel
+}
+
+func New(ctx context.Context, cfg Config) (Client, error) {
+	client, err := brainllm.NewChatModel(ctx, &brainllm.Config{
+		Provider: cfg.Provider,
+		APIKey:   cfg.APIKey,
+		BaseURL:  cfg.BaseURL,
+		Model:    cfg.Model,
+		ProxyURL: cfg.ProxyURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &chatClient{
+		provider: strings.TrimSpace(cfg.Provider),
+		model:    strings.TrimSpace(cfg.Model),
+		client:   client,
+	}, nil
+}
+
+func NewForEntry(ctx context.Context, entry string) (Client, error) {
+	domourCfg, err := appconfig.LoadDomourConfig()
+	if err != nil {
+		return nil, err
+	}
+	return New(ctx, ResolveConfig(entry, domourCfg))
+}
+
+func ResolveConfig(entry string, domourCfg appconfig.DomourConfig) Config {
+	entry = strings.ToUpper(strings.TrimSpace(entry))
+
+	provider := firstNonEmpty(
+		strings.TrimSpace(osEnv("DOMOUR_"+entry+"_PROVIDER")),
+		strings.TrimSpace(osEnv("DOMOUR_DEFAULT_PROVIDER")),
+	)
+	if provider == "" {
+		provider = "github-copilot-cli"
+	}
+
+	return Config{
+		Provider: provider,
+		APIKey: firstNonEmpty(
+			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_API_KEY")),
+			strings.TrimSpace(osEnv("DOMOUR_DEFAULT_API_KEY")),
+			domourCfg.APIKeyForProvider(provider),
+		),
+		BaseURL: firstNonEmpty(
+			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_BASE_URL")),
+			strings.TrimSpace(osEnv("DOMOUR_DEFAULT_BASE_URL")),
+			domourCfg.BaseURLForProvider(provider),
+		),
+		Model: firstNonEmpty(
+			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_MODEL")),
+			strings.TrimSpace(osEnv("DOMOUR_DEFAULT_MODEL")),
+		),
+		ProxyURL: firstNonEmpty(
+			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_HTTPS_PROXY")),
+			firstNonEmpty(
+				strings.TrimSpace(osEnv("DOMOUR_DEFAULT_HTTPS_PROXY")),
+				domourCfg.ProxyForProvider(provider),
+			),
+		),
+	}
+}
+
+func (c *chatClient) Provider() string {
+	return c.provider
+}
+
+func (c *chatClient) Model() string {
+	return c.model
+}
+
+func (c *chatClient) GenerateMessage(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
+	resp, err := c.client.Generate(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("%s returned nil message", c.provider)
+	}
+	return resp, nil
+}
+
+func (c *chatClient) GenerateText(ctx context.Context, messages []*schema.Message) (Response, error) {
+	resp, err := c.GenerateMessage(ctx, messages)
+	if err != nil {
+		return Response{}, err
+	}
+
+	content := strings.TrimSpace(resp.Content)
+	if content == "" {
+		return Response{}, fmt.Errorf("%s returned empty content", c.provider)
+	}
+
+	return Response{
+		Content:  content,
+		Provider: c.provider,
+		Model:    c.model,
+	}, nil
+}
+
+func (c *chatClient) BindTools(tools []*schema.ToolInfo) error {
+	return c.client.BindTools(tools)
+}
+
+var osEnv = func(key string) string {
+	return strings.TrimSpace(os.Getenv(key))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
