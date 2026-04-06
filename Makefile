@@ -19,13 +19,17 @@ INSTALL_DIR := /opt/homa/plugins/copilot
 # Targets
 #------------------------------------------------------------------------------
 
-.PHONY: all build-plugins gen clean install surrealdb nats
+.PHONY: all build-plugins gen clean install surrealdb nats chat-agent
 
 # The default target that builds everything
-all: build-plugins
+all: build-plugins chat-agent
 
 # Build all plugins defined in the PLUGINS variable
 build-plugins: $(PLUGINS)
+
+chat-agent: gen
+	@echo "Building chat-agent..."
+	$(GO) build -o chat-agent cmd/chat-agent/main.go
 
 # A pattern rule to build each plugin. It depends on 'gen' to ensure
 # code generation happens before the build.

@@ -225,7 +225,7 @@ const file_assistant_copilot_copilot_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012d\n" +
 	"\x0eCopilotService\x12R\n" +
-	"\aCopilot\x12!.assistant.copilot.CopilotRequest\x1a\".assistant.copilot.CopilotResponse0\x01B.Z,github.com/qtopie/homa/gen/assistant/copilotb\x06proto3"
+	"\aCopilot\x12!.assistant.copilot.CopilotRequest\x1a\".assistant.copilot.CopilotResponse0\x01B0Z.github.com/qtopie/domour/gen/assistant/copilotb\x06proto3"
 
 var (
 	file_assistant_copilot_copilot_proto_rawDescOnce sync.Once
