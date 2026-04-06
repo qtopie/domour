@@ -9,7 +9,8 @@ import (
 )
 
 type localMotorClient struct {
-	manager *motor.Manager
+	manager     *motor.Manager
+	interceptor chatContextInterceptor
 }
 
 func newLocalMotorClient() (MotorClient, error) {
@@ -17,12 +18,16 @@ func newLocalMotorClient() (MotorClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &localMotorClient{manager: manager}, nil
+	return &localMotorClient{
+		manager:     manager,
+		interceptor: newChatContextInterceptor(),
+	}, nil
 }
 
 func (m *localMotorClient) StreamChat(ctx context.Context, req MotorChatRequest, bridge *SessionBridge) error {
 	defer close(bridge.MotorOut)
 	var replyParts []string
+	go m.trySendChatInterception(ctx, req, bridge)
 
 	for {
 		select {
@@ -143,6 +148,21 @@ func (m *localMotorClient) StreamChat(ctx context.Context, req MotorChatRequest,
 				}
 			}
 		}
+	}
+}
+
+func (m *localMotorClient) trySendChatInterception(ctx context.Context, req MotorChatRequest, bridge *SessionBridge) {
+	if m == nil || m.interceptor == nil || bridge == nil || bridge.Interception == nil || len(imageOnlyAttachments(req.Attachments)) == 0 {
+		return
+	}
+	interception, err := m.interceptor.InterceptChatContext(ctx, req)
+	if err != nil || interception == nil {
+		return
+	}
+	select {
+	case <-ctx.Done():
+	case bridge.Interception <- *interception:
+	default:
 	}
 }
 

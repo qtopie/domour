@@ -103,3 +103,48 @@ func TestResolveConfigSupportsOllamaProvider(t *testing.T) {
 		t.Fatalf("ResolveConfig().BaseURL = %q, want %q", cfg.BaseURL, "http://127.0.0.1:11434/v1")
 	}
 }
+
+func TestResolveConfigUsesPersistedDefaults(t *testing.T) {
+	cfg := ResolveConfig("chat", appconfig.DomourConfig{
+		DefaultProvider: "ollama",
+		DefaultModel:    "phi4-mini",
+		Providers: map[string]appconfig.ProviderConfig{
+			"ollama": {
+				BaseURL: "http://127.0.0.1:11434/v1",
+			},
+		},
+	})
+	if cfg.Provider != "ollama" {
+		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "ollama")
+	}
+	if cfg.Model != "phi4-mini" {
+		t.Fatalf("ResolveConfig().Model = %q, want %q", cfg.Model, "phi4-mini")
+	}
+	if cfg.BaseURL != "http://127.0.0.1:11434/v1" {
+		t.Fatalf("ResolveConfig().BaseURL = %q, want %q", cfg.BaseURL, "http://127.0.0.1:11434/v1")
+	}
+}
+
+func TestResolveConfigUsesEntryConfigModel(t *testing.T) {
+	cfg := ResolveConfig("copilot", appconfig.DomourConfig{
+		DefaultProvider: "github-copilot-cli",
+		DefaultModel:    "gpt-4.1",
+		Entries: map[string]appconfig.EntryConfig{
+			"copilot": {
+				Provider: "ollama",
+				Model:    "qwen2.5-coder",
+			},
+		},
+		Providers: map[string]appconfig.ProviderConfig{
+			"ollama": {
+				BaseURL: "http://127.0.0.1:11434/v1",
+			},
+		},
+	})
+	if cfg.Provider != "ollama" {
+		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "ollama")
+	}
+	if cfg.Model != "qwen2.5-coder" {
+		t.Fatalf("ResolveConfig().Model = %q, want %q", cfg.Model, "qwen2.5-coder")
+	}
+}

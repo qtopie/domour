@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -17,9 +18,16 @@ import (
 const DefaultHTTPSProxy = ""
 
 type ProviderConfig struct {
-	HTTPSProxy string `json:"https_proxy"`
-	APIKey     string `json:"api_key,omitempty"`
-	BaseURL    string `json:"base_url,omitempty"`
+	HTTPSProxy string   `json:"https_proxy"`
+	APIKey     string   `json:"api_key,omitempty"`
+	BaseURL    string   `json:"base_url,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	Models     []string `json:"models,omitempty"`
+}
+
+type EntryConfig struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type ServiceConfig struct {
@@ -33,10 +41,13 @@ type DaprConfig struct {
 }
 
 type DomourConfig struct {
-	HTTPSProxy string                    `json:"https_proxy"`
-	Providers  map[string]ProviderConfig `json:"providers,omitempty"`
-	Services   map[string]ServiceConfig  `json:"services,omitempty"`
-	Dapr       DaprConfig                `json:"dapr,omitempty"`
+	HTTPSProxy      string                    `json:"https_proxy"`
+	DefaultProvider string                    `json:"default_provider,omitempty"`
+	DefaultModel    string                    `json:"default_model,omitempty"`
+	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
+	Entries         map[string]EntryConfig    `json:"entries,omitempty"`
+	Services        map[string]ServiceConfig  `json:"services,omitempty"`
+	Dapr            DaprConfig                `json:"dapr,omitempty"`
 }
 
 var (
@@ -46,6 +57,7 @@ var (
 	domourCfg  DomourConfig
 	domourErr  error
 	domourOnce sync.Once
+	domourMu   sync.Mutex
 )
 
 func GetAppConfig() *viper.Viper {
@@ -62,7 +74,31 @@ func LoadDomourConfig() (DomourConfig, error) {
 		}
 		domourCfg, domourErr = loadOrCreateDomourConfig(path)
 	})
+
+	domourMu.Lock()
+	defer domourMu.Unlock()
 	return domourCfg, domourErr
+}
+
+func SaveDomourConfig(cfg DomourConfig) error {
+	path, err := DomourConfigPath()
+	if err != nil {
+		return err
+	}
+	return SaveDomourConfigAt(path, cfg)
+}
+
+func SaveDomourConfigAt(path string, cfg DomourConfig) error {
+	cfg = normalizeDomourConfig(cfg)
+	if err := writeDomourConfig(path, cfg); err != nil {
+		return err
+	}
+
+	domourMu.Lock()
+	defer domourMu.Unlock()
+	domourCfg = cfg
+	domourErr = nil
+	return nil
 }
 
 func DomourConfigPath() (string, error) {
@@ -94,6 +130,113 @@ func (c DomourConfig) BaseURLForProvider(provider string) string {
 		return strings.TrimSpace(c.Providers[normalizeProviderKey(provider)].BaseURL)
 	}
 	return ""
+}
+
+func (c DomourConfig) ProviderModel(provider string) string {
+	if c.Providers != nil {
+		return strings.TrimSpace(c.Providers[normalizeProviderKey(provider)].Model)
+	}
+	return ""
+}
+
+func (c DomourConfig) ProviderModels(provider string) []string {
+	if c.Providers == nil {
+		return nil
+	}
+	return append([]string(nil), c.Providers[normalizeProviderKey(provider)].Models...)
+}
+
+func (c DomourConfig) DefaultProviderName() string {
+	return normalizeProviderKey(c.DefaultProvider)
+}
+
+func (c DomourConfig) DefaultModelName() string {
+	return strings.TrimSpace(c.DefaultModel)
+}
+
+func (c DomourConfig) EntryProvider(name string) string {
+	if c.Entries == nil {
+		return ""
+	}
+	return normalizeProviderKey(c.Entries[normalizeEntryKey(name)].Provider)
+}
+
+func (c DomourConfig) EntryModel(name string) string {
+	if c.Entries == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Entries[normalizeEntryKey(name)].Model)
+}
+
+func (c *DomourConfig) SetDefaultSelection(provider, model string) {
+	if c == nil {
+		return
+	}
+	provider = normalizeProviderKey(provider)
+	model = strings.TrimSpace(model)
+	if provider != "" {
+		c.DefaultProvider = provider
+	}
+	c.DefaultModel = model
+	if provider != "" && model != "" {
+		c.SetProviderModel(provider, model)
+	}
+}
+
+func (c *DomourConfig) SetEntrySelection(entry, provider, model string) {
+	if c == nil {
+		return
+	}
+	entry = normalizeEntryKey(entry)
+	if entry == "" {
+		c.SetDefaultSelection(provider, model)
+		return
+	}
+	if c.Entries == nil {
+		c.Entries = map[string]EntryConfig{}
+	}
+	cfg := c.Entries[entry]
+	if normalizedProvider := normalizeProviderKey(provider); normalizedProvider != "" {
+		cfg.Provider = normalizedProvider
+		if strings.TrimSpace(model) != "" {
+			c.SetProviderModel(normalizedProvider, model)
+		}
+	}
+	cfg.Model = strings.TrimSpace(model)
+	c.Entries[entry] = cfg
+}
+
+func (c *DomourConfig) SetProviderModel(provider, model string) {
+	if c == nil {
+		return
+	}
+	provider = normalizeProviderKey(provider)
+	model = strings.TrimSpace(model)
+	if provider == "" {
+		return
+	}
+	if c.Providers == nil {
+		c.Providers = map[string]ProviderConfig{}
+	}
+	cfg := c.Providers[provider]
+	cfg.Model = model
+	c.Providers[provider] = cfg
+}
+
+func (c *DomourConfig) SetProviderDiscoveredModels(provider string, models []string) {
+	if c == nil {
+		return
+	}
+	provider = normalizeProviderKey(provider)
+	if provider == "" {
+		return
+	}
+	if c.Providers == nil {
+		c.Providers = map[string]ProviderConfig{}
+	}
+	cfg := c.Providers[provider]
+	cfg.Models = normalizeAndDeduplicateModelIDs(models)
+	c.Providers[provider] = cfg
 }
 
 func (c DomourConfig) ServiceMode(name string) string {
@@ -154,7 +297,7 @@ func loadOrCreateDomourConfig(path string) (DomourConfig, error) {
 			return DomourConfig{}, fmt.Errorf("read domour config %s: %w", path, err)
 		}
 
-		cfg := defaultDomourConfig()
+		cfg := normalizeDomourConfig(defaultDomourConfig())
 		if err := writeDomourConfig(path, cfg); err != nil {
 			return DomourConfig{}, err
 		}
@@ -166,16 +309,7 @@ func loadOrCreateDomourConfig(path string) (DomourConfig, error) {
 		return DomourConfig{}, fmt.Errorf("decode domour config %s: %w", path, err)
 	}
 
-	if strings.TrimSpace(cfg.HTTPSProxy) == "" {
-		cfg.HTTPSProxy = DefaultHTTPSProxy
-	}
-	if cfg.Providers == nil {
-		cfg.Providers = map[string]ProviderConfig{}
-	}
-	if cfg.Services == nil {
-		cfg.Services = map[string]ServiceConfig{}
-	}
-	return cfg, nil
+	return normalizeDomourConfig(cfg), nil
 }
 
 func writeDomourConfig(path string, cfg DomourConfig) error {
@@ -196,12 +330,14 @@ func writeDomourConfig(path string, cfg DomourConfig) error {
 
 func defaultDomourConfig() DomourConfig {
 	return DomourConfig{
-		HTTPSProxy: DefaultHTTPSProxy,
+		HTTPSProxy:      DefaultHTTPSProxy,
+		DefaultProvider: "github-copilot-cli",
 		Providers: map[string]ProviderConfig{
 			"gemini": {
 				HTTPSProxy: DefaultHTTPSProxy,
 			},
 		},
+		Entries: map[string]EntryConfig{},
 		Services: map[string]ServiceConfig{
 			"brain": {Mode: "local", AppID: "domour-brain"},
 			"motor": {Mode: "local", AppID: "domour-motor"},
@@ -211,6 +347,54 @@ func defaultDomourConfig() DomourConfig {
 			HTTPAddress: "127.0.0.1:3500",
 		},
 	}
+}
+
+func normalizeDomourConfig(cfg DomourConfig) DomourConfig {
+	cfg.HTTPSProxy = strings.TrimSpace(cfg.HTTPSProxy)
+	if cfg.HTTPSProxy == "" {
+		cfg.HTTPSProxy = DefaultHTTPSProxy
+	}
+	cfg.DefaultProvider = normalizeProviderKey(cfg.DefaultProvider)
+	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
+
+	normalizedProviders := make(map[string]ProviderConfig, len(cfg.Providers))
+	for key, providerCfg := range cfg.Providers {
+		normalizedKey := normalizeProviderKey(key)
+		if normalizedKey == "" {
+			continue
+		}
+		providerCfg.HTTPSProxy = strings.TrimSpace(providerCfg.HTTPSProxy)
+		providerCfg.APIKey = strings.TrimSpace(providerCfg.APIKey)
+		providerCfg.BaseURL = strings.TrimSpace(providerCfg.BaseURL)
+		providerCfg.Model = strings.TrimSpace(providerCfg.Model)
+		providerCfg.Models = normalizeAndDeduplicateModelIDs(providerCfg.Models)
+		normalizedProviders[normalizedKey] = providerCfg
+	}
+	cfg.Providers = normalizedProviders
+	if cfg.Providers == nil {
+		cfg.Providers = map[string]ProviderConfig{}
+	}
+
+	normalizedEntries := make(map[string]EntryConfig, len(cfg.Entries))
+	for key, entryCfg := range cfg.Entries {
+		normalizedKey := normalizeEntryKey(key)
+		if normalizedKey == "" {
+			continue
+		}
+		entryCfg.Provider = normalizeProviderKey(entryCfg.Provider)
+		entryCfg.Model = strings.TrimSpace(entryCfg.Model)
+		normalizedEntries[normalizedKey] = entryCfg
+	}
+	cfg.Entries = normalizedEntries
+	if cfg.Entries == nil {
+		cfg.Entries = map[string]EntryConfig{}
+	}
+
+	if cfg.Services == nil {
+		cfg.Services = map[string]ServiceConfig{}
+	}
+
+	return cfg
 }
 
 func initLegacyConfig() {
@@ -250,4 +434,29 @@ func normalizeProviderKey(provider string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(provider))
 	}
+}
+
+func normalizeEntryKey(entry string) string {
+	return strings.ToLower(strings.TrimSpace(entry))
+}
+
+func normalizeAndDeduplicateModelIDs(models []string) []string {
+	if len(models) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(models))
+	out := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		out = append(out, model)
+	}
+	sort.Strings(out)
+	return out
 }

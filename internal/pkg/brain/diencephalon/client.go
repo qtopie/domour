@@ -69,10 +69,13 @@ func NewForEntry(ctx context.Context, entry string) (Client, error) {
 
 func ResolveConfig(entry string, domourCfg appconfig.DomourConfig) Config {
 	entry = strings.ToUpper(strings.TrimSpace(entry))
+	entryKey := strings.ToLower(strings.TrimSpace(entry))
 
 	provider := firstNonEmpty(
-		strings.TrimSpace(osEnv("DOMOUR_"+entry+"_PROVIDER")),
+		entryEnv(entry, "PROVIDER"),
 		strings.TrimSpace(osEnv("DOMOUR_DEFAULT_PROVIDER")),
+		domourCfg.EntryProvider(entryKey),
+		domourCfg.DefaultProviderName(),
 	)
 	if provider == "" {
 		provider = "github-copilot-cli"
@@ -81,21 +84,24 @@ func ResolveConfig(entry string, domourCfg appconfig.DomourConfig) Config {
 	return Config{
 		Provider: provider,
 		APIKey: firstNonEmpty(
-			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_API_KEY")),
+			entryEnv(entry, "API_KEY"),
 			strings.TrimSpace(osEnv("DOMOUR_DEFAULT_API_KEY")),
 			domourCfg.APIKeyForProvider(provider),
 		),
 		BaseURL: firstNonEmpty(
-			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_BASE_URL")),
+			entryEnv(entry, "BASE_URL"),
 			strings.TrimSpace(osEnv("DOMOUR_DEFAULT_BASE_URL")),
 			domourCfg.BaseURLForProvider(provider),
 		),
 		Model: firstNonEmpty(
-			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_MODEL")),
+			entryEnv(entry, "MODEL"),
 			strings.TrimSpace(osEnv("DOMOUR_DEFAULT_MODEL")),
+			domourCfg.EntryModel(entryKey),
+			domourCfg.ProviderModel(provider),
+			domourCfg.DefaultModelName(),
 		),
 		ProxyURL: firstNonEmpty(
-			strings.TrimSpace(osEnv("DOMOUR_"+entry+"_HTTPS_PROXY")),
+			entryEnv(entry, "HTTPS_PROXY"),
 			firstNonEmpty(
 				strings.TrimSpace(osEnv("DOMOUR_DEFAULT_HTTPS_PROXY")),
 				domourCfg.ProxyForProvider(provider),
@@ -147,6 +153,15 @@ func (c *chatClient) BindTools(tools []*schema.ToolInfo) error {
 
 var osEnv = func(key string) string {
 	return strings.TrimSpace(os.Getenv(key))
+}
+
+func entryEnv(entry, suffix string) string {
+	entry = strings.TrimSpace(entry)
+	suffix = strings.TrimSpace(suffix)
+	if entry == "" || suffix == "" {
+		return ""
+	}
+	return strings.TrimSpace(osEnv("DOMOUR_" + entry + "_" + suffix))
 }
 
 func firstNonEmpty(values ...string) string {

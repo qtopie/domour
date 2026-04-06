@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/qtopie/domour/internal/app/modelmanager"
 )
 
 func NewInternalBrainMux() (http.Handler, error) {
@@ -18,6 +20,8 @@ func NewInternalBrainMux() (http.Handler, error) {
 	mux.HandleFunc("/internal/brain/plan-diagram", decodeAndHandle(brain.PlanDiagram))
 	mux.HandleFunc("/internal/brain/copilot", decodeAndHandle(brain.Copilot))
 	mux.HandleFunc("/internal/brain/autopilot", decodeAndHandle(brain.Autopilot))
+	mux.HandleFunc("/internal/brain/models/discover", decodeAndHandle(modelmanager.Discover))
+	mux.HandleFunc("/internal/brain/models/set", decodeAndHandle(modelmanager.SetModel))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))

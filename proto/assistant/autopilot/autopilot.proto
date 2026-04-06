@@ -3,6 +3,8 @@ syntax = "proto3";
 package assistant.autopilot;
 option go_package = "github.com/qtopie/domour/gen/assistant/autopilot";
 
+import "assistant/common/media.proto";
+
 service AutopilotService {
   rpc Autopilot(AutopilotRequest) returns (AutopilotResponse);
 }
@@ -14,6 +16,7 @@ message AutopilotRequest {
   string goal = 4;
   repeated string constraints = 5;
   int32 max_steps = 6;
+  repeated assistant.common.v1.Attachment attachments = 7;
 }
 
 message AutopilotResponse {

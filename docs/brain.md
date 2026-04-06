@@ -49,10 +49,13 @@ Brain 是 Domour 的**思考层**，负责理解、规划、补全和建议生�
 当前行为特点：
 
 - Chat active 路径中，Brain 以 goroutine 方式向 `SessionBridge.BrainOut` 写入事件
+- Chat 图片路径中，Motor 会并行做一层轻量 OCR / 关键事实提取；如果在初始拦截窗口内拿到结果，就把这层上下文补丁注入到 Brain 的首轮 prompt 里，尽量降低图片理解场景的早期事实错误
 - Copilot active 路径中，Brain 也可流式输出 `copilot_chunk`
 - Autopilot / Copilot normal 路径中，Brain 作为 Motor 的旁路思考器，仅在 Motor 判定任务复杂时参与
 - 图类请求由 Brain 产出 D2/结构化草案，再交给 Motor 统一渲染
 - CLI provider 失败时，Brain 会退回本地规则化 fallback
+- Brain 请求已预留多模态附件通道；当前先支持文本 + 图片输入，音频/视频作为后续扩展
+- 当前这层图片 OCR 拦截仍属于“上下文校正”，不是底层共享 KV cache；Motor 与 Brain 共享的是最小事实上下文，而不是同一个模型原生上下文窗口
 
 当前实现已经具备未来集群化最关键的抽象前提：**Agent 依赖的是 `BrainClient` 接口，而不是具体本地实现。**
 

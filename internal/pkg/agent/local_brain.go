@@ -47,12 +47,13 @@ func (b *localBrainClient) StreamChat(ctx context.Context, req BrainChatRequest)
 
 		if isDiagramLike(req.Message, req.Filename) {
 			plan, err := b.PlanDiagram(ctx, BrainDiagramRequest{
-				Workspace: req.Workspace,
-				Message:   req.Message,
-				Filename:  req.Filename,
-				FrontPart: req.FrontPart,
-				BackPart:  req.BackPart,
-				History:   req.History,
+				Workspace:   req.Workspace,
+				Message:     req.Message,
+				Filename:    req.Filename,
+				FrontPart:   req.FrontPart,
+				BackPart:    req.BackPart,
+				Attachments: req.Attachments,
+				History:     req.History,
 			})
 			if err != nil {
 				stream <- BrainStreamEvent{Type: "error", Err: err}
@@ -182,10 +183,17 @@ func (b *localBrainClient) StreamCopilot(ctx context.Context, req BrainCopilotRe
 
 func (b *localBrainClient) ChatReply(ctx context.Context, req BrainChatRequest) (BrainTextResponse, error) {
 	messages := []*schema.Message{
-		schema.SystemMessage("You are Domour Chat. Reply clearly and directly to the user. Use the provided workspace context when useful."),
+		schema.SystemMessage(buildChatSystemPrompt(req.Message, req.Attachments, req.Interception)),
 	}
 	messages = append(messages, historyToSchema(req.History)...)
-	messages = append(messages, schema.UserMessage(buildChatPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart)))
+	userMessage, err := buildUserInputMessage(
+		applyChatInterceptionContext(buildChatPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart), req.Interception),
+		req.Attachments,
+	)
+	if err != nil {
+		return BrainTextResponse{}, err
+	}
+	messages = append(messages, userMessage)
 
 	reply, err := b.chatModel.GenerateText(ctx, messages)
 	if err != nil {
@@ -206,7 +214,11 @@ func (b *localBrainClient) PlanDiagram(ctx context.Context, req BrainDiagramRequ
 		schema.SystemMessage("You are Domour Brain. Convert the user's request into valid D2 source only. Do not wrap the result in markdown fences. Keep the diagram concise and directly usable by the d2 CLI."),
 	}
 	messages = append(messages, historyToSchema(req.History)...)
-	messages = append(messages, schema.UserMessage(buildDiagramPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart, format)))
+	userMessage, err := buildUserInputMessage(buildDiagramPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart, format), req.Attachments)
+	if err != nil {
+		return BrainDiagramResponse{}, err
+	}
+	messages = append(messages, userMessage)
 
 	reply, err := b.chatModel.GenerateText(ctx, messages)
 	if err == nil {
@@ -241,7 +253,11 @@ func (b *localBrainClient) Copilot(ctx context.Context, req BrainCopilotRequest)
 		schema.SystemMessage("You are Domour Copilot. Produce the smallest correct patch or code suggestion for the user's request. Prefer concrete code over high-level advice when enough context is present."),
 	}
 	messages = append(messages, historyToSchema(req.History)...)
-	messages = append(messages, schema.UserMessage(buildCopilotPrompt(req.Message, req.Workspace, req.Filename, req.CodeBefore, req.CodeAfter, req.CursorOffset)))
+	userMessage, err := buildUserInputMessage(buildCopilotPrompt(req.Message, req.Workspace, req.Filename, req.CodeBefore, req.CodeAfter, req.CursorOffset), req.Attachments)
+	if err != nil {
+		return BrainTextResponse{}, err
+	}
+	messages = append(messages, userMessage)
 
 	reply, err := b.copilotModel.GenerateText(ctx, messages)
 	if err == nil {
@@ -260,8 +276,12 @@ func (b *localBrainClient) Copilot(ctx context.Context, req BrainCopilotRequest)
 func (b *localBrainClient) Autopilot(ctx context.Context, req BrainAutopilotRequest) (BrainTextResponse, error) {
 	messages := []*schema.Message{
 		schema.SystemMessage("You are Domour Autopilot. Produce a concise execution plan tailored to the user's goal and constraints. Prefer numbered steps."),
-		schema.UserMessage(buildAutopilotPrompt(req.Goal, req.Workspace, req.Constraints, req.MaxSteps)),
 	}
+	userMessage, err := buildUserInputMessage(buildAutopilotPrompt(req.Goal, req.Workspace, req.Constraints, req.MaxSteps), req.Attachments)
+	if err != nil {
+		return BrainTextResponse{}, err
+	}
+	messages = append(messages, userMessage)
 	messages = append(historyToSchema(req.History), messages...)
 
 	reply, err := b.autopilotModel.GenerateText(ctx, messages)

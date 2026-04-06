@@ -7,6 +7,7 @@
 package autopilot
 
 import (
+	common "github.com/qtopie/domour/gen/assistant/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -29,6 +30,7 @@ type AutopilotRequest struct {
 	Goal          string                 `protobuf:"bytes,4,opt,name=goal,proto3" json:"goal,omitempty"`
 	Constraints   []string               `protobuf:"bytes,5,rep,name=constraints,proto3" json:"constraints,omitempty"`
 	MaxSteps      int32                  `protobuf:"varint,6,opt,name=max_steps,json=maxSteps,proto3" json:"max_steps,omitempty"`
+	Attachments   []*common.Attachment   `protobuf:"bytes,7,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -103,6 +105,13 @@ func (x *AutopilotRequest) GetMaxSteps() int32 {
 		return x.MaxSteps
 	}
 	return 0
+}
+
+func (x *AutopilotRequest) GetAttachments() []*common.Attachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
 }
 
 type AutopilotResponse struct {
@@ -185,7 +194,7 @@ var File_assistant_autopilot_autopilot_proto protoreflect.FileDescriptor
 
 const file_assistant_autopilot_autopilot_proto_rawDesc = "" +
 	"\n" +
-	"#assistant/autopilot/autopilot.proto\x12\x13assistant.autopilot\"\xb4\x01\n" +
+	"#assistant/autopilot/autopilot.proto\x12\x13assistant.autopilot\x1a\x1cassistant/common/media.proto\"\xf7\x01\n" +
 	"\x10AutopilotRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -193,7 +202,8 @@ const file_assistant_autopilot_autopilot_proto_rawDesc = "" +
 	"\tworkspace\x18\x03 \x01(\tR\tworkspace\x12\x12\n" +
 	"\x04goal\x18\x04 \x01(\tR\x04goal\x12 \n" +
 	"\vconstraints\x18\x05 \x03(\tR\vconstraints\x12\x1b\n" +
-	"\tmax_steps\x18\x06 \x01(\x05R\bmaxSteps\"\xf3\x01\n" +
+	"\tmax_steps\x18\x06 \x01(\x05R\bmaxSteps\x12A\n" +
+	"\vattachments\x18\a \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\"\xf3\x01\n" +
 	"\x11AutopilotResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -205,7 +215,7 @@ const file_assistant_autopilot_autopilot_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012n\n" +
 	"\x10AutopilotService\x12Z\n" +
-	"\tAutopilot\x12%.assistant.autopilot.AutopilotRequest\x1a&.assistant.autopilot.AutopilotResponseB0Z.github.com/qtopie/homa/gen/assistant/autopilotb\x06proto3"
+	"\tAutopilot\x12%.assistant.autopilot.AutopilotRequest\x1a&.assistant.autopilot.AutopilotResponseB2Z0github.com/qtopie/domour/gen/assistant/autopilotb\x06proto3"
 
 var (
 	file_assistant_autopilot_autopilot_proto_rawDescOnce sync.Once
@@ -224,16 +234,18 @@ var file_assistant_autopilot_autopilot_proto_goTypes = []any{
 	(*AutopilotRequest)(nil),  // 0: assistant.autopilot.AutopilotRequest
 	(*AutopilotResponse)(nil), // 1: assistant.autopilot.AutopilotResponse
 	nil,                       // 2: assistant.autopilot.AutopilotResponse.MetaEntry
+	(*common.Attachment)(nil), // 3: assistant.common.v1.Attachment
 }
 var file_assistant_autopilot_autopilot_proto_depIdxs = []int32{
-	2, // 0: assistant.autopilot.AutopilotResponse.meta:type_name -> assistant.autopilot.AutopilotResponse.MetaEntry
-	0, // 1: assistant.autopilot.AutopilotService.Autopilot:input_type -> assistant.autopilot.AutopilotRequest
-	1, // 2: assistant.autopilot.AutopilotService.Autopilot:output_type -> assistant.autopilot.AutopilotResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 0: assistant.autopilot.AutopilotRequest.attachments:type_name -> assistant.common.v1.Attachment
+	2, // 1: assistant.autopilot.AutopilotResponse.meta:type_name -> assistant.autopilot.AutopilotResponse.MetaEntry
+	0, // 2: assistant.autopilot.AutopilotService.Autopilot:input_type -> assistant.autopilot.AutopilotRequest
+	1, // 3: assistant.autopilot.AutopilotService.Autopilot:output_type -> assistant.autopilot.AutopilotResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_assistant_autopilot_autopilot_proto_init() }

@@ -25,21 +25,24 @@ type MotorClient interface {
 }
 
 type BrainChatRequest struct {
-	Workspace string
-	Message   string
-	Filename  string
-	FrontPart string
-	BackPart  string
-	History   []shared.Message
+	Workspace    string
+	Message      string
+	Filename     string
+	FrontPart    string
+	BackPart     string
+	Attachments  []BrainAttachment
+	Interception *ChatInterception
+	History      []shared.Message
 }
 
 type BrainDiagramRequest struct {
-	Workspace string
-	Message   string
-	Filename  string
-	FrontPart string
-	BackPart  string
-	History   []shared.Message
+	Workspace   string
+	Message     string
+	Filename    string
+	FrontPart   string
+	BackPart    string
+	Attachments []BrainAttachment
+	History     []shared.Message
 }
 
 type BrainCopilotRequest struct {
@@ -49,6 +52,7 @@ type BrainCopilotRequest struct {
 	CodeBefore   string
 	CodeAfter    string
 	CursorOffset int32
+	Attachments  []BrainAttachment
 	History      []shared.Message
 }
 
@@ -57,6 +61,7 @@ type BrainAutopilotRequest struct {
 	Goal        string
 	Constraints []string
 	MaxSteps    int32
+	Attachments []BrainAttachment
 	History     []shared.Message
 }
 
@@ -90,14 +95,15 @@ type BrainStreamEvent struct {
 }
 
 type MotorChatRequest struct {
-	SessionID string
-	Seq       int32
-	Workspace string
-	Message   string
-	Filename  string
-	FrontPart string
-	BackPart  string
-	History   []shared.Message
+	SessionID   string
+	Seq         int32
+	Workspace   string
+	Message     string
+	Filename    string
+	FrontPart   string
+	BackPart    string
+	Attachments []BrainAttachment
+	History     []shared.Message
 }
 
 type MotorAutopilotRequest struct {
@@ -143,16 +149,35 @@ type BrainControl struct {
 	Meta    map[string]string
 }
 
+type BrainAttachment struct {
+	ID         string         `json:"id,omitempty"`
+	Filename   string         `json:"filename,omitempty"`
+	MIMEType   string         `json:"mime_type,omitempty"`
+	URL        string         `json:"url,omitempty"`
+	DataBase64 string         `json:"data_base64,omitempty"`
+	SizeBytes  int64          `json:"size_bytes,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+}
+
+type ChatInterception struct {
+	Source   string   `json:"source,omitempty"`
+	Summary  string   `json:"summary,omitempty"`
+	OCRText  string   `json:"ocr_text,omitempty"`
+	KeyFacts []string `json:"key_facts,omitempty"`
+}
+
 type SessionBridge struct {
-	BrainOut chan BrainStreamEvent
-	MotorOut chan MotorStreamEvent
-	Control  chan BrainControl
+	BrainOut     chan BrainStreamEvent
+	MotorOut     chan MotorStreamEvent
+	Control      chan BrainControl
+	Interception chan ChatInterception
 }
 
 func newSessionBridge() *SessionBridge {
 	return &SessionBridge{
-		BrainOut: make(chan BrainStreamEvent, 8),
-		MotorOut: make(chan MotorStreamEvent, 8),
-		Control:  make(chan BrainControl, 4),
+		BrainOut:     make(chan BrainStreamEvent, 8),
+		MotorOut:     make(chan MotorStreamEvent, 8),
+		Control:      make(chan BrainControl, 4),
+		Interception: make(chan ChatInterception, 1),
 	}
 }

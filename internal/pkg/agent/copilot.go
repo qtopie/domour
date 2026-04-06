@@ -31,6 +31,7 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 		CodeBefore:   req.GetCodeBefore(),
 		CodeAfter:    req.GetCodeAfter(),
 		CursorOffset: req.GetCursorOffset(),
+		Attachments:  attachmentsFromProto(req.GetAttachments()),
 		History:      history,
 	}
 	motorStream, err := s.motor.Copilot(ctx, MotorCopilotRequest{

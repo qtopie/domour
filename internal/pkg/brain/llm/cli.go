@@ -51,7 +51,10 @@ func NewCLIChatModel(cfg *CLIChatModelConfig) (model.ChatModel, error) {
 }
 
 func (m *CLIChatModel) Generate(ctx context.Context, input []*schema.Message, _ ...model.Option) (*schema.Message, error) {
-	prompt := buildCLIPrompt(input)
+	prompt, err := m.buildCLIPrompt(input)
+	if err != nil {
+		return nil, err
+	}
 	output, err := m.invoke(ctx, prompt)
 	if err != nil {
 		return nil, err
@@ -145,13 +148,17 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string) (string, error
 	return output, nil
 }
 
-func buildCLIPrompt(messages []*schema.Message) string {
+func (m *CLIChatModel) buildCLIPrompt(messages []*schema.Message) (string, error) {
 	var parts []string
 	for _, msg := range messages {
 		if msg == nil {
 			continue
 		}
-		content := strings.TrimSpace(msg.Content)
+		content, err := m.stringifyCLIMessage(msg)
+		if err != nil {
+			return "", err
+		}
+		content = strings.TrimSpace(content)
 		if content == "" {
 			continue
 		}
@@ -161,7 +168,35 @@ func buildCLIPrompt(messages []*schema.Message) string {
 		}
 		parts = append(parts, fmt.Sprintf("[%s]\n%s", role, content))
 	}
-	return strings.Join(parts, "\n\n")
+	return strings.Join(parts, "\n\n"), nil
+}
+
+func (m *CLIChatModel) stringifyCLIMessage(msg *schema.Message) (string, error) {
+	if msg == nil {
+		return "", nil
+	}
+	if len(msg.UserInputMultiContent) == 0 {
+		return msg.Content, nil
+	}
+
+	var parts []string
+	for _, part := range msg.UserInputMultiContent {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			if text := strings.TrimSpace(part.Text); text != "" {
+				parts = append(parts, text)
+			}
+		case schema.ChatMessagePartTypeImageURL:
+			return "", fmt.Errorf("%s CLI adapter does not support image inputs", m.command)
+		case schema.ChatMessagePartTypeAudioURL:
+			return "", fmt.Errorf("%s CLI adapter does not support audio inputs", m.command)
+		case schema.ChatMessagePartTypeVideoURL:
+			return "", fmt.Errorf("%s CLI adapter does not support video inputs", m.command)
+		default:
+			return "", fmt.Errorf("%s CLI adapter does not support %q inputs", m.command, part.Type)
+		}
+	}
+	return strings.Join(parts, "\n\n"), nil
 }
 
 func resolveCLICommand(command string) (string, error) {

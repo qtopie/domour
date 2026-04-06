@@ -7,6 +7,7 @@
 package chat
 
 import (
+	common "github.com/qtopie/domour/gen/assistant/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -30,6 +31,7 @@ type ChatRequest struct {
 	FrontPart     string                 `protobuf:"bytes,5,opt,name=front_part,json=frontPart,proto3" json:"front_part,omitempty"`
 	BackPart      string                 `protobuf:"bytes,6,opt,name=back_part,json=backPart,proto3" json:"back_part,omitempty"`
 	Filename      string                 `protobuf:"bytes,7,opt,name=filename,proto3" json:"filename,omitempty"`
+	Attachments   []*common.Attachment   `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -113,6 +115,13 @@ func (x *ChatRequest) GetFilename() string {
 	return ""
 }
 
+func (x *ChatRequest) GetAttachments() []*common.Attachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
 type ChatResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -193,7 +202,7 @@ var File_assistant_chat_chat_proto protoreflect.FileDescriptor
 
 const file_assistant_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x19assistant/chat/chat.proto\x12\x0eassistant.chat\"\xce\x01\n" +
+	"\x19assistant/chat/chat.proto\x12\x0eassistant.chat\x1a\x1cassistant/common/media.proto\"\x91\x02\n" +
 	"\vChatRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -203,7 +212,8 @@ const file_assistant_chat_chat_proto_rawDesc = "" +
 	"\n" +
 	"front_part\x18\x05 \x01(\tR\tfrontPart\x12\x1b\n" +
 	"\tback_part\x18\x06 \x01(\tR\bbackPart\x12\x1a\n" +
-	"\bfilename\x18\a \x01(\tR\bfilename\"\xe2\x01\n" +
+	"\bfilename\x18\a \x01(\tR\bfilename\x12A\n" +
+	"\vattachments\x18\b \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\"\xe2\x01\n" +
 	"\fChatResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -215,7 +225,7 @@ const file_assistant_chat_chat_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012R\n" +
 	"\vChatService\x12C\n" +
-	"\x04Chat\x12\x1b.assistant.chat.ChatRequest\x1a\x1c.assistant.chat.ChatResponse0\x01B+Z)github.com/qtopie/homa/gen/assistant/chatb\x06proto3"
+	"\x04Chat\x12\x1b.assistant.chat.ChatRequest\x1a\x1c.assistant.chat.ChatResponse0\x01B-Z+github.com/qtopie/domour/gen/assistant/chatb\x06proto3"
 
 var (
 	file_assistant_chat_chat_proto_rawDescOnce sync.Once
@@ -231,19 +241,21 @@ func file_assistant_chat_chat_proto_rawDescGZIP() []byte {
 
 var file_assistant_chat_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_assistant_chat_chat_proto_goTypes = []any{
-	(*ChatRequest)(nil),  // 0: assistant.chat.ChatRequest
-	(*ChatResponse)(nil), // 1: assistant.chat.ChatResponse
-	nil,                  // 2: assistant.chat.ChatResponse.MetaEntry
+	(*ChatRequest)(nil),       // 0: assistant.chat.ChatRequest
+	(*ChatResponse)(nil),      // 1: assistant.chat.ChatResponse
+	nil,                       // 2: assistant.chat.ChatResponse.MetaEntry
+	(*common.Attachment)(nil), // 3: assistant.common.v1.Attachment
 }
 var file_assistant_chat_chat_proto_depIdxs = []int32{
-	2, // 0: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
-	0, // 1: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
-	1, // 2: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 0: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
+	2, // 1: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
+	0, // 2: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
+	1, // 3: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_assistant_chat_chat_proto_init() }

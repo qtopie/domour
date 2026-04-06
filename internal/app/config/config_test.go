@@ -21,6 +21,9 @@ func TestLoadOrCreateDomourConfigCreatesDefault(t *testing.T) {
 	if got := cfg.ProxyForProvider("gemini-cli"); got != DefaultHTTPSProxy {
 		t.Fatalf("ProxyForProvider(gemini-cli) = %q, want %q", got, DefaultHTTPSProxy)
 	}
+	if got := cfg.DefaultProviderName(); got != "github-copilot-cli" {
+		t.Fatalf("DefaultProviderName() = %q, want %q", got, "github-copilot-cli")
+	}
 	if got := cfg.ServiceAppID("brain"); got != "domour-brain" {
 		t.Fatalf("ServiceAppID(brain) = %q, want %q", got, "domour-brain")
 	}
@@ -91,6 +94,32 @@ func TestServiceAppIDPrefersOverride(t *testing.T) {
 	}
 	if got := cfg.DaprHTTPAddress(); got != "127.0.0.1:3600" {
 		t.Fatalf("DaprHTTPAddress() = %q, want %q", got, "127.0.0.1:3600")
+	}
+}
+
+func TestSetDefaultAndEntrySelection(t *testing.T) {
+	t.Parallel()
+
+	cfg := DomourConfig{}
+	cfg.SetDefaultSelection("copilot-cli", "gpt-5")
+	cfg.SetEntrySelection("chat", "ollama", "phi4-mini")
+	cfg.SetProviderDiscoveredModels("ollama", []string{"phi4-mini", "llama3.2", "phi4-mini"})
+
+	if got := cfg.DefaultProviderName(); got != "github-copilot-cli" {
+		t.Fatalf("DefaultProviderName() = %q, want %q", got, "github-copilot-cli")
+	}
+	if got := cfg.DefaultModelName(); got != "gpt-5" {
+		t.Fatalf("DefaultModelName() = %q, want %q", got, "gpt-5")
+	}
+	if got := cfg.EntryProvider("chat"); got != "ollama" {
+		t.Fatalf("EntryProvider(chat) = %q, want %q", got, "ollama")
+	}
+	if got := cfg.EntryModel("chat"); got != "phi4-mini" {
+		t.Fatalf("EntryModel(chat) = %q, want %q", got, "phi4-mini")
+	}
+	gotModels := cfg.ProviderModels("ollama")
+	if len(gotModels) != 2 || gotModels[0] != "llama3.2" || gotModels[1] != "phi4-mini" {
+		t.Fatalf("ProviderModels(ollama) = %#v, want sorted unique models", gotModels)
 	}
 }
 

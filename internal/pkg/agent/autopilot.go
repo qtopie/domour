@@ -20,6 +20,7 @@ func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotReques
 	_ = s.appendHistory(ctx, sessionID, "user", goal)
 	brainCtx, brainCancel := context.WithCancel(ctx)
 	defer brainCancel()
+	attachments := attachmentsFromProto(req.GetAttachments())
 
 	result, err := s.motor.Autopilot(ctx, MotorAutopilotRequest{
 		SessionID:    sessionID,
@@ -35,6 +36,7 @@ func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotReques
 			Goal:        goal,
 			Constraints: req.GetConstraints(),
 			MaxSteps:    req.GetMaxSteps(),
+			Attachments: attachments,
 			History:     history,
 		}, bridge)
 	})

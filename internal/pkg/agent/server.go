@@ -107,6 +107,7 @@ func resolveCopilotMode(message string) string {
 func (s *Server) streamBrainToBridge(ctx context.Context, cancel context.CancelFunc, req BrainChatRequest, bridge *SessionBridge) {
 	defer close(bridge.BrainOut)
 
+	req = waitForInitialChatInterception(ctx, req, bridge)
 	brainStream, err := s.brain.StreamChat(ctx, req)
 	if err != nil {
 		bridge.BrainOut <- BrainStreamEvent{Type: "error", Err: err}

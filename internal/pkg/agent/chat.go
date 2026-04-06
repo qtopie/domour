@@ -25,22 +25,24 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 
 	bridge := newSessionBridge()
 	brainReq := BrainChatRequest{
-		Workspace: req.GetWorkspace(),
-		Message:   userMessage,
-		Filename:  req.GetFilename(),
-		FrontPart: req.GetFrontPart(),
-		BackPart:  req.GetBackPart(),
-		History:   history,
+		Workspace:   req.GetWorkspace(),
+		Message:     userMessage,
+		Filename:    req.GetFilename(),
+		FrontPart:   req.GetFrontPart(),
+		BackPart:    req.GetBackPart(),
+		Attachments: attachmentsFromProto(req.GetAttachments()),
+		History:     history,
 	}
 	motorReq := MotorChatRequest{
-		SessionID: sessionID,
-		Seq:       req.GetSeq(),
-		Workspace: req.GetWorkspace(),
-		Message:   userMessage,
-		Filename:  req.GetFilename(),
-		FrontPart: req.GetFrontPart(),
-		BackPart:  req.GetBackPart(),
-		History:   history,
+		SessionID:   sessionID,
+		Seq:         req.GetSeq(),
+		Workspace:   req.GetWorkspace(),
+		Message:     userMessage,
+		Filename:    req.GetFilename(),
+		FrontPart:   req.GetFrontPart(),
+		BackPart:    req.GetBackPart(),
+		Attachments: attachmentsFromProto(req.GetAttachments()),
+		History:     history,
 	}
 
 	go s.streamBrainToBridge(brainCtx, brainCancel, brainReq, bridge)
@@ -74,6 +76,12 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 
 func buildChatPrompt(userMessage, workspace, filename, frontPart, backPart string) string {
 	parts := []string{fmt.Sprintf("User request:\n%s", userMessage)}
+	if wantsOCRTask(userMessage) {
+		parts = append(parts,
+			"Task mode: OCR",
+			"OCR requirements:\n- Extract visible text faithfully.\n- Preserve natural reading order and line breaks when possible.\n- Keep tables, forms, or lists structured instead of summarizing them.\n- If some characters are unclear, mark them as [unclear].\n- Do not translate or summarize unless the user explicitly asks.",
+		)
+	}
 	if workspace := strings.TrimSpace(workspace); workspace != "" {
 		parts = append(parts, fmt.Sprintf("Workspace: %s", workspace))
 	}
@@ -87,6 +95,18 @@ func buildChatPrompt(userMessage, workspace, filename, frontPart, backPart strin
 		parts = append(parts, "Code after cursor:\n"+back)
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func buildChatSystemPrompt(message string, attachments []BrainAttachment, interception *ChatInterception) string {
+	prompt := "You are Domour Chat. Reply clearly and directly to the user. Use the provided workspace context when useful."
+	if hasImageAttachments(attachments) {
+		prompt += " When image attachments are present and the user asks for OCR, text extraction, transcription, or document reading, extract the visible text faithfully and preserve the original structure when possible."
+	}
+	prompt += buildInterceptionSystemNote(interception)
+	if wantsOCRTask(message) {
+		prompt += " This request is OCR-focused: prioritize accurate text extraction over summary, keep reading order, and mark uncertain characters as [unclear]."
+	}
+	return prompt
 }
 
 func buildDiagramPrompt(userMessage, workspace, filename, frontPart, backPart, format string) string {
@@ -167,4 +187,29 @@ func buildRenderedReply(d2Source, rendered string) string {
 		"Motor rendered the artifact below:",
 		rendered,
 	}, "\n")
+}
+
+func wantsOCRTask(message string) bool {
+	text := strings.ToLower(strings.TrimSpace(message))
+	if text == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"ocr", "extract text", "text extraction", "transcribe", "read the image", "scan text",
+		"识别文字", "识别图片中的文字", "提取文字", "提取文本", "图片文字", "图中文字", "文字识别", "ocr识别", "转文字", "读图",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasImageAttachments(attachments []BrainAttachment) bool {
+	for _, attachment := range attachments {
+		if strings.HasPrefix(normalizeAttachmentMIMEType(attachment), "image/") {
+			return true
+		}
+	}
+	return false
 }

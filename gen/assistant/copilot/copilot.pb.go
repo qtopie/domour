@@ -7,6 +7,7 @@
 package copilot
 
 import (
+	common "github.com/qtopie/domour/gen/assistant/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -31,6 +32,7 @@ type CopilotRequest struct {
 	CodeAfter     string                 `protobuf:"bytes,6,opt,name=code_after,json=codeAfter,proto3" json:"code_after,omitempty"`    // code following the cursor
 	Filename      string                 `protobuf:"bytes,7,opt,name=filename,proto3" json:"filename,omitempty"`
 	CursorOffset  int32                  `protobuf:"varint,8,opt,name=cursor_offset,json=cursorOffset,proto3" json:"cursor_offset,omitempty"`
+	Attachments   []*common.Attachment   `protobuf:"bytes,9,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -121,6 +123,13 @@ func (x *CopilotRequest) GetCursorOffset() int32 {
 	return 0
 }
 
+func (x *CopilotRequest) GetAttachments() []*common.Attachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
 type CopilotResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -201,7 +210,7 @@ var File_assistant_copilot_copilot_proto protoreflect.FileDescriptor
 
 const file_assistant_copilot_copilot_proto_rawDesc = "" +
 	"\n" +
-	"\x1fassistant/copilot/copilot.proto\x12\x11assistant.copilot\"\xfa\x01\n" +
+	"\x1fassistant/copilot/copilot.proto\x12\x11assistant.copilot\x1a\x1cassistant/common/media.proto\"\xbd\x02\n" +
 	"\x0eCopilotRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -213,7 +222,8 @@ const file_assistant_copilot_copilot_proto_rawDesc = "" +
 	"\n" +
 	"code_after\x18\x06 \x01(\tR\tcodeAfter\x12\x1a\n" +
 	"\bfilename\x18\a \x01(\tR\bfilename\x12#\n" +
-	"\rcursor_offset\x18\b \x01(\x05R\fcursorOffset\"\xef\x01\n" +
+	"\rcursor_offset\x18\b \x01(\x05R\fcursorOffset\x12A\n" +
+	"\vattachments\x18\t \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\"\xef\x01\n" +
 	"\x0fCopilotResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -241,19 +251,21 @@ func file_assistant_copilot_copilot_proto_rawDescGZIP() []byte {
 
 var file_assistant_copilot_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_assistant_copilot_copilot_proto_goTypes = []any{
-	(*CopilotRequest)(nil),  // 0: assistant.copilot.CopilotRequest
-	(*CopilotResponse)(nil), // 1: assistant.copilot.CopilotResponse
-	nil,                     // 2: assistant.copilot.CopilotResponse.MetaEntry
+	(*CopilotRequest)(nil),    // 0: assistant.copilot.CopilotRequest
+	(*CopilotResponse)(nil),   // 1: assistant.copilot.CopilotResponse
+	nil,                       // 2: assistant.copilot.CopilotResponse.MetaEntry
+	(*common.Attachment)(nil), // 3: assistant.common.v1.Attachment
 }
 var file_assistant_copilot_copilot_proto_depIdxs = []int32{
-	2, // 0: assistant.copilot.CopilotResponse.meta:type_name -> assistant.copilot.CopilotResponse.MetaEntry
-	0, // 1: assistant.copilot.CopilotService.Copilot:input_type -> assistant.copilot.CopilotRequest
-	1, // 2: assistant.copilot.CopilotService.Copilot:output_type -> assistant.copilot.CopilotResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 0: assistant.copilot.CopilotRequest.attachments:type_name -> assistant.common.v1.Attachment
+	2, // 1: assistant.copilot.CopilotResponse.meta:type_name -> assistant.copilot.CopilotResponse.MetaEntry
+	0, // 2: assistant.copilot.CopilotService.Copilot:input_type -> assistant.copilot.CopilotRequest
+	1, // 3: assistant.copilot.CopilotService.Copilot:output_type -> assistant.copilot.CopilotResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_assistant_copilot_copilot_proto_init() }

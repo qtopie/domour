@@ -3,6 +3,8 @@ syntax = "proto3";
 package assistant.copilot;
 option go_package = "github.com/qtopie/domour/gen/assistant/copilot";
 
+import "assistant/common/media.proto";
+
 service CopilotService {
   rpc Copilot(CopilotRequest) returns (stream CopilotResponse);
 }
@@ -16,6 +18,7 @@ message CopilotRequest {
   string code_after = 6;         // code following the cursor
   string filename = 7;
   int32 cursor_offset = 8;
+  repeated assistant.common.v1.Attachment attachments = 9;
 }
 
 message CopilotResponse {

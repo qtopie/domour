@@ -20,6 +20,10 @@ type daprBrainClient struct {
 	httpClient         *http.Client
 }
 
+const (
+	brainInvokeTimeout = 5 * time.Minute
+)
+
 func newDaprBrainClient(cfg appconfig.DomourConfig) (BrainClient, error) {
 	appID := strings.TrimSpace(cfg.ServiceAppID("brain"))
 	if appID == "" {
@@ -29,7 +33,7 @@ func newDaprBrainClient(cfg appconfig.DomourConfig) (BrainClient, error) {
 		sidecarHTTPAddress: cfg.DaprHTTPAddress(),
 		appID:              appID,
 		httpClient: &http.Client{
-			Timeout: 45 * time.Second,
+			Timeout: brainInvokeTimeout,
 		},
 	}, nil
 }
@@ -42,12 +46,13 @@ func (c *daprBrainClient) StreamChat(ctx context.Context, req BrainChatRequest) 
 
 		if isDiagramLike(req.Message, req.Filename) {
 			plan, err := c.PlanDiagram(ctx, BrainDiagramRequest{
-				Workspace: req.Workspace,
-				Message:   req.Message,
-				Filename:  req.Filename,
-				FrontPart: req.FrontPart,
-				BackPart:  req.BackPart,
-				History:   req.History,
+				Workspace:   req.Workspace,
+				Message:     req.Message,
+				Filename:    req.Filename,
+				FrontPart:   req.FrontPart,
+				BackPart:    req.BackPart,
+				Attachments: req.Attachments,
+				History:     req.History,
 			})
 			if err != nil {
 				stream <- BrainStreamEvent{Type: "error", Err: err}

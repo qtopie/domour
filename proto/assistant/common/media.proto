@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package assistant.common.v1;
+
+option go_package = "github.com/qtopie/domour/gen/assistant/common;commonpb";
+
+import "google/protobuf/struct.proto";
+
+message Attachment {
+  string id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  string url = 4;
+  string data_base64 = 5;
+  int64 size_bytes = 6;
+  google.protobuf.Struct metadata = 7;
+}

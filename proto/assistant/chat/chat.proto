@@ -3,6 +3,8 @@ syntax = "proto3";
 package assistant.chat;
 option go_package = "github.com/qtopie/domour/gen/assistant/chat";
 
+import "assistant/common/media.proto";
+
 service ChatService {
   rpc Chat(ChatRequest) returns (stream ChatResponse);
 }
@@ -15,6 +17,7 @@ message ChatRequest {
   string front_part = 5;
   string back_part = 6;
   string filename = 7;
+  repeated assistant.common.v1.Attachment attachments = 8;
 }
 
 message ChatResponse {
