@@ -27,7 +27,7 @@ func newLocalMotorClient() (MotorClient, error) {
 func (m *localMotorClient) StreamChat(ctx context.Context, req MotorChatRequest, bridge *SessionBridge) error {
 	defer close(bridge.MotorOut)
 	var replyParts []string
-	go m.trySendChatInterception(ctx, req, bridge)
+	go m.trySendChatInterception(ctx, req)
 
 	for {
 		select {
@@ -151,19 +151,15 @@ func (m *localMotorClient) StreamChat(ctx context.Context, req MotorChatRequest,
 	}
 }
 
-func (m *localMotorClient) trySendChatInterception(ctx context.Context, req MotorChatRequest, bridge *SessionBridge) {
-	if m == nil || m.interceptor == nil || bridge == nil || bridge.Interception == nil || len(imageOnlyAttachments(req.Attachments)) == 0 {
+func (m *localMotorClient) trySendChatInterception(ctx context.Context, req MotorChatRequest) {
+	if m == nil || m.interceptor == nil || len(imageOnlyAttachments(req.Attachments)) == 0 {
 		return
 	}
 	interception, err := m.interceptor.InterceptChatContext(ctx, req)
 	if err != nil || interception == nil {
 		return
 	}
-	select {
-	case <-ctx.Done():
-	case bridge.Interception <- *interception:
-	default:
-	}
+	defaultChatContextWorkingSet.Update(req.SessionID, req.Seq, interception)
 }
 
 func (m *localMotorClient) Autopilot(ctx context.Context, req MotorAutopilotRequest, startBrain func(*SessionBridge)) (MotorAutopilotResponse, error) {

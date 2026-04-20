@@ -3,17 +3,23 @@ package agent
 import (
 	"context"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 	appconfig "github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/internal/infra/cache/l1"
 	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 )
 
 var (
-	initialChatInterceptionWait = 1500 * time.Millisecond
 	chatOCRContextTimeout       = 2 * time.Second
+	maxChatContextRefreshRounds = 3
+
+	defaultChatContextWorkingSet = newChatContextWorkingSet(1024, 15*time.Minute)
 )
 
 type chatContextInterceptor interface {
@@ -22,8 +28,34 @@ type chatContextInterceptor interface {
 
 type llmChatContextInterceptor struct{}
 
+type chatContextSnapshot struct {
+	Interception    *ChatInterception
+	RawVersion      int64
+	SemanticVersion int64
+}
+
+type chatContextState struct {
+	chatContextSnapshot
+	rawSignature      string
+	semanticSignature string
+}
+
+type chatContextWorkingSet struct {
+	mu    sync.Mutex
+	cache *l1.Cache[string, chatContextState]
+	data  map[string]chatContextState
+}
+
 func newChatContextInterceptor() chatContextInterceptor {
 	return &llmChatContextInterceptor{}
+}
+
+func newChatContextWorkingSet(capacity int, ttl time.Duration) *chatContextWorkingSet {
+	cache, err := l1.NewCache[string, chatContextState](capacity, ttl)
+	if err != nil {
+		return &chatContextWorkingSet{data: map[string]chatContextState{}}
+	}
+	return &chatContextWorkingSet{cache: cache}
 }
 
 func (i *llmChatContextInterceptor) InterceptChatContext(ctx context.Context, req MotorChatRequest) (*ChatInterception, error) {
@@ -133,6 +165,7 @@ func parseChatInterception(content string) *ChatInterception {
 	}
 
 	result.OCRText = truncateInterceptionText(result.OCRText, 1600)
+	result.KeyFacts = normalizeKeyFacts(result.KeyFacts)
 	if result.Summary == "" && len(result.KeyFacts) == 0 && result.OCRText == "" {
 		return nil
 	}
@@ -198,26 +231,12 @@ func buildInterceptionSystemNote(interception *ChatInterception) string {
 	return " A motor-side context interception pass may provide OCR-derived evidence for attached images. Use it as grounding when relevant and avoid contradicting exact extracted facts."
 }
 
-func waitForInitialChatInterception(ctx context.Context, req BrainChatRequest, bridge *SessionBridge) BrainChatRequest {
-	if bridge == nil || bridge.Interception == nil || len(imageOnlyAttachments(req.Attachments)) == 0 {
-		return req
+func latestChatInterception(sessionID string, seq int32, fallback *ChatInterception) chatContextSnapshot {
+	snapshot := defaultChatContextWorkingSet.Get(sessionID, seq)
+	if snapshot.Interception == nil && fallback != nil {
+		snapshot.Interception = fallback
 	}
-
-	timer := time.NewTimer(initialChatInterceptionWait)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return req
-	case interception := <-bridge.Interception:
-		if strings.TrimSpace(interception.Summary) == "" && strings.TrimSpace(interception.OCRText) == "" && len(interception.KeyFacts) == 0 {
-			return req
-		}
-		req.Interception = &interception
-		return req
-	case <-timer.C:
-		return req
-	}
+	return snapshot
 }
 
 func newOCRInterceptionClient(ctx context.Context) (diencephalon.Client, error) {
@@ -318,4 +337,189 @@ func pickFirstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (s *chatContextWorkingSet) Update(sessionID string, seq int32, patch *ChatInterception) chatContextSnapshot {
+	if s == nil || patch == nil {
+		return chatContextSnapshot{}
+	}
+
+	key := normalizedChatContextKey(sessionID, seq)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.getLocked(key)
+	next := current
+	next.Interception = mergeChatInterception(current.Interception, patch)
+	if next.Interception == nil {
+		return next.chatContextSnapshot
+	}
+
+	rawSignature := buildRawInterceptionSignature(next.Interception)
+	if !ok || rawSignature != current.rawSignature {
+		next.RawVersion++
+	}
+	next.rawSignature = rawSignature
+
+	semanticSignature := buildSemanticInterceptionSignature(next.Interception)
+	if !ok || semanticSignature != current.semanticSignature {
+		next.SemanticVersion++
+	}
+	next.semanticSignature = semanticSignature
+
+	s.setLocked(key, next)
+	return next.chatContextSnapshot
+}
+
+func (s *chatContextWorkingSet) Get(sessionID string, seq int32) chatContextSnapshot {
+	if s == nil {
+		return chatContextSnapshot{}
+	}
+
+	key := normalizedChatContextKey(sessionID, seq)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.getLocked(key)
+	if !ok {
+		return chatContextSnapshot{}
+	}
+	return state.chatContextSnapshot
+}
+
+func (s *chatContextWorkingSet) Clear() {
+	if s == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cache != nil {
+		s.cache.Clear()
+	}
+	s.data = map[string]chatContextState{}
+}
+
+func (s *chatContextWorkingSet) getLocked(key string) (chatContextState, bool) {
+	if s.cache != nil {
+		return s.cache.Get(key)
+	}
+	state, ok := s.data[key]
+	return state, ok
+}
+
+func (s *chatContextWorkingSet) setLocked(key string, state chatContextState) {
+	if s.cache != nil {
+		s.cache.Set(key, state)
+		return
+	}
+	if s.data == nil {
+		s.data = map[string]chatContextState{}
+	}
+	s.data[key] = state
+}
+
+func normalizedChatContextKey(sessionID string, seq int32) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		sessionID = defaultSessionID
+	}
+	return sessionID + "#" + strconv.Itoa(int(seq))
+}
+
+func mergeChatInterception(current, patch *ChatInterception) *ChatInterception {
+	if current == nil && patch == nil {
+		return nil
+	}
+
+	merged := &ChatInterception{}
+	if current != nil {
+		merged.Source = current.Source
+		merged.Summary = current.Summary
+		merged.OCRText = current.OCRText
+		merged.KeyFacts = append([]string(nil), current.KeyFacts...)
+	}
+	if patch == nil {
+		return merged
+	}
+
+	if source := strings.TrimSpace(patch.Source); source != "" {
+		merged.Source = source
+	}
+	if summary := strings.TrimSpace(patch.Summary); summary != "" {
+		merged.Summary = summary
+	}
+	if len(patch.KeyFacts) > 0 {
+		merged.KeyFacts = normalizeKeyFacts(append(merged.KeyFacts, patch.KeyFacts...))
+	}
+	if ocrText := strings.TrimSpace(patch.OCRText); ocrText != "" {
+		if len([]rune(ocrText)) >= len([]rune(strings.TrimSpace(merged.OCRText))) {
+			merged.OCRText = ocrText
+		}
+	}
+	if strings.TrimSpace(merged.Summary) == "" && strings.TrimSpace(merged.OCRText) == "" && len(merged.KeyFacts) == 0 {
+		return nil
+	}
+	return merged
+}
+
+func normalizeKeyFacts(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		normalized := strings.Join(strings.Fields(strings.TrimSpace(item)), " ")
+		if normalized == "" {
+			continue
+		}
+		key := strings.ToLower(normalized)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, normalized)
+	}
+	sort.Strings(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func buildRawInterceptionSignature(interception *ChatInterception) string {
+	if interception == nil {
+		return ""
+	}
+
+	return strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(interception.Source)),
+		strings.ToLower(strings.Join(strings.Fields(interception.Summary), " ")),
+		strings.Join(normalizeKeyFacts(interception.KeyFacts), "|"),
+		strings.ToLower(strings.Join(strings.Fields(truncateInterceptionText(interception.OCRText, 400)), " ")),
+	}, "||")
+}
+
+func buildSemanticInterceptionSignature(interception *ChatInterception) string {
+	if interception == nil {
+		return ""
+	}
+
+	parts := []string{
+		strings.ToLower(strings.Join(strings.Fields(interception.Summary), " ")),
+		strings.Join(normalizeKeyFacts(interception.KeyFacts), "|"),
+	}
+	if len(interception.KeyFacts) == 0 {
+		parts = append(parts, strings.ToLower(strings.Join(strings.Fields(truncateInterceptionText(interception.OCRText, 200)), " ")))
+	}
+	return strings.Join(parts, "||")
+}
+
+func resetChatContextWorkingSetForTest() {
+	defaultChatContextWorkingSet.Clear()
 }

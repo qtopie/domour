@@ -182,28 +182,39 @@ func (b *localBrainClient) StreamCopilot(ctx context.Context, req BrainCopilotRe
 }
 
 func (b *localBrainClient) ChatReply(ctx context.Context, req BrainChatRequest) (BrainTextResponse, error) {
-	messages := []*schema.Message{
-		schema.SystemMessage(buildChatSystemPrompt(req.Message, req.Attachments, req.Interception)),
-	}
-	messages = append(messages, historyToSchema(req.History)...)
-	userMessage, err := buildUserInputMessage(
-		applyChatInterceptionContext(buildChatPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart), req.Interception),
-		req.Attachments,
-	)
-	if err != nil {
-		return BrainTextResponse{}, err
-	}
-	messages = append(messages, userMessage)
+	for attempt := 0; attempt < maxChatContextRefreshRounds; attempt++ {
+		snapshot := latestChatInterception(req.SessionID, req.Seq, req.Interception)
+		messages := []*schema.Message{
+			schema.SystemMessage(buildChatSystemPrompt(req.Message, req.Attachments, snapshot.Interception)),
+		}
+		messages = append(messages, historyToSchema(req.History)...)
+		userMessage, err := buildUserInputMessage(
+			applyChatInterceptionContext(buildChatPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart), snapshot.Interception),
+			req.Attachments,
+		)
+		if err != nil {
+			return BrainTextResponse{}, err
+		}
+		messages = append(messages, userMessage)
 
-	reply, err := b.chatModel.GenerateText(ctx, messages)
-	if err != nil {
-		return BrainTextResponse{}, err
+		reply, err := b.chatModel.GenerateText(ctx, messages)
+		if err != nil {
+			return BrainTextResponse{}, err
+		}
+
+		latest := latestChatInterception(req.SessionID, req.Seq, snapshot.Interception)
+		if latest.SemanticVersion > snapshot.SemanticVersion && attempt+1 < maxChatContextRefreshRounds {
+			continue
+		}
+
+		return BrainTextResponse{
+			Content:  reply.Content,
+			Provider: reply.Provider,
+			Model:    reply.Model,
+		}, nil
 	}
-	return BrainTextResponse{
-		Content:  reply.Content,
-		Provider: reply.Provider,
-		Model:    reply.Model,
-	}, nil
+
+	return BrainTextResponse{}, fmt.Errorf("chat reply exceeded maximum context refresh rounds")
 }
 
 func (b *localBrainClient) PlanDiagram(ctx context.Context, req BrainDiagramRequest) (BrainDiagramResponse, error) {

@@ -25,6 +25,8 @@ type MotorClient interface {
 }
 
 type BrainChatRequest struct {
+	SessionID    string
+	Seq          int32
 	Workspace    string
 	Message      string
 	Filename     string
@@ -167,17 +169,15 @@ type ChatInterception struct {
 }
 
 type SessionBridge struct {
-	BrainOut     chan BrainStreamEvent
-	MotorOut     chan MotorStreamEvent
-	Control      chan BrainControl
-	Interception chan ChatInterception
+	BrainOut chan BrainStreamEvent
+	MotorOut chan MotorStreamEvent
+	Control  chan BrainControl
 }
 
 func newSessionBridge() *SessionBridge {
 	return &SessionBridge{
-		BrainOut:     make(chan BrainStreamEvent, 8),
-		MotorOut:     make(chan MotorStreamEvent, 8),
-		Control:      make(chan BrainControl, 4),
-		Interception: make(chan ChatInterception, 1),
+		BrainOut: make(chan BrainStreamEvent, 8),
+		MotorOut: make(chan MotorStreamEvent, 8),
+		Control:  make(chan BrainControl, 4),
 	}
 }

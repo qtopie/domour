@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cloudwego/eino/schema"
+	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 )
 
 func TestWantsOCRTask(t *testing.T) {
@@ -96,20 +99,90 @@ Order A9021
 	}
 }
 
-func TestWaitForInitialChatInterception(t *testing.T) {
-	previous := initialChatInterceptionWait
-	initialChatInterceptionWait = 20 * time.Millisecond
-	defer func() {
-		initialChatInterceptionWait = previous
-	}()
+func TestChatContextWorkingSetSemanticVersion(t *testing.T) {
+	t.Parallel()
 
-	bridge := newSessionBridge()
-	bridge.Interception <- ChatInterception{Summary: "receipt"}
-	req := waitForInitialChatInterception(context.Background(), BrainChatRequest{
-		Message:     "analyze",
-		Attachments: []BrainAttachment{{Filename: "receipt.png", MIMEType: "image/png"}},
-	}, bridge)
-	if req.Interception == nil || req.Interception.Summary != "receipt" {
-		t.Fatalf("waitForInitialChatInterception() = %#v, want interception", req.Interception)
+	store := newChatContextWorkingSet(16, time.Minute)
+	first := store.Update("session-1", 7, &ChatInterception{
+		Summary:  "Receipt screenshot",
+		KeyFacts: []string{"total_amount=138"},
+		OCRText:  "Total 138",
+	})
+	if first.RawVersion != 1 || first.SemanticVersion != 1 {
+		t.Fatalf("first update = %#v, want raw=1 semantic=1", first)
+	}
+
+	second := store.Update("session-1", 7, &ChatInterception{
+		OCRText: "Total 138\nThank you for shopping",
+	})
+	if second.RawVersion != 2 {
+		t.Fatalf("second raw version = %d, want 2", second.RawVersion)
+	}
+	if second.SemanticVersion != 1 {
+		t.Fatalf("second semantic version = %d, want 1", second.SemanticVersion)
+	}
+
+	third := store.Update("session-1", 7, &ChatInterception{
+		KeyFacts: []string{"total_amount=188"},
+	})
+	if third.SemanticVersion != 2 {
+		t.Fatalf("third semantic version = %d, want 2", third.SemanticVersion)
 	}
 }
+
+func TestLocalBrainClientChatReplyUsesLatestSemanticContext(t *testing.T) {
+	t.Cleanup(resetChatContextWorkingSetForTest)
+	resetChatContextWorkingSetForTest()
+
+	callCount := 0
+	brain := &localBrainClient{
+		chatModel: &fakeChatModel{
+			generateText: func(_ context.Context, messages []*schema.Message) (diencephalon.Response, error) {
+				callCount++
+				if callCount == 1 {
+					defaultChatContextWorkingSet.Update("session-1", 11, &ChatInterception{
+						Summary:  "Receipt screenshot",
+						KeyFacts: []string{"total_amount=138"},
+						OCRText:  "Total 138",
+					})
+					return diencephalon.Response{Content: "stale", Provider: "ollama", Model: "gemma4"}, nil
+				}
+				last := messages[len(messages)-1]
+				if len(last.UserInputMultiContent) == 0 || !strings.Contains(last.UserInputMultiContent[0].Text, "total_amount=138") {
+					t.Fatalf("second iteration prompt = %#v, want latest key fact", last.UserInputMultiContent)
+				}
+				return diencephalon.Response{Content: "fresh", Provider: "ollama", Model: "gemma4"}, nil
+			},
+		},
+	}
+
+	reply, err := brain.ChatReply(context.Background(), BrainChatRequest{
+		SessionID:   "session-1",
+		Seq:         11,
+		Message:     "请分析图片里的金额",
+		Attachments: []BrainAttachment{{Filename: "receipt.png", MIMEType: "image/png", DataBase64: "aGVsbG8="}},
+	})
+	if err != nil {
+		t.Fatalf("ChatReply() error = %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("GenerateText() call count = %d, want 2", callCount)
+	}
+	if reply.Content != "fresh" {
+		t.Fatalf("reply content = %q, want %q", reply.Content, "fresh")
+	}
+}
+
+type fakeChatModel struct {
+	generateText func(context.Context, []*schema.Message) (diencephalon.Response, error)
+}
+
+func (m *fakeChatModel) Provider() string { return "test" }
+func (m *fakeChatModel) Model() string    { return "test" }
+func (m *fakeChatModel) GenerateMessage(context.Context, []*schema.Message) (*schema.Message, error) {
+	return nil, nil
+}
+func (m *fakeChatModel) GenerateText(ctx context.Context, messages []*schema.Message) (diencephalon.Response, error) {
+	return m.generateText(ctx, messages)
+}
+func (m *fakeChatModel) BindTools([]*schema.ToolInfo) error { return nil }

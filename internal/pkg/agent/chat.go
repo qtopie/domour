@@ -25,6 +25,8 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 
 	bridge := newSessionBridge()
 	brainReq := BrainChatRequest{
+		SessionID:   sessionID,
+		Seq:         req.GetSeq(),
 		Workspace:   req.GetWorkspace(),
 		Message:     userMessage,
 		Filename:    req.GetFilename(),
