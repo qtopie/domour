@@ -9,6 +9,7 @@ require (
 	github.com/cloudwego/eino-ext/components/model/qwen v0.1.5
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/go-viper/encoding/ini v0.1.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/maypok86/otter v1.2.4
 	github.com/nats-io/nats.go v1.49.0
 	github.com/spf13/viper v1.20.1
@@ -54,7 +55,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
