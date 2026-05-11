@@ -11,6 +11,8 @@ import (
 	autopilotpb "github.com/qtopie/domour/gen/assistant/autopilot"
 	chatpb "github.com/qtopie/domour/gen/assistant/chat"
 	copilotpb "github.com/qtopie/domour/gen/assistant/copilot"
+	"github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/internal/infra/db"
 	"github.com/qtopie/domour/internal/pkg/agent"
 	"github.com/qtopie/domour/internal/session"
 	"google.golang.org/grpc"
@@ -20,7 +22,31 @@ import (
 // Run starts the Domour server.
 // It blocks until the context is canceled or an error occurs.
 func Run(ctx context.Context) error {
-	store := session.NewMemoryStore()
+	cfg, err := config.LoadDomourConfig()
+	if err != nil {
+		fmt.Printf("Warning: failed to load config: %v. Using defaults.\n", err)
+	}
+
+	var store session.Store
+	if os.Getenv("DOMOUR_USE_SURREAL") == "true" {
+		fmt.Println("[Bootstrap] Initializing SurrealDB Session Store with Dapr Discovery...")
+		surrealDB, err := db.NewSurrealDB(db.Config{
+			Address:     os.Getenv("DOMOUR_SURREAL_ADDR"),
+			User:        os.Getenv("DOMOUR_SURREAL_USER"),
+			Pass:        os.Getenv("DOMOUR_SURREAL_PASS"),
+			Namespace:   "domour",
+			Database:    "agent",
+			DaprAddress: cfg.DaprHTTPAddress(),
+		})
+		if err != nil {
+			fmt.Printf("Error: failed to connect to SurrealDB: %v. Falling back to memory store.\n", err)
+			store = session.NewMemoryStore()
+		} else {
+			store = session.NewSurrealStore(surrealDB)
+		}
+	} else {
+		store = session.NewMemoryStore()
+	}
 	defer store.Close()
 
 	service, err := agent.NewServer(store)

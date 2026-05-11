@@ -162,10 +162,11 @@ type BrainAttachment struct {
 }
 
 type ChatInterception struct {
-	Source   string   `json:"source,omitempty"`
-	Summary  string   `json:"summary,omitempty"`
-	OCRText  string   `json:"ocr_text,omitempty"`
-	KeyFacts []string `json:"key_facts,omitempty"`
+	Source     string   `json:"source,omitempty"`
+	Summary    string   `json:"summary,omitempty"`
+	OCRText    string   `json:"ocr_text,omitempty"`
+	KeyFacts   []string `json:"key_facts,omitempty"`
+	Confidence float64  `json:"confidence,omitempty"` // 0.0 to 1.0
 }
 
 type SessionBridge struct {

@@ -8,7 +8,7 @@ import (
 
 	appconfig "github.com/qtopie/domour/internal/app/config"
 	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
-	brainllm "github.com/qtopie/domour/internal/pkg/brain/llm"
+	brainllm "github.com/qtopie/domour/pkg/core/llm"
 )
 
 type DiscoverRequest struct {

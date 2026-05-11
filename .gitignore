@@ -1,3 +1,4 @@
 config.ini
 *.so
 data/
+build/

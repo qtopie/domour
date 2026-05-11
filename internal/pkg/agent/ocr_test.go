@@ -84,6 +84,8 @@ KEY_FACTS:
 OCR_TEXT:
 Total 138
 Order A9021
+CONFIDENCE_SCORE:
+0.85
 `)
 	if interception == nil {
 		t.Fatal("parseChatInterception() = nil, want result")
@@ -96,6 +98,31 @@ Order A9021
 	}
 	if !strings.Contains(interception.OCRText, "Order A9021") {
 		t.Fatalf("OCRText = %q, want OCR lines", interception.OCRText)
+	}
+	if interception.Confidence != 0.85 {
+		t.Fatalf("Confidence = %v, want 0.85", interception.Confidence)
+	}
+}
+
+func TestOCRConfidenceThreshold(t *testing.T) {
+	t.Parallel()
+
+	interceptionLow := &ChatInterception{
+		OCRText:    "Blurry text",
+		Confidence: 0.3,
+	}
+	promptLow := applyChatInterceptionContext("Analyze this", interceptionLow)
+	if strings.Contains(promptLow, "Blurry text") {
+		t.Fatal("applyChatInterceptionContext should drop low confidence evidence")
+	}
+
+	interceptionHigh := &ChatInterception{
+		OCRText:    "Clear text",
+		Confidence: 0.9,
+	}
+	promptHigh := applyChatInterceptionContext("Analyze this", interceptionHigh)
+	if !strings.Contains(promptHigh, "Clear text") {
+		t.Fatal("applyChatInterceptionContext should include high confidence evidence")
 	}
 }
 

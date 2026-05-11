@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	appconfig "github.com/qtopie/domour/internal/app/config"
-	brainllm "github.com/qtopie/domour/internal/pkg/brain/llm"
+	brainllm "github.com/qtopie/domour/pkg/core/llm"
 )
 
 type Config struct {

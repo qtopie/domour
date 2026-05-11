@@ -18,6 +18,7 @@ import (
 var (
 	chatOCRContextTimeout       = 2 * time.Second
 	maxChatContextRefreshRounds = 3
+	ocrConfidenceThreshold      = 0.6 // Ignore OCR if confidence is below this
 
 	defaultChatContextWorkingSet = newChatContextWorkingSet(1024, 15*time.Minute)
 )
@@ -101,9 +102,11 @@ func buildOCRInterceptionPrompt(message string) string {
 		"SUMMARY:",
 		"KEY_FACTS:",
 		"OCR_TEXT:",
+		"CONFIDENCE_SCORE:",
 		"In SUMMARY, write one short sentence describing the document or image type.",
 		"In KEY_FACTS, list exact high-risk facts visible in the image such as numbers, dates, totals, IDs, names, labels, and short field/value pairs.",
 		"In OCR_TEXT, include the most relevant visible text verbatim in natural reading order.",
+		"In CONFIDENCE_SCORE, provide a numerical value from 0.0 to 1.0 representing your certainty of the text extraction accuracy.",
 		"Do not add markdown fences.",
 	}
 	if wantsOCRTask(message) {
@@ -118,7 +121,9 @@ func parseChatInterception(content string) *ChatInterception {
 		return nil
 	}
 
-	result := &ChatInterception{}
+	result := &ChatInterception{
+		Confidence: 1.0, // Default to 1.0 if not specified
+	}
 	current := ""
 	for _, rawLine := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -134,6 +139,9 @@ func parseChatInterception(content string) *ChatInterception {
 			continue
 		case "OCR_TEXT":
 			current = "ocr"
+			continue
+		case "CONFIDENCE_SCORE":
+			current = "confidence"
 			continue
 		}
 
@@ -154,6 +162,10 @@ func parseChatInterception(content string) *ChatInterception {
 				result.OCRText = line
 			} else {
 				result.OCRText += "\n" + line
+			}
+		case "confidence":
+			if val, err := strconv.ParseFloat(line, 64); err == nil {
+				result.Confidence = val
 			}
 		default:
 			if result.OCRText == "" {
@@ -202,6 +214,11 @@ func imageOnlyAttachments(attachments []BrainAttachment) []BrainAttachment {
 
 func applyChatInterceptionContext(prompt string, interception *ChatInterception) string {
 	if interception == nil {
+		return prompt
+	}
+
+	// Drop low-confidence OCR evidence
+	if interception.Confidence < ocrConfidenceThreshold {
 		return prompt
 	}
 
@@ -435,12 +452,15 @@ func mergeChatInterception(current, patch *ChatInterception) *ChatInterception {
 		return nil
 	}
 
-	merged := &ChatInterception{}
+	merged := &ChatInterception{
+		Confidence: 1.0,
+	}
 	if current != nil {
 		merged.Source = current.Source
 		merged.Summary = current.Summary
 		merged.OCRText = current.OCRText
 		merged.KeyFacts = append([]string(nil), current.KeyFacts...)
+		merged.Confidence = current.Confidence
 	}
 	if patch == nil {
 		return merged
@@ -459,6 +479,9 @@ func mergeChatInterception(current, patch *ChatInterception) *ChatInterception {
 		if len([]rune(ocrText)) >= len([]rune(strings.TrimSpace(merged.OCRText))) {
 			merged.OCRText = ocrText
 		}
+	}
+	if patch.Confidence > 0 {
+		merged.Confidence = patch.Confidence
 	}
 	if strings.TrimSpace(merged.Summary) == "" && strings.TrimSpace(merged.OCRText) == "" && len(merged.KeyFacts) == 0 {
 		return nil
