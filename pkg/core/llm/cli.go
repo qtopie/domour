@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
@@ -200,19 +201,39 @@ func (m *CLIChatModel) stringifyCLIMessage(msg *schema.Message) (string, error) 
 }
 
 func resolveCLICommand(command string) (string, error) {
+	checkLocal := func(cmd string) (string, bool) {
+		if path, err := exec.LookPath(cmd); err == nil && path != "" {
+			return cmd, true
+		}
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			localPath := filepath.Join(homeDir, ".domour", "tools", "node_modules", ".bin", cmd)
+			if _, err := os.Stat(localPath); err == nil {
+				return localPath, true
+			}
+		}
+		return "", false
+	}
+
 	switch command {
 	case "qodercli":
 		for _, candidate := range []string{"qodercli", "qoder"} {
-			if path, err := exec.LookPath(candidate); err == nil && path != "" {
-				return candidate, nil
+			if path, ok := checkLocal(candidate); ok {
+				return path, nil
+			}
+		}
+		return "", fmt.Errorf("cli command %q not found", command)
+	case "github-copilot-cli":
+		for _, candidate := range []string{"github-copilot-cli", "copilot"} {
+			if path, ok := checkLocal(candidate); ok {
+				return path, nil
 			}
 		}
 		return "", fmt.Errorf("cli command %q not found", command)
 	default:
-		if _, err := exec.LookPath(command); err != nil {
-			return "", fmt.Errorf("cli command %q not found: %w", command, err)
+		if path, ok := checkLocal(command); ok {
+			return path, nil
 		}
-		return command, nil
+		return "", fmt.Errorf("cli command %q not found", command)
 	}
 }
 
