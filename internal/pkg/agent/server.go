@@ -32,7 +32,7 @@ func NewServer(store session.Store) (*Server, error) {
 		store = session.NewMemoryStore()
 	}
 
-	brain, err := newConfiguredBrainClient()
+	brain, err := newReloadableBrain()
 	if err != nil {
 		return nil, err
 	}

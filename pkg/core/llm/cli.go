@@ -92,7 +92,10 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string) (string, error
 
 	switch m.provider {
 	case "gemini":
-		args := []string{"--prompt", prompt, "--output-format", "text", "--approval-mode", "plan"}
+		args := []string{"--prompt", prompt, "--output-format", "text", "--yolo", "--skip-trust"}
+		if runtime.Workspace != "" {
+			args = append(args, "--include-directories", runtime.Workspace)
+		}
 		if m.model != "" {
 			args = append([]string{"--model", m.model}, args...)
 		}
@@ -102,8 +105,8 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string) (string, error
 		}
 		cmd = exec.CommandContext(ctx, m.command, args...)
 		env = append(env,
-			"HOME="+runtime.HomeDir,
-			"XDG_CONFIG_HOME="+filepathJoin(runtime.HomeDir, ".config"),
+			// "HOME="+runtime.HomeDir,
+			// "XDG_CONFIG_HOME="+filepathJoin(runtime.HomeDir, ".config"),
 		)
 	case "github-copilot-cli":
 		args := []string{"--prompt", prompt, "--allow-all", "--output-format", "text", "--silent", "--config-dir", runtime.ConfigDir}
@@ -188,13 +191,13 @@ func (m *CLIChatModel) stringifyCLIMessage(msg *schema.Message) (string, error) 
 				parts = append(parts, text)
 			}
 		case schema.ChatMessagePartTypeImageURL:
-			return "", fmt.Errorf("%s CLI adapter does not support image inputs", m.command)
+			parts = append(parts, fmt.Sprintf("[%s CLI adapter does not support image inputs, skipping]", m.command))
 		case schema.ChatMessagePartTypeAudioURL:
-			return "", fmt.Errorf("%s CLI adapter does not support audio inputs", m.command)
+			parts = append(parts, fmt.Sprintf("[%s CLI adapter does not support audio inputs, skipping]", m.command))
 		case schema.ChatMessagePartTypeVideoURL:
-			return "", fmt.Errorf("%s CLI adapter does not support video inputs", m.command)
+			parts = append(parts, fmt.Sprintf("[%s CLI adapter does not support video inputs, skipping]", m.command))
 		default:
-			return "", fmt.Errorf("%s CLI adapter does not support %q inputs", m.command, part.Type)
+			parts = append(parts, fmt.Sprintf("[%s CLI adapter does not support %q inputs, skipping]", m.command, part.Type))
 		}
 	}
 	return strings.Join(parts, "\n\n"), nil

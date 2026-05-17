@@ -157,6 +157,23 @@ func ensureRuntimeDirs(runtime *SessionRuntime) error {
 			return fmt.Errorf("failed to create runtime dir %s: %w", path, err)
 		}
 	}
+
+	realHome, _ := os.UserHomeDir()
+	if realHome != "" {
+		geminiSrc := filepath.Join(realHome, ".gemini")
+		geminiDest := filepath.Join(runtime.HomeDir, ".gemini")
+		if _, err := os.Stat(geminiSrc); err == nil {
+			os.RemoveAll(geminiDest)
+			os.Symlink(geminiSrc, geminiDest)
+		}
+
+		configSrc := filepath.Join(realHome, ".config", "github-copilot")
+		configDest := filepath.Join(runtime.HomeDir, ".config", "github-copilot")
+		if _, err := os.Stat(configSrc); err == nil {
+			os.RemoveAll(configDest)
+			os.Symlink(configSrc, configDest)
+		}
+	}
 	return nil
 }
 

@@ -79,6 +79,23 @@ func LoadDomourConfig() (DomourConfig, error) {
 	defer domourMu.Unlock()
 	return domourCfg, domourErr
 }
+func ReloadDomourConfig() (DomourConfig, error) {
+	path, err := DomourConfigPath()
+	if err != nil {
+		return DomourConfig{}, err
+	}
+	cfg, err := loadOrCreateDomourConfig(path)
+	if err != nil {
+		return DomourConfig{}, err
+	}
+
+	domourMu.Lock()
+	defer domourMu.Unlock()
+	domourCfg = cfg
+	domourErr = nil
+	return domourCfg, nil
+}
+
 
 func SaveDomourConfig(cfg DomourConfig) error {
 	path, err := DomourConfigPath()
@@ -321,7 +338,8 @@ func writeDomourConfig(path string, cfg DomourConfig) error {
 	if err != nil {
 		return fmt.Errorf("encode domour config: %w", err)
 	}
-	content = append(content, '\n')
+	content = append(content, 
+)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		return fmt.Errorf("write domour config %s: %w", path, err)
 	}
