@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 )
 
 type daprBrainClient struct {
@@ -24,7 +25,7 @@ const (
 	brainInvokeTimeout = 5 * time.Minute
 )
 
-func newDaprBrainClient(cfg appconfig.DomourConfig) (BrainClient, error) {
+func newDaprBrainClient(cfg config.DomourConfig) (BrainClient, error) {
 	appID := strings.TrimSpace(cfg.ServiceAppID("brain"))
 	if appID == "" {
 		return nil, fmt.Errorf("dapr brain app id is empty")
@@ -36,6 +37,12 @@ func newDaprBrainClient(cfg appconfig.DomourConfig) (BrainClient, error) {
 			Timeout: brainInvokeTimeout,
 		},
 	}, nil
+}
+
+func (c *daprBrainClient) GetClient(ctx context.Context, entry string) (diencephalon.Client, error) {
+	// Dapr brain client is a proxy. For health check, we might need a specialized endpoint on the remote side.
+	// For now, return a placeholder or implement a remote readiness check if available.
+	return diencephalon.NewForEntry(ctx, entry)
 }
 
 func (c *daprBrainClient) StreamChat(ctx context.Context, req BrainChatRequest) (<-chan BrainStreamEvent, error) {

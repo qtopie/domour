@@ -10,8 +10,24 @@ import (
 
 func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotRequest) (*autopilotpb.AutopilotResponse, error) {
 	sessionID := normalizeSessionID(req.GetSessionId())
+	s.logCall(ctx, "Autopilot", sessionID)
+
 	ctx = withRuntimeMetadata(ctx, sessionID, req.GetWorkspace())
 	history, _ := s.getHistory(ctx, sessionID)
+
+	// Check provider readiness
+	brainClient, err := s.brain.GetClient(ctx, "autopilot")
+	if err == nil {
+		if ready, readyErr := brainClient.IsReady(ctx); !ready || readyErr != nil {
+			err = readyErr
+			if err == nil {
+				err = fmt.Errorf("provider %s is not ready", brainClient.Provider())
+			}
+			s.logError(ctx, "Autopilot.Readiness", sessionID, err)
+			return nil, err
+		}
+	}
+
 	goal := strings.TrimSpace(req.GetGoal())
 	if goal == "" {
 		goal = "Clarify the user goal before running automation."
@@ -41,6 +57,7 @@ func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotReques
 		}, bridge)
 	})
 	if err != nil {
+		s.logError(ctx, "Autopilot", sessionID, err)
 		return nil, err
 	}
 	_ = s.appendHistory(ctx, sessionID, "assistant", result.Result)

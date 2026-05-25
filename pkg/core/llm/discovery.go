@@ -32,7 +32,7 @@ func DiscoverModels(ctx context.Context, cfg *Config) (DiscoveryResult, error) {
 		return discoverOpenAIModels(ctx, *cfg)
 	case "gemini":
 		return discoverGeminiModels(ctx, *cfg)
-	case "github-copilot-cli", "qodercli":
+	case "github-copilot-cli", "qodercli", "agy-cli", "agy-sdk":
 		return DiscoveryResult{Provider: provider}, ErrModelDiscoveryUnsupported
 	default:
 		return DiscoveryResult{Provider: provider}, fmt.Errorf("unsupported provider: %s", cfg.Provider)
@@ -213,6 +213,10 @@ func normalizeDiscoveryProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "gemini-cli", "gemini_cli":
 		return "gemini"
+	case "agy-sdk", "agy_sdk", "antigravity-sdk":
+		return "agy-sdk"
+	case "agy-cli", "agy_cli", "agy":
+		return "agy-cli"
 	case "github-copilot-cli", "copilot-cli", "github-copilot":
 		return "github-copilot-cli"
 	case "qodercli", "qoder-cli", "qoder":

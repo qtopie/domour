@@ -8,15 +8,19 @@ require (
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.8
 	github.com/cloudwego/eino-ext/components/model/qwen v0.1.5
 	github.com/dgraph-io/badger/v4 v4.9.1
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/go-viper/encoding/ini v0.1.1
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/maypok86/otter v1.2.4
 	github.com/nats-io/nats.go v1.49.0
+	github.com/qtopie/antigravity-sdk-go v0.0.0
 	github.com/spf13/viper v1.20.1
 	github.com/surrealdb/surrealdb.go v1.4.0
+	go.opentelemetry.io/otel/trace v1.37.0
 	google.golang.org/genai v1.24.0
 	google.golang.org/grpc v1.71.1
-	google.golang.org/protobuf v1.36.7
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -38,7 +42,6 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect
@@ -51,7 +54,6 @@ require (
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
@@ -88,7 +90,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
-	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.27.0 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
@@ -100,3 +101,5 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/qtopie/antigravity-sdk-go => /home/qtopierw/workspace/projects/antigravity-sdk-python/antigravity-sdk-go

@@ -11,8 +11,23 @@ import (
 
 func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStreamingServer[copilotpb.CopilotResponse]) error {
 	sessionID := normalizeSessionID(req.GetSessionId())
+	s.logCall(stream.Context(), "Copilot", sessionID)
+
 	ctx := withRuntimeMetadata(stream.Context(), sessionID, req.GetWorkspace())
 	history, _ := s.getHistory(ctx, sessionID)
+
+	// Check provider readiness
+	brainClient, err := s.brain.GetClient(ctx, "copilot")
+	if err == nil {
+		if ready, readyErr := brainClient.IsReady(ctx); !ready || readyErr != nil {
+			err = readyErr
+			if err == nil {
+				err = fmt.Errorf("provider %s is not ready", brainClient.Provider())
+			}
+			s.logError(stream.Context(), "Copilot.Readiness", sessionID, err)
+			return err
+		}
+	}
 
 	userMessage := strings.TrimSpace(req.GetMessage())
 	if userMessage == "" {
@@ -49,12 +64,14 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 		go s.streamCopilotBrainToBridge(brainCtx, brainCancel, brainReq, bridge)
 	})
 	if err != nil {
+		s.logError(stream.Context(), "Copilot", sessionID, err)
 		return err
 	}
 
 	var parts []string
 	for event := range motorStream {
 		if event.Err != nil {
+			s.logError(stream.Context(), "Copilot", sessionID, event.Err)
 			return event.Err
 		}
 		if strings.TrimSpace(event.Content) != "" {
@@ -67,6 +84,7 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 			Complete:  event.Done,
 			Meta:      mergeCopilotMeta(event.Meta),
 		}); err != nil {
+			s.logError(stream.Context(), "Copilot", sessionID, err)
 			return err
 		}
 	}

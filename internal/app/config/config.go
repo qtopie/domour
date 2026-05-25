@@ -42,6 +42,7 @@ type DaprConfig struct {
 
 type DomourConfig struct {
 	HTTPSProxy      string                    `json:"https_proxy"`
+	LogAsJSON       bool                      `json:"log_as_json,omitempty"`
 	DefaultProvider string                    `json:"default_provider,omitempty"`
 	DefaultModel    string                    `json:"default_model,omitempty"`
 	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
@@ -307,6 +308,13 @@ func (c DomourConfig) DaprHTTPAddress() string {
 	return "127.0.0.1:3500"
 }
 
+func (c DomourConfig) IsLogAsJSON() bool {
+	if value := strings.ToLower(strings.TrimSpace(os.Getenv("DOMOUR_LOG_AS_JSON"))); value != "" {
+		return value == "true" || value == "1" || value == "yes"
+	}
+	return c.LogAsJSON
+}
+
 func loadOrCreateDomourConfig(path string) (DomourConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -441,8 +449,14 @@ func initLegacyConfig() {
 
 func normalizeProviderKey(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "gemini", "gemini-cli", "gemini_cli":
+	case "gemini":
 		return "gemini"
+	case "gemini-cli", "gemini_cli":
+		return "gemini-cli"
+	case "agy-sdk", "agy_sdk", "antigravity-sdk":
+		return "agy-sdk"
+	case "agy-cli", "agy_cli", "agy":
+		return "agy-cli"
 	case "ollama":
 		return "ollama"
 	case "github-copilot-cli", "copilot-cli", "github-copilot":

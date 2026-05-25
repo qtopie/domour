@@ -85,6 +85,17 @@ func attachmentToInputPart(attachment BrainAttachment) (schema.MessageInputPart,
 			Type:  schema.ChatMessagePartTypeImageURL,
 			Image: image,
 		}, nil
+	case isTextLikeMIMEType(mimeType):
+		// Use ImageURL as a generic file container for CLI adapter.
+		// We'll use the same structure as Image but the CLI adapter will check MIMEType.
+		image, err := attachmentToInputImage(attachment, mimeType)
+		if err != nil {
+			return schema.MessageInputPart{}, err
+		}
+		return schema.MessageInputPart{
+			Type:  schema.ChatMessagePartTypeImageURL,
+			Image: image,
+		}, nil
 	case strings.HasPrefix(mimeType, "audio/"):
 		return schema.MessageInputPart{}, fmt.Errorf("audio attachments are not supported yet")
 	case strings.HasPrefix(mimeType, "video/"):
@@ -94,6 +105,20 @@ func attachmentToInputPart(attachment BrainAttachment) (schema.MessageInputPart,
 	default:
 		return schema.MessageInputPart{}, fmt.Errorf("attachment %q with mime type %q is not supported", attachmentName(attachment), mimeType)
 	}
+}
+
+func isTextLikeMIMEType(mimeType string) bool {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	return strings.HasPrefix(mimeType, "text/") ||
+		mimeType == "application/json" ||
+		mimeType == "application/xml" ||
+		mimeType == "application/javascript" ||
+		mimeType == "application/x-javascript" ||
+		mimeType == "application/yaml" ||
+		mimeType == "application/x-yaml" ||
+		mimeType == "application/toml" ||
+		strings.HasSuffix(mimeType, "+json") ||
+		strings.HasSuffix(mimeType, "+xml")
 }
 
 func attachmentToInputImage(attachment BrainAttachment, mimeType string) (*schema.MessageInputImage, error) {

@@ -44,10 +44,11 @@ func TestApplyChatInterceptionContextIncludesOCRFacts(t *testing.T) {
 	t.Parallel()
 
 	prompt := applyChatInterceptionContext("User request:\n请分析图片", &ChatInterception{
-		Source:   "ollama",
-		Summary:  "A receipt screenshot.",
-		KeyFacts: []string{"total_amount=138", "order_id=A9021"},
-		OCRText:  "Total 138\nOrder A9021",
+		Source:     "ollama",
+		Summary:    "A receipt screenshot.",
+		KeyFacts:   []string{"total_amount=138", "order_id=A9021"},
+		OCRText:    "Total 138\nOrder A9021",
+		Confidence: 1.0,
 	})
 	if !strings.Contains(prompt, "Motor context interception:") {
 		t.Fatalf("applyChatInterceptionContext() = %q, want interception header", prompt)

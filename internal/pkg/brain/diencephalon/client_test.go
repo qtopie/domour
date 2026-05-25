@@ -1,6 +1,7 @@
 package diencephalon
 
 import (
+	"context"
 	"testing"
 
 	appconfig "github.com/qtopie/domour/internal/app/config"
@@ -146,5 +147,19 @@ func TestResolveConfigUsesEntryConfigModel(t *testing.T) {
 	}
 	if cfg.Model != "qwen2.5-coder" {
 		t.Fatalf("ResolveConfig().Model = %q, want %q", cfg.Model, "qwen2.5-coder")
+	}
+}
+
+func TestChatClientIsReady(t *testing.T) {
+	// Test that it handles "unsupported provider" as ready (fallback for not yet implemented discovery)
+	client := &chatClient{
+		provider: "some-unknown-provider",
+	}
+	ready, err := client.IsReady(context.Background())
+	if !ready {
+		t.Fatalf("IsReady() = false, want true for unknown provider (fallback)")
+	}
+	if err != nil {
+		t.Fatalf("IsReady() error = %v, want nil", err)
 	}
 }

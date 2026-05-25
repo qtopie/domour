@@ -39,6 +39,19 @@ func newLocalBrainClient() (BrainClient, error) {
 	}, nil
 }
 
+func (b *localBrainClient) GetClient(ctx context.Context, entry string) (diencephalon.Client, error) {
+	switch strings.ToLower(strings.TrimSpace(entry)) {
+	case "chat":
+		return b.chatModel, nil
+	case "copilot":
+		return b.copilotModel, nil
+	case "autopilot":
+		return b.autopilotModel, nil
+	default:
+		return nil, fmt.Errorf("unsupported brain entry %q", entry)
+	}
+}
+
 func (b *localBrainClient) StreamChat(ctx context.Context, req BrainChatRequest) (<-chan BrainStreamEvent, error) {
 	stream := make(chan BrainStreamEvent, 2)
 

@@ -3,11 +3,13 @@ package agent
 import (
 	"context"
 
+	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 	"github.com/qtopie/domour/internal/pkg/copilot/shared"
 	"github.com/qtopie/domour/internal/pkg/motor"
 )
 
 type BrainClient interface {
+	GetClient(ctx context.Context, entry string) (diencephalon.Client, error)
 	StreamChat(ctx context.Context, req BrainChatRequest) (<-chan BrainStreamEvent, error)
 	StreamAutopilot(ctx context.Context, req BrainAutopilotRequest) (<-chan BrainStreamEvent, error)
 	StreamCopilot(ctx context.Context, req BrainCopilotRequest) (<-chan BrainStreamEvent, error)

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/qtopie/domour/pkg/core/llm"
 )
 
 type DiscoveryProvider interface {
 	Discover(ctx context.Context) ([]Entry, error)
+	CheckHealth(ctx context.Context) (ResourceStatus, error)
 }
 
 type LLMDiscoveryProvider struct {
@@ -30,6 +32,8 @@ func (p *LLMDiscoveryProvider) Discover(ctx context.Context) ([]Entry, error) {
 			Provider: result.Provider,
 			Name:     modelName,
 			Source:   result.Source,
+			Status:   StatusOnline,
+			LastCheck: time.Now().Unix(),
 		}
 
 		// Basic capability inferring based on name for now
@@ -41,6 +45,14 @@ func (p *LLMDiscoveryProvider) Discover(ctx context.Context) ([]Entry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+func (p *LLMDiscoveryProvider) CheckHealth(ctx context.Context) (ResourceStatus, error) {
+	_, err := llm.DiscoverModels(ctx, &p.Config)
+	if err != nil {
+		return StatusOffline, err
+	}
+	return StatusOnline, nil
 }
 
 func DiscoverAndPopulate(ctx context.Context, r *Registry, providers []DiscoveryProvider) error {
@@ -55,4 +67,50 @@ func DiscoverAndPopulate(ctx context.Context, r *Registry, providers []Discovery
 		}
 	}
 	return nil
+}
+
+func StartPeriodicHealthCheck(ctx context.Context, r *Registry, providers []DiscoveryProvider, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				for _, p := range providers {
+					lp, ok := p.(*LLMDiscoveryProvider)
+					if !ok {
+						continue
+					}
+
+					// Optimization: Check if any entry for this provider was recently updated
+					// (e.g. by a successful message reply)
+					entries := r.List(func(e Entry) bool {
+						return e.Provider == lp.Config.Provider
+					})
+
+					shouldCheck := true
+					now := time.Now().Unix()
+					for _, e := range entries {
+						// If updated within 80% of the interval, skip active check
+						if now-e.LastCheck < int64(interval.Seconds()*0.8) {
+							shouldCheck = false
+							break
+						}
+					}
+
+					if !shouldCheck {
+						continue
+					}
+
+					status, _ := p.CheckHealth(ctx)
+					for _, e := range entries {
+						r.SetStatus(e.ID, status)
+					}
+				}
+			}
+		}
+	}()
 }

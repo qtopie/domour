@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/qtopie/domour/internal/app/config"
+	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 )
 
 type reloadableBrain struct {
@@ -43,6 +44,10 @@ func (b *reloadableBrain) getInner() BrainClient {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.inner
+}
+
+func (b *reloadableBrain) GetClient(ctx context.Context, entry string) (diencephalon.Client, error) {
+	return b.getInner().GetClient(ctx, entry)
 }
 
 func (b *reloadableBrain) StreamChat(ctx context.Context, req BrainChatRequest) (<-chan BrainStreamEvent, error) {

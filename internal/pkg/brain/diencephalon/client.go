@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	appconfig "github.com/qtopie/domour/internal/app/config"
 	brainllm "github.com/qtopie/domour/pkg/core/llm"
+	"github.com/qtopie/domour/pkg/core/registry"
 )
 
 type Config struct {
@@ -29,9 +30,33 @@ type Response struct {
 type Client interface {
 	Provider() string
 	Model() string
+	IsReady(ctx context.Context) (bool, error)
 	GenerateMessage(ctx context.Context, messages []*schema.Message) (*schema.Message, error)
 	GenerateText(ctx context.Context, messages []*schema.Message) (Response, error)
 	BindTools(tools []*schema.ToolInfo) error
+}
+
+func (c *chatClient) IsReady(ctx context.Context) (bool, error) {
+	// If it's a CLI-based model, use its specialized IsReady check
+	if cliModel, ok := c.client.(interface {
+		IsReady(context.Context) (bool, error)
+	}); ok {
+		return cliModel.IsReady(ctx)
+	}
+
+	// For API providers, attempt model discovery as a health check
+	_, err := brainllm.DiscoverModels(ctx, &brainllm.Config{
+		Provider: c.provider,
+	})
+	if err == nil {
+		return true, nil
+	}
+
+	if strings.Contains(err.Error(), "unsupported provider") || strings.Contains(err.Error(), "not supported") {
+		return true, nil // Treat as ready if discovery is just not implemented
+	}
+
+	return false, err
 }
 
 type chatClient struct {
@@ -126,6 +151,11 @@ func (c *chatClient) GenerateMessage(ctx context.Context, messages []*schema.Mes
 	if resp == nil {
 		return nil, fmt.Errorf("%s returned nil message", c.provider)
 	}
+
+	// Passive health check: successful reply confirms connectivity.
+	// This will postpone the next active Discovery check.
+	registry.Global().TouchStatus(fmt.Sprintf("%s:%s", c.provider, c.model))
+
 	return resp, nil
 }
 

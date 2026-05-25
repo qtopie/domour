@@ -11,8 +11,23 @@ import (
 
 func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer[chatpb.ChatResponse]) error {
 	sessionID := normalizeSessionID(req.GetSessionId())
+	s.logCall(stream.Context(), "Chat", sessionID)
+
 	ctx := withRuntimeMetadata(stream.Context(), sessionID, req.GetWorkspace())
 	history, _ := s.getHistory(ctx, sessionID)
+
+	// Check provider readiness
+	brainClient, err := s.brain.GetClient(ctx, "chat")
+	if err == nil {
+		if ready, readyErr := brainClient.IsReady(ctx); !ready || readyErr != nil {
+			err = readyErr
+			if err == nil {
+				err = fmt.Errorf("provider %s is not ready", brainClient.Provider())
+			}
+			s.logError(stream.Context(), "Chat.Readiness", sessionID, err)
+			return err
+		}
+	}
 
 	userMessage := strings.TrimSpace(req.GetMessage())
 	if userMessage == "" {
@@ -53,6 +68,7 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 	var replyParts []string
 	for event := range bridge.MotorOut {
 		if event.Err != nil {
+			s.logError(stream.Context(), "Chat", sessionID, event.Err)
 			return event.Err
 		}
 		if strings.TrimSpace(event.Content) != "" {
@@ -66,6 +82,7 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 			Done:      event.Done,
 			Meta:      mergeChatMeta(event.Meta, event.Stage),
 		}); err != nil {
+			s.logError(stream.Context(), "Chat", sessionID, err)
 			return err
 		}
 

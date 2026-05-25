@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino-ext/components/model/qwen"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/qtopie/domour/pkg/core/llm/cli"
 	// homa "github.com/qtopie/domour/internal/assistant/llm"
 	"google.golang.org/genai"
 )
@@ -35,22 +36,31 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 	// 	return homa.NewHomaChatModel(&homa.HomaChatModelConfig{
 	// 		APIKey: cfg.APIKey,
 	// 	})
+	case "agy-sdk", "agy_sdk", "antigravity-sdk":
+		return NewAGYSDKChatModel(ctx, cfg)
+	case "agy-cli", "agy_cli", "agy":
+		return cli.New(&cli.Config{
+			Provider: "agy-cli",
+			Command:  "agy",
+			Model:    cfg.Model,
+			ProxyURL: cfg.ProxyURL,
+		})
 	case "gemini-cli", "gemini_cli":
-		return NewCLIChatModel(&CLIChatModelConfig{
+		return cli.New(&cli.Config{
 			Provider: "gemini-cli",
 			Command:  "gemini",
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
 		})
 	case "github-copilot-cli", "copilot-cli", "github-copilot":
-		return NewCLIChatModel(&CLIChatModelConfig{
+		return cli.New(&cli.Config{
 			Provider: "github-copilot-cli",
 			Command:  "copilot",
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
 		})
 	case "qodercli", "qoder-cli":
-		return NewCLIChatModel(&CLIChatModelConfig{
+		return cli.New(&cli.Config{
 			Provider: "qodercli",
 			Command:  "qodercli",
 			Model:    cfg.Model,
