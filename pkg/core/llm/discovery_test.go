@@ -31,6 +31,29 @@ func TestDiscoverModelsOpenAICompatible(t *testing.T) {
 	}
 }
 
+func TestDiscoverModelsDeepSeek(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("path = %q, want /v1/models", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"deepseek-chat"},{"id":"deepseek-v4-flash"},{"id":"deepseek-v4-pro"}]}`))
+	}))
+	defer server.Close()
+
+	result, err := DiscoverModels(context.Background(), &Config{Provider: "deepseek", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("DiscoverModels() error = %v", err)
+	}
+	if result.Provider != "deepseek" {
+		t.Fatalf("Provider = %q, want deepseek", result.Provider)
+	}
+	if len(result.Models) != 3 || result.Models[0] != "deepseek-chat" || result.Models[1] != "deepseek-v4-flash" || result.Models[2] != "deepseek-v4-pro" {
+		t.Fatalf("Models = %#v, want [deepseek-chat deepseek-v4-flash deepseek-v4-pro]", result.Models)
+	}
+}
+
 func TestDiscoverModelsOllama(t *testing.T) {
 	t.Parallel()
 

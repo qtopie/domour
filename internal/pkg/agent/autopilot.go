@@ -13,7 +13,7 @@ func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotReques
 	s.logCall(ctx, "Autopilot", sessionID)
 
 	ctx = withRuntimeMetadata(ctx, sessionID, req.GetWorkspace())
-	history, _ := s.getHistory(ctx, sessionID)
+	sess, _ := s.getSession(ctx, sessionID)
 
 	// Check provider readiness
 	brainClient, err := s.brain.GetClient(ctx, "autopilot")
@@ -45,29 +45,32 @@ func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotReques
 		Goal:         goal,
 		Constraints:  req.GetConstraints(),
 		MaxSteps:     req.GetMaxSteps(),
-		HistoryCount: len(history),
+		HistoryCount: len(sess.History),
 	}, func(bridge *SessionBridge) {
 		go s.streamAutopilotBrainToBridge(brainCtx, brainCancel, BrainAutopilotRequest{
-			Workspace:   req.GetWorkspace(),
-			Goal:        goal,
-			Constraints: req.GetConstraints(),
-			MaxSteps:    req.GetMaxSteps(),
-			Attachments: attachments,
-			History:     history,
+			Workspace:     req.GetWorkspace(),
+			Goal:          goal,
+			Constraints:   req.GetConstraints(),
+			MaxSteps:      req.GetMaxSteps(),
+			Attachments:   attachments,
+			History:       sess.History,
+			MemorySummary: sess.MemorySummary,
+			Provider:      req.GetProvider(),
+			Model:         req.GetModel(),
 		}, bridge)
 	})
 	if err != nil {
 		s.logError(ctx, "Autopilot", sessionID, err)
 		return nil, err
 	}
-	_ = s.appendHistory(ctx, sessionID, "assistant", result.Result)
+	_ = s.appendHistoryWithMeta(ctx, sessionID, "assistant", result.Result, result.Meta["provider"], result.Meta["model"])
 
 	return &autopilotpb.AutopilotResponse{
 		SessionId: sessionID,
 		Seq:       req.GetSeq(),
 		Status:    result.Status,
 		Result:    result.Result,
-		Meta:      mergeAutopilotMeta(result.Meta),
+		Meta:      mergeAutopilotMeta(ctx, sessionID, result.Meta),
 	}, nil
 }
 
@@ -87,10 +90,12 @@ func buildAutopilotPrompt(goal, workspace string, constraints []string, maxSteps
 	return strings.Join(parts, "\n")
 }
 
-func mergeAutopilotMeta(meta map[string]string) map[string]string {
+func mergeAutopilotMeta(ctx context.Context, sessionID string, meta map[string]string) map[string]string {
 	out := map[string]string{
-		"entry": "autopilot",
-		"mode":  "mvp",
+		"entry":     "autopilot",
+		"mode":      "mvp",
+		"sessionId": sessionID,
+		"traceId":   getTraceID(ctx),
 	}
 	for k, v := range meta {
 		out[k] = v

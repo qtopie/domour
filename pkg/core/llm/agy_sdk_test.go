@@ -29,6 +29,14 @@ func TestDiscoverHarnessPath(t *testing.T) {
 		}
 	})
 
+	t.Run("ignore HTTP/HTTPS URLs from config file BaseURL", func(t *testing.T) {
+		os.Setenv("ANTIGRAVITY_HARNESS_PATH", "")
+		path := discoverHarnessPath(&Config{BaseURL: "http://127.0.0.1:11434/v1"})
+		if path == "http://127.0.0.1:11434/v1" {
+			t.Errorf("expected http URL to be ignored, but got %s", path)
+		}
+	})
+
 	t.Run("from sibling directories lookup", func(t *testing.T) {
 		os.Setenv("ANTIGRAVITY_HARNESS_PATH", "")
 		

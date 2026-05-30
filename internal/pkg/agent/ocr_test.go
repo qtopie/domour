@@ -207,6 +207,7 @@ type fakeChatModel struct {
 
 func (m *fakeChatModel) Provider() string { return "test" }
 func (m *fakeChatModel) Model() string    { return "test" }
+func (m *fakeChatModel) IsReady(context.Context) (bool, error) { return true, nil }
 func (m *fakeChatModel) GenerateMessage(context.Context, []*schema.Message) (*schema.Message, error) {
 	return nil, nil
 }

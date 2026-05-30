@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino/schema"
+	appconfig "github.com/qtopie/domour/internal/app/config"
 	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 	brainmvp "github.com/qtopie/domour/internal/pkg/brain/mvp"
 )
@@ -15,6 +17,9 @@ type localBrainClient struct {
 	copilotModel   diencephalon.Client
 	autopilotModel diencephalon.Client
 	fallback       *brainmvp.DiagramBrain
+
+	mu           sync.Mutex
+	dynamicCache map[string]diencephalon.Client
 }
 
 func newLocalBrainClient() (BrainClient, error) {
@@ -36,6 +41,7 @@ func newLocalBrainClient() (BrainClient, error) {
 		copilotModel:   copilotModel,
 		autopilotModel: autopilotModel,
 		fallback:       brainmvp.NewDiagramBrain(),
+		dynamicCache:   make(map[string]diencephalon.Client),
 	}, nil
 }
 
@@ -52,6 +58,68 @@ func (b *localBrainClient) GetClient(ctx context.Context, entry string) (diencep
 	}
 }
 
+func (b *localBrainClient) getClientForEntry(ctx context.Context, entry string, reqProvider, reqModel string) (diencephalon.Client, error) {
+	entry = strings.ToLower(strings.TrimSpace(entry))
+
+	if reqProvider == "" && reqModel == "" {
+		switch entry {
+		case "chat":
+			return b.chatModel, nil
+		case "copilot":
+			return b.copilotModel, nil
+		case "autopilot":
+			return b.autopilotModel, nil
+		default:
+			return nil, fmt.Errorf("unsupported brain entry %q", entry)
+		}
+	}
+
+	// Resolve the base config for the entry from current settings/config
+	domourCfg, err := appconfig.LoadDomourConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config for dynamic provider: %w", err)
+	}
+
+	cfg := diencephalon.ResolveConfig(entry, domourCfg)
+
+	// Apply overrides
+	if reqProvider != "" {
+		cfg.Provider = reqProvider
+		// When overriding provider, also load its key/url/proxy if defined in config
+		cfg.APIKey = domourCfg.APIKeyForProvider(reqProvider)
+		cfg.BaseURL = domourCfg.BaseURLForProvider(reqProvider)
+		cfg.ProxyURL = domourCfg.ProxyForProvider(reqProvider)
+		cfg.Model = domourCfg.ProviderModel(reqProvider)
+	}
+	if reqModel != "" {
+		cfg.Model = reqModel
+	}
+
+	cacheKey := fmt.Sprintf("%s:%s:%s:%s", cfg.Provider, cfg.Model, cfg.APIKey, cfg.BaseURL)
+
+	b.mu.Lock()
+	if b.dynamicCache == nil {
+		b.dynamicCache = make(map[string]diencephalon.Client)
+	}
+	client, exists := b.dynamicCache[cacheKey]
+	b.mu.Unlock()
+
+	if exists {
+		return client, nil
+	}
+
+	newClient, err := diencephalon.New(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	b.mu.Lock()
+	b.dynamicCache[cacheKey] = newClient
+	b.mu.Unlock()
+
+	return newClient, nil
+}
+
 func (b *localBrainClient) StreamChat(ctx context.Context, req BrainChatRequest) (<-chan BrainStreamEvent, error) {
 	stream := make(chan BrainStreamEvent, 2)
 
@@ -60,13 +128,16 @@ func (b *localBrainClient) StreamChat(ctx context.Context, req BrainChatRequest)
 
 		if isDiagramLike(req.Message, req.Filename) {
 			plan, err := b.PlanDiagram(ctx, BrainDiagramRequest{
-				Workspace:   req.Workspace,
-				Message:     req.Message,
-				Filename:    req.Filename,
-				FrontPart:   req.FrontPart,
-				BackPart:    req.BackPart,
-				Attachments: req.Attachments,
-				History:     req.History,
+				Workspace:     req.Workspace,
+				Message:       req.Message,
+				Filename:      req.Filename,
+				FrontPart:     req.FrontPart,
+				BackPart:      req.BackPart,
+				Attachments:   req.Attachments,
+				History:       req.History,
+				MemorySummary: req.MemorySummary,
+				Provider:      req.Provider,
+				Model:         req.Model,
 			})
 			if err != nil {
 				stream <- BrainStreamEvent{Type: "error", Err: err}
@@ -200,7 +271,7 @@ func (b *localBrainClient) ChatReply(ctx context.Context, req BrainChatRequest) 
 		messages := []*schema.Message{
 			schema.SystemMessage(buildChatSystemPrompt(req.Message, req.Attachments, snapshot.Interception)),
 		}
-		messages = append(messages, historyToSchema(req.History)...)
+		messages = append(messages, historyToSchema(req.History, req.MemorySummary)...)
 		userMessage, err := buildUserInputMessage(
 			applyChatInterceptionContext(buildChatPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart), snapshot.Interception),
 			req.Attachments,
@@ -210,7 +281,11 @@ func (b *localBrainClient) ChatReply(ctx context.Context, req BrainChatRequest) 
 		}
 		messages = append(messages, userMessage)
 
-		reply, err := b.chatModel.GenerateText(ctx, messages)
+		chatClient, err := b.getClientForEntry(ctx, "chat", req.Provider, req.Model)
+		if err != nil {
+			return BrainTextResponse{}, fmt.Errorf("resolve chat client: %w", err)
+		}
+		reply, err := chatClient.GenerateText(ctx, messages)
 		if err != nil {
 			return BrainTextResponse{}, err
 		}
@@ -237,14 +312,18 @@ func (b *localBrainClient) PlanDiagram(ctx context.Context, req BrainDiagramRequ
 	messages := []*schema.Message{
 		schema.SystemMessage("You are Domour Brain. Convert the user's request into valid D2 source only. Do not wrap the result in markdown fences. Keep the diagram concise and directly usable by the d2 CLI."),
 	}
-	messages = append(messages, historyToSchema(req.History)...)
+	messages = append(messages, historyToSchema(req.History, req.MemorySummary)...)
 	userMessage, err := buildUserInputMessage(buildDiagramPrompt(req.Message, req.Workspace, req.Filename, req.FrontPart, req.BackPart, format), req.Attachments)
 	if err != nil {
 		return BrainDiagramResponse{}, err
 	}
 	messages = append(messages, userMessage)
 
-	reply, err := b.chatModel.GenerateText(ctx, messages)
+	chatClient, err := b.getClientForEntry(ctx, "chat", req.Provider, req.Model)
+	if err != nil {
+		return BrainDiagramResponse{}, fmt.Errorf("resolve diagram chat client: %w", err)
+	}
+	reply, err := chatClient.GenerateText(ctx, messages)
 	if err == nil {
 		d2Source := stripCodeFence(reply.Content)
 		return BrainDiagramResponse{
@@ -276,14 +355,18 @@ func (b *localBrainClient) Copilot(ctx context.Context, req BrainCopilotRequest)
 	messages := []*schema.Message{
 		schema.SystemMessage("You are Domour Copilot. Produce the smallest correct patch or code suggestion for the user's request. Prefer concrete code over high-level advice when enough context is present."),
 	}
-	messages = append(messages, historyToSchema(req.History)...)
+	messages = append(messages, historyToSchema(req.History, req.MemorySummary)...)
 	userMessage, err := buildUserInputMessage(buildCopilotPrompt(req.Message, req.Workspace, req.Filename, req.CodeBefore, req.CodeAfter, req.CursorOffset), req.Attachments)
 	if err != nil {
 		return BrainTextResponse{}, err
 	}
 	messages = append(messages, userMessage)
 
-	reply, err := b.copilotModel.GenerateText(ctx, messages)
+	copilotClient, err := b.getClientForEntry(ctx, "copilot", req.Provider, req.Model)
+	if err != nil {
+		return BrainTextResponse{}, fmt.Errorf("resolve copilot client: %w", err)
+	}
+	reply, err := copilotClient.GenerateText(ctx, messages)
 	if err == nil {
 		return BrainTextResponse{
 			Content:  reply.Content,
@@ -306,9 +389,13 @@ func (b *localBrainClient) Autopilot(ctx context.Context, req BrainAutopilotRequ
 		return BrainTextResponse{}, err
 	}
 	messages = append(messages, userMessage)
-	messages = append(historyToSchema(req.History), messages...)
+	messages = append(historyToSchema(req.History, req.MemorySummary), messages...)
 
-	reply, err := b.autopilotModel.GenerateText(ctx, messages)
+	autopilotClient, err := b.getClientForEntry(ctx, "autopilot", req.Provider, req.Model)
+	if err != nil {
+		return BrainTextResponse{}, fmt.Errorf("resolve autopilot client: %w", err)
+	}
+	reply, err := autopilotClient.GenerateText(ctx, messages)
 	if err == nil {
 		return BrainTextResponse{
 			Content:  reply.Content,

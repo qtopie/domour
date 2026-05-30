@@ -2,6 +2,9 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,5 +109,100 @@ func TestCLIChatModelIsReady(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("New() should fail for non-existent command")
+	}
+}
+
+func TestVProxyWrappingIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	traceFile := filepath.Join(tmpDir, "trace.log")
+
+	// Create mock vproxy binary
+	vproxyName := "vproxy"
+	var scriptContent string
+	if filepath.Separator == '\\' {
+		// Windows batch script
+		vproxyName = "vproxy.bat"
+		scriptContent = fmt.Sprintf(`@echo off
+echo ARGS: %%* >> "%s"
+:loop
+if "%%~1"=="" goto end
+if "%%~1"=="-c" (
+    echo CONFIG_CONTENT: >> "%s"
+    type "%%~2" >> "%s"
+    shift
+    shift
+    goto loop
+)
+shift
+goto loop
+:end
+`, traceFile, traceFile, traceFile)
+	} else {
+		// Unix shell script
+		scriptContent = fmt.Sprintf(`#!/bin/bash
+echo "ARGS: $*" >> "%s"
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -c)
+      echo "CONFIG_CONTENT:" >> "%s"
+      cat "$2" >> "%s"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+`, traceFile, traceFile, traceFile)
+	}
+
+	vproxyPath := filepath.Join(tmpDir, vproxyName)
+	err := os.WriteFile(vproxyPath, []byte(scriptContent), 0755)
+	if err != nil {
+		t.Fatalf("failed to write mock vproxy script: %v", err)
+	}
+
+	// Backup and modify PATH
+	originalPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", originalPath)
+
+	newPath := tmpDir + string(filepath.ListSeparator) + originalPath
+	os.Setenv("PATH", newPath)
+
+	// Create CLI model with proxy configured and command set to "true" (or "cmd.exe" on Windows)
+	cmd := "true"
+	if filepath.Separator == '\\' {
+		cmd = "cmd.exe"
+	}
+
+	m, err := New(&Config{
+		Provider: "qodercli",
+		Command:  cmd,
+		ProxyURL: "socks5://127.0.0.1:9999",
+	})
+	if err != nil {
+		t.Fatalf("failed to create CLI Chat Model: %v", err)
+	}
+
+	cliModel := m.(*CLIChatModel)
+	cliModel.performHealthCheck()
+
+	// Verify trace file exists and contains correct content
+	traceData, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("failed to read trace file: %v. Integration test failed to invoke wrapped mock vproxy.", err)
+	}
+
+	traceStr := string(traceData)
+	t.Logf("Mock Vproxy output trace:\n%s", traceStr)
+
+	if !strings.Contains(traceStr, "ARGS:") {
+		t.Fatalf("expected trace to contain ARGS, but got:\n%s", traceStr)
+	}
+	if !strings.Contains(traceStr, "socks5://127.0.0.1:9999") {
+		t.Fatalf("expected trace to contain upstream proxy socks5://127.0.0.1:9999, but got:\n%s", traceStr)
+	}
+	if !strings.Contains(traceStr, "CONFIG_CONTENT:") {
+		t.Fatalf("expected trace to contain CONFIG_CONTENT:, but got:\n%s", traceStr)
 	}
 }

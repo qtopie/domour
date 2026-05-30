@@ -18,11 +18,13 @@ import (
 const DefaultHTTPSProxy = ""
 
 type ProviderConfig struct {
-	HTTPSProxy string   `json:"https_proxy"`
-	APIKey     string   `json:"api_key,omitempty"`
-	BaseURL    string   `json:"base_url,omitempty"`
-	Model      string   `json:"model,omitempty"`
-	Models     []string `json:"models,omitempty"`
+	HTTPSProxy            string   `json:"https_proxy"`
+	APIKey                string   `json:"api_key,omitempty"`
+	BaseURL               string   `json:"base_url,omitempty"`
+	Model                 string   `json:"model,omitempty"`
+	Models                []string `json:"models,omitempty"`
+	MaxActiveTokens       int      `json:"max_active_tokens,omitempty"`
+	CompressTriggerTokens int      `json:"compress_trigger_tokens,omitempty"`
 }
 
 type EntryConfig struct {
@@ -41,14 +43,16 @@ type DaprConfig struct {
 }
 
 type DomourConfig struct {
-	HTTPSProxy      string                    `json:"https_proxy"`
-	LogAsJSON       bool                      `json:"log_as_json,omitempty"`
-	DefaultProvider string                    `json:"default_provider,omitempty"`
-	DefaultModel    string                    `json:"default_model,omitempty"`
-	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
-	Entries         map[string]EntryConfig    `json:"entries,omitempty"`
-	Services        map[string]ServiceConfig  `json:"services,omitempty"`
-	Dapr            DaprConfig                `json:"dapr,omitempty"`
+	HTTPSProxy            string                    `json:"https_proxy"`
+	LogAsJSON             bool                      `json:"log_as_json,omitempty"`
+	DefaultProvider       string                    `json:"default_provider,omitempty"`
+	DefaultModel          string                    `json:"default_model,omitempty"`
+	Providers             map[string]ProviderConfig `json:"providers,omitempty"`
+	Entries               map[string]EntryConfig    `json:"entries,omitempty"`
+	Services              map[string]ServiceConfig  `json:"services,omitempty"`
+	Dapr                  DaprConfig                `json:"dapr,omitempty"`
+	MaxActiveTokens       int                       `json:"max_active_tokens,omitempty"`
+	CompressTriggerTokens int                       `json:"compress_trigger_tokens,omitempty"`
 }
 
 var (
@@ -449,6 +453,8 @@ func initLegacyConfig() {
 
 func normalizeProviderKey(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "deepseek":
+		return "deepseek"
 	case "gemini":
 		return "gemini"
 	case "gemini-cli", "gemini_cli":

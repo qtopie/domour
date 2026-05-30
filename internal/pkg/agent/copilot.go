@@ -14,7 +14,7 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 	s.logCall(stream.Context(), "Copilot", sessionID)
 
 	ctx := withRuntimeMetadata(stream.Context(), sessionID, req.GetWorkspace())
-	history, _ := s.getHistory(ctx, sessionID)
+	sess, _ := s.getSession(ctx, sessionID)
 
 	// Check provider readiness
 	brainClient, err := s.brain.GetClient(ctx, "copilot")
@@ -40,14 +40,17 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 	defer brainCancel()
 
 	brainReq := BrainCopilotRequest{
-		Workspace:    req.GetWorkspace(),
-		Message:      userMessage,
-		Filename:     req.GetFilename(),
-		CodeBefore:   req.GetCodeBefore(),
-		CodeAfter:    req.GetCodeAfter(),
-		CursorOffset: req.GetCursorOffset(),
-		Attachments:  attachmentsFromProto(req.GetAttachments()),
-		History:      history,
+		Workspace:     req.GetWorkspace(),
+		Message:       userMessage,
+		Filename:      req.GetFilename(),
+		CodeBefore:    req.GetCodeBefore(),
+		CodeAfter:     req.GetCodeAfter(),
+		CursorOffset:  req.GetCursorOffset(),
+		Attachments:   attachmentsFromProto(req.GetAttachments()),
+		History:       sess.History,
+		MemorySummary: sess.MemorySummary,
+		Provider:      req.GetProvider(),
+		Model:         req.GetModel(),
 	}
 	motorStream, err := s.motor.Copilot(ctx, MotorCopilotRequest{
 		SessionID:    sessionID,
@@ -58,7 +61,7 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 		CodeBefore:   req.GetCodeBefore(),
 		CodeAfter:    req.GetCodeAfter(),
 		CursorOffset: req.GetCursorOffset(),
-		History:      history,
+		History:      sess.History,
 		Mode:         mode,
 	}, func(bridge *SessionBridge) {
 		go s.streamCopilotBrainToBridge(brainCtx, brainCancel, brainReq, bridge)
@@ -69,6 +72,7 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 	}
 
 	var parts []string
+	var lastProvider, lastModel string
 	for event := range motorStream {
 		if event.Err != nil {
 			s.logError(stream.Context(), "Copilot", sessionID, event.Err)
@@ -77,19 +81,27 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 		if strings.TrimSpace(event.Content) != "" {
 			parts = append(parts, event.Content)
 		}
+		if event.Meta != nil {
+			if p, ok := event.Meta["provider"]; ok && p != "" {
+				lastProvider = p
+			}
+			if m, ok := event.Meta["model"]; ok && m != "" {
+				lastModel = m
+			}
+		}
 		if err := stream.Send(&copilotpb.CopilotResponse{
 			SessionId: sessionID,
 			Seq:       req.GetSeq(),
 			Patch:     event.Content,
 			Complete:  event.Done,
-			Meta:      mergeCopilotMeta(event.Meta),
+			Meta:      mergeCopilotMeta(stream.Context(), sessionID, event.Meta),
 		}); err != nil {
 			s.logError(stream.Context(), "Copilot", sessionID, err)
 			return err
 		}
 	}
 
-	_ = s.appendHistory(ctx, sessionID, "assistant", strings.Join(parts, "\n"))
+	_ = s.appendHistoryWithMeta(ctx, sessionID, "assistant", strings.Join(parts, "\n"), lastProvider, lastModel)
 	return nil
 }
 
@@ -113,10 +125,12 @@ func buildCopilotPrompt(userMessage, workspace, filename, before, after string, 
 	return strings.Join(parts, "\n\n")
 }
 
-func mergeCopilotMeta(meta map[string]string) map[string]string {
+func mergeCopilotMeta(ctx context.Context, sessionID string, meta map[string]string) map[string]string {
 	out := map[string]string{
-		"entry": "copilot",
-		"mode":  "mvp",
+		"entry":     "copilot",
+		"mode":      "mvp",
+		"sessionId": sessionID,
+		"traceId":   getTraceID(ctx),
 	}
 	for k, v := range meta {
 		out[k] = v

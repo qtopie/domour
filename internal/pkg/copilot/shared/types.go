@@ -18,7 +18,10 @@ type ChunkData struct {
 }
 
 type Message struct {
-	Role    string `json:"role"` // "user" or "assistant"
-	Content string `json:"content"`
-	Time    int64  `json:"time"`
+	Role     string `json:"role"` // "user" or "assistant"
+	Content  string `json:"content"`
+	Time     int64  `json:"time"`
+	Seq      int32  `json:"seq,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }

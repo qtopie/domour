@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/config"
 	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
 )
@@ -39,10 +40,56 @@ func newDaprBrainClient(cfg config.DomourConfig) (BrainClient, error) {
 	}, nil
 }
 
+type daprBrainReadyClient struct {
+	provider string
+	model    string
+	c        *daprBrainClient
+}
+
+func (m *daprBrainReadyClient) Provider() string { return m.provider }
+func (m *daprBrainReadyClient) Model() string    { return m.model }
+func (m *daprBrainReadyClient) IsReady(ctx context.Context) (bool, error) {
+	target := fmt.Sprintf(
+		"http://%s/v1.0/invoke/%s/method/healthz",
+		strings.TrimSpace(m.c.sidecarHTTPAddress),
+		url.PathEscape(m.c.appID),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := m.c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("ping remote brain sidecar: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("remote brain health check returned status %d", resp.StatusCode)
+	}
+	return true, nil
+}
+
+func (m *daprBrainReadyClient) GenerateMessage(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
+	return nil, fmt.Errorf("unimplemented in proxy client")
+}
+func (m *daprBrainReadyClient) GenerateText(ctx context.Context, messages []*schema.Message) (diencephalon.Response, error) {
+	return diencephalon.Response{}, fmt.Errorf("unimplemented in proxy client")
+}
+func (m *daprBrainReadyClient) BindTools(tools []*schema.ToolInfo) error {
+	return fmt.Errorf("unimplemented in proxy client")
+}
+
 func (c *daprBrainClient) GetClient(ctx context.Context, entry string) (diencephalon.Client, error) {
-	// Dapr brain client is a proxy. For health check, we might need a specialized endpoint on the remote side.
-	// For now, return a placeholder or implement a remote readiness check if available.
-	return diencephalon.NewForEntry(ctx, entry)
+	domourCfg, err := config.LoadDomourConfig()
+	if err != nil {
+		return nil, err
+	}
+	resolvedCfg := diencephalon.ResolveConfig(entry, domourCfg)
+	return &daprBrainReadyClient{
+		provider: resolvedCfg.Provider,
+		model:    resolvedCfg.Model,
+		c:        c,
+	}, nil
 }
 
 func (c *daprBrainClient) StreamChat(ctx context.Context, req BrainChatRequest) (<-chan BrainStreamEvent, error) {
@@ -53,13 +100,14 @@ func (c *daprBrainClient) StreamChat(ctx context.Context, req BrainChatRequest) 
 
 		if isDiagramLike(req.Message, req.Filename) {
 			plan, err := c.PlanDiagram(ctx, BrainDiagramRequest{
-				Workspace:   req.Workspace,
-				Message:     req.Message,
-				Filename:    req.Filename,
-				FrontPart:   req.FrontPart,
-				BackPart:    req.BackPart,
-				Attachments: req.Attachments,
-				History:     req.History,
+				Workspace:     req.Workspace,
+				Message:       req.Message,
+				Filename:      req.Filename,
+				FrontPart:     req.FrontPart,
+				BackPart:      req.BackPart,
+				Attachments:   req.Attachments,
+				History:       req.History,
+				MemorySummary: req.MemorySummary,
 			})
 			if err != nil {
 				stream <- BrainStreamEvent{Type: "error", Err: err}

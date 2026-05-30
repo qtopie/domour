@@ -24,7 +24,7 @@ func discoverHarnessPath(cfg *Config) string {
 	}
 
 	// 2. Try config file via cfg.BaseURL
-	if cfg != nil && cfg.BaseURL != "" {
+	if cfg != nil && cfg.BaseURL != "" && !strings.HasPrefix(cfg.BaseURL, "http://") && !strings.HasPrefix(cfg.BaseURL, "https://") {
 		return cfg.BaseURL
 	}
 

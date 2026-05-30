@@ -31,6 +31,8 @@ type AutopilotRequest struct {
 	Constraints   []string               `protobuf:"bytes,5,rep,name=constraints,proto3" json:"constraints,omitempty"`
 	MaxSteps      int32                  `protobuf:"varint,6,opt,name=max_steps,json=maxSteps,proto3" json:"max_steps,omitempty"`
 	Attachments   []*common.Attachment   `protobuf:"bytes,7,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	Provider      string                 `protobuf:"bytes,8,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,9,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -114,6 +116,20 @@ func (x *AutopilotRequest) GetAttachments() []*common.Attachment {
 	return nil
 }
 
+func (x *AutopilotRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AutopilotRequest) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
 type AutopilotResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -194,7 +210,7 @@ var File_assistant_autopilot_autopilot_proto protoreflect.FileDescriptor
 
 const file_assistant_autopilot_autopilot_proto_rawDesc = "" +
 	"\n" +
-	"#assistant/autopilot/autopilot.proto\x12\x13assistant.autopilot\x1a\x1cassistant/common/media.proto\"\xf7\x01\n" +
+	"#assistant/autopilot/autopilot.proto\x12\x13assistant.autopilot\x1a\x1cassistant/common/media.proto\"\xa9\x02\n" +
 	"\x10AutopilotRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -203,7 +219,9 @@ const file_assistant_autopilot_autopilot_proto_rawDesc = "" +
 	"\x04goal\x18\x04 \x01(\tR\x04goal\x12 \n" +
 	"\vconstraints\x18\x05 \x03(\tR\vconstraints\x12\x1b\n" +
 	"\tmax_steps\x18\x06 \x01(\x05R\bmaxSteps\x12A\n" +
-	"\vattachments\x18\a \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\"\xf3\x01\n" +
+	"\vattachments\x18\a \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\x12\x1a\n" +
+	"\bprovider\x18\b \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\t \x01(\tR\x05model\"\xf3\x01\n" +
 	"\x11AutopilotResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +

@@ -9,6 +9,7 @@ import (
 
 	appconfig "github.com/qtopie/domour/internal/app/config"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/metadata"
 )
 
 func (s *Server) logCall(ctx context.Context, method string, sessionID string) {
@@ -47,8 +48,13 @@ func (s *Server) writeLog(ctx context.Context, level, msg, method, sessionID str
 
 func getTraceID(ctx context.Context) string {
 	spanCtx := trace.SpanContextFromContext(ctx)
-	if !spanCtx.IsValid() {
-		return "00000000000000000000000000000000"
+	if spanCtx.IsValid() {
+		return spanCtx.TraceID().String()
 	}
-	return spanCtx.TraceID().String()
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if ids := md.Get("x-trace-id"); len(ids) > 0 {
+			return ids[0]
+		}
+	}
+	return "00000000000000000000000000000000"
 }

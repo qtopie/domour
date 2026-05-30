@@ -18,6 +18,8 @@ message ChatRequest {
   string back_part = 6;
   string filename = 7;
   repeated assistant.common.v1.Attachment attachments = 8;
+  string provider = 9;
+  string model = 10;
 }
 
 message ChatResponse {

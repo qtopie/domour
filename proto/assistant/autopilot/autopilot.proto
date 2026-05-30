@@ -17,6 +17,8 @@ message AutopilotRequest {
   repeated string constraints = 5;
   int32 max_steps = 6;
   repeated assistant.common.v1.Attachment attachments = 7;
+  string provider = 8;
+  string model = 9;
 }
 
 message AutopilotResponse {

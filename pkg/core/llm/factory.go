@@ -66,8 +66,36 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
 		})
+	case "azure", "azure-openai", "azure_openai":
+		azureCfg := *cfg
+		apiVersion := "2024-06-01" // default stable version
+		
+		if u, err := url.Parse(azureCfg.BaseURL); err == nil && u.Host != "" {
+			if q := u.Query(); q.Get("api-version") != "" {
+				apiVersion = q.Get("api-version")
+			}
+			azureCfg.BaseURL = u.Scheme + "://" + u.Host
+		}
+		
+		c := &openai.ChatModelConfig{
+			APIKey:     azureCfg.APIKey,
+			Model:      azureCfg.Model,
+			ByAzure:    true,
+			BaseURL:    azureCfg.BaseURL,
+			APIVersion: apiVersion,
+		}
+		if httpClient != nil {
+			c.HTTPClient = httpClient
+		}
+		return openai.NewChatModel(ctx, c)
 	case "openai":
 		return newOpenAICompatibleChatModel(ctx, httpClient, *cfg)
+	case "deepseek":
+		deepseekCfg := *cfg
+		if strings.TrimSpace(deepseekCfg.BaseURL) == "" {
+			deepseekCfg.BaseURL = "https://api.deepseek.com"
+		}
+		return newOpenAICompatibleChatModel(ctx, httpClient, deepseekCfg)
 	case "ollama":
 		ollamaCfg := *cfg
 		if strings.TrimSpace(ollamaCfg.BaseURL) == "" {

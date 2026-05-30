@@ -32,6 +32,8 @@ type ChatRequest struct {
 	BackPart      string                 `protobuf:"bytes,6,opt,name=back_part,json=backPart,proto3" json:"back_part,omitempty"`
 	Filename      string                 `protobuf:"bytes,7,opt,name=filename,proto3" json:"filename,omitempty"`
 	Attachments   []*common.Attachment   `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	Provider      string                 `protobuf:"bytes,9,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,10,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,6 +124,20 @@ func (x *ChatRequest) GetAttachments() []*common.Attachment {
 	return nil
 }
 
+func (x *ChatRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *ChatRequest) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
 type ChatResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -202,7 +218,7 @@ var File_assistant_chat_chat_proto protoreflect.FileDescriptor
 
 const file_assistant_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x19assistant/chat/chat.proto\x12\x0eassistant.chat\x1a\x1cassistant/common/media.proto\"\x91\x02\n" +
+	"\x19assistant/chat/chat.proto\x12\x0eassistant.chat\x1a\x1cassistant/common/media.proto\"\xc3\x02\n" +
 	"\vChatRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -213,7 +229,10 @@ const file_assistant_chat_chat_proto_rawDesc = "" +
 	"front_part\x18\x05 \x01(\tR\tfrontPart\x12\x1b\n" +
 	"\tback_part\x18\x06 \x01(\tR\bbackPart\x12\x1a\n" +
 	"\bfilename\x18\a \x01(\tR\bfilename\x12A\n" +
-	"\vattachments\x18\b \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\"\xe2\x01\n" +
+	"\vattachments\x18\b \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\x12\x1a\n" +
+	"\bprovider\x18\t \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\n" +
+	" \x01(\tR\x05model\"\xe2\x01\n" +
 	"\fChatResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +

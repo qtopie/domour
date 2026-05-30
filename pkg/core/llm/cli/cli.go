@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -118,6 +119,54 @@ func (m *CLIChatModel) runHealthMonitor() {
 	}
 }
 
+func (m *CLIChatModel) wrapWithVProxy(ctx context.Context, command string, args []string) (*exec.Cmd, string, func()) {
+	cleanup := func() {}
+	if m.proxyURL == "" {
+		return exec.CommandContext(ctx, command, args...), command, cleanup
+	}
+
+	// Check if vproxy is available
+	vproxyPath, err := exec.LookPath("vproxy")
+	if err != nil {
+		// Fallback to direct execution
+		return exec.CommandContext(ctx, command, args...), command, cleanup
+	}
+
+	// Create a temporary vproxy.json configuration
+	tempFile, err := os.CreateTemp("", "vproxy-*.json")
+	if err != nil {
+		// Fallback to direct execution
+		return exec.CommandContext(ctx, command, args...), command, cleanup
+	}
+
+	configData := map[string]any{
+		"upstreams": []string{m.proxyURL},
+		"rules": []string{
+			fmt.Sprintf("PROCESS,%s,PROXY", filepath.Base(command)),
+			"FINAL,PROXY",
+		},
+		"test_interval": 30,
+	}
+
+	jsonData, err := json.MarshalIndent(configData, "", "  ")
+	if err == nil {
+		_, _ = tempFile.Write(jsonData)
+	}
+	_ = tempFile.Close()
+
+	configPath := tempFile.Name()
+	cleanup = func() {
+		_ = os.Remove(configPath)
+	}
+
+	// Wrap command with vproxy: vproxy -c <temp-config-path> <command> <args...>
+	vproxyArgs := []string{"-c", configPath, command}
+	vproxyArgs = append(vproxyArgs, args...)
+
+	cmd := exec.CommandContext(ctx, vproxyPath, vproxyArgs...)
+	return cmd, vproxyPath, cleanup
+}
+
 func (m *CLIChatModel) performHealthCheck() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -140,7 +189,8 @@ func (m *CLIChatModel) performHealthCheck() {
 		args = []string{"--version"}
 	}
 
-	cmd := exec.CommandContext(ctx, m.command, args...)
+	cmd, _, cleanup := m.wrapWithVProxy(ctx, m.command, args)
+	defer cleanup()
 	cmd.Env = applyProxyEnv(os.Environ(), m.proxyURL)
 
 	var stdout, stderr bytes.Buffer
@@ -157,6 +207,7 @@ func (m *CLIChatModel) performHealthCheck() {
 	defer m.mu.Unlock()
 
 	if runErr != nil {
+		fmt.Printf("[CLI Health Check] %s failed: %v\n", m.command, runErr)
 		m.ready = false
 		m.lastCheckErr = fmt.Errorf("%s health check failed: %w", m.command, runErr)
 		return
@@ -169,6 +220,7 @@ func (m *CLIChatModel) performHealthCheck() {
 	} else {
 		m.stats = output
 	}
+	fmt.Printf("[CLI Health Check] %s succeeded: stats=%s\n", m.command, m.stats)
 }
 
 func (m *CLIChatModel) Generate(ctx context.Context, input []*schema.Message, _ ...model.Option) (*schema.Message, error) {
@@ -283,7 +335,8 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, m.command, args...)
+	cmd, _, cleanup := m.wrapWithVProxy(ctx, m.command, args)
+	defer cleanup()
 	cmd.Env = applyProxyEnv(os.Environ(), m.proxyURL)
 	if runtime.Workspace != "" {
 		cmd.Dir = runtime.Workspace

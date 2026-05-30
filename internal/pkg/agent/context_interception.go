@@ -340,7 +340,7 @@ func hasConfiguredProvider(cfg appconfig.DomourConfig, provider string) bool {
 
 func supportsImageInterceptionProvider(provider string) bool {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai", "ollama", "gemini", "qwen":
+	case "openai", "ollama", "gemini", "qwen", "deepseek":
 		return true
 	default:
 		return false

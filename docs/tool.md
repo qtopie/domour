@@ -18,5 +18,8 @@
 * 本地内建工具默认包括：
   * `render_d2`：Internal Go tool
   * `shell.exec`：CLI tool
+  * `search.grep`：Internal Go tool (powered by sniphunt)
+  * `file.edit_lines`：Internal Go tool (line-range replacement)
+  * `file.replace`：Internal Go tool (exact string replacement)
 * gRPC / MCP tool 通过同一套 registry 接入，由调用方提供 client factory，生命周期仍由 `motor` 托管。
 * skill 负责提供 instructions 与允许的工具清单，tool 继续负责真实执行；两者分离但共用一套生命周期管理。

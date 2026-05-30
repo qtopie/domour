@@ -14,7 +14,7 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 	s.logCall(stream.Context(), "Chat", sessionID)
 
 	ctx := withRuntimeMetadata(stream.Context(), sessionID, req.GetWorkspace())
-	history, _ := s.getHistory(ctx, sessionID)
+	sess, _ := s.getSession(ctx, sessionID)
 
 	// Check provider readiness
 	brainClient, err := s.brain.GetClient(ctx, "chat")
@@ -40,15 +40,18 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 
 	bridge := newSessionBridge()
 	brainReq := BrainChatRequest{
-		SessionID:   sessionID,
-		Seq:         req.GetSeq(),
-		Workspace:   req.GetWorkspace(),
-		Message:     userMessage,
-		Filename:    req.GetFilename(),
-		FrontPart:   req.GetFrontPart(),
-		BackPart:    req.GetBackPart(),
-		Attachments: attachmentsFromProto(req.GetAttachments()),
-		History:     history,
+		SessionID:     sessionID,
+		Seq:           req.GetSeq(),
+		Workspace:     req.GetWorkspace(),
+		Message:       userMessage,
+		Filename:      req.GetFilename(),
+		FrontPart:     req.GetFrontPart(),
+		BackPart:      req.GetBackPart(),
+		Attachments:   attachmentsFromProto(req.GetAttachments()),
+		History:       sess.History,
+		MemorySummary: sess.MemorySummary,
+		Provider:      req.GetProvider(),
+		Model:         req.GetModel(),
 	}
 	motorReq := MotorChatRequest{
 		SessionID:   sessionID,
@@ -59,13 +62,14 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 		FrontPart:   req.GetFrontPart(),
 		BackPart:    req.GetBackPart(),
 		Attachments: attachmentsFromProto(req.GetAttachments()),
-		History:     history,
+		History:     sess.History,
 	}
 
 	go s.streamBrainToBridge(brainCtx, brainCancel, brainReq, bridge)
 	go s.streamMotorToBridge(ctx, motorReq, bridge)
 
 	var replyParts []string
+	var lastProvider, lastModel string
 	for event := range bridge.MotorOut {
 		if event.Err != nil {
 			s.logError(stream.Context(), "Chat", sessionID, event.Err)
@@ -74,20 +78,28 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 		if strings.TrimSpace(event.Content) != "" {
 			replyParts = append(replyParts, event.Content)
 		}
+		if event.Meta != nil {
+			if p, ok := event.Meta["provider"]; ok && p != "" {
+				lastProvider = p
+			}
+			if m, ok := event.Meta["model"]; ok && m != "" {
+				lastModel = m
+			}
+		}
 
 		if err := stream.Send(&chatpb.ChatResponse{
 			SessionId: sessionID,
 			Seq:       req.GetSeq(),
 			Content:   event.Content,
 			Done:      event.Done,
-			Meta:      mergeChatMeta(event.Meta, event.Stage),
+			Meta:      mergeChatMeta(stream.Context(), sessionID, event.Meta, event.Stage),
 		}); err != nil {
 			s.logError(stream.Context(), "Chat", sessionID, err)
 			return err
 		}
 
 		if event.Done {
-			_ = s.appendHistory(ctx, sessionID, "assistant", strings.Join(replyParts, "\n"))
+			_ = s.appendHistoryWithMeta(ctx, sessionID, "assistant", strings.Join(replyParts, "\n"), lastProvider, lastModel)
 		}
 	}
 	return nil
@@ -185,11 +197,13 @@ func buildChatSummaryMessage(message, workspace, filename string, historyCount i
 	return strings.Join(parts, "\n")
 }
 
-func mergeChatMeta(meta map[string]string, stage string) map[string]string {
+func mergeChatMeta(ctx context.Context, sessionID string, meta map[string]string, stage string) map[string]string {
 	out := map[string]string{
-		"entry": "chat",
-		"mode":  "mvp",
-		"stage": stage,
+		"entry":     "chat",
+		"mode":      "mvp",
+		"stage":     stage,
+		"sessionId": sessionID,
+		"traceId":   getTraceID(ctx),
 	}
 	for k, v := range meta {
 		out[k] = v

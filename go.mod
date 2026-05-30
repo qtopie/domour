@@ -15,6 +15,7 @@ require (
 	github.com/maypok86/otter v1.2.4
 	github.com/nats-io/nats.go v1.49.0
 	github.com/qtopie/antigravity-sdk-go v0.0.0
+	github.com/qtopie/sniphunt v0.1.1
 	github.com/spf13/viper v1.20.1
 	github.com/surrealdb/surrealdb.go v1.4.0
 	go.opentelemetry.io/otel/trace v1.37.0
@@ -36,6 +37,7 @@ require (
 	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.13 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -60,9 +62,11 @@ require (
 	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/karrick/godirwalk v1.17.0 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/masatana/go-textdistance v0.0.0-20191005053614-738b0edac985 // indirect
 	github.com/meguminnnnnnnnn/go-openai v0.1.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -95,6 +99,7 @@ require (
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250303144028-a0af3efb3deb // indirect
@@ -102,4 +107,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/qtopie/antigravity-sdk-go => /home/qtopierw/workspace/projects/antigravity-sdk-python/antigravity-sdk-go
+replace github.com/qtopie/antigravity-sdk-go => /home/qtopierw/workspace/projects/antigravity-sdk-go

@@ -19,6 +19,8 @@ message CopilotRequest {
   string filename = 7;
   int32 cursor_offset = 8;
   repeated assistant.common.v1.Attachment attachments = 9;
+  string provider = 10;
+  string model = 11;
 }
 
 message CopilotResponse {

@@ -28,8 +28,8 @@ func DiscoverModels(ctx context.Context, cfg *Config) (DiscoveryResult, error) {
 	switch provider {
 	case "ollama":
 		return discoverOllamaModels(ctx, *cfg)
-	case "openai":
-		return discoverOpenAIModels(ctx, *cfg)
+	case "openai", "deepseek":
+		return discoverOpenAICompatibleModels(ctx, *cfg)
 	case "gemini":
 		return discoverGeminiModels(ctx, *cfg)
 	case "github-copilot-cli", "qodercli", "agy-cli", "agy-sdk":
@@ -39,21 +39,31 @@ func DiscoverModels(ctx context.Context, cfg *Config) (DiscoveryResult, error) {
 	}
 }
 
-func discoverOpenAIModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
+func discoverOpenAICompatibleModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
+	provider := normalizeDiscoveryProvider(cfg.Provider)
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+		if provider == "deepseek" {
+			baseURL = "https://api.deepseek.com"
+		} else {
+			baseURL = "https://api.openai.com/v1"
+		}
 	}
 	endpoint := ensureModelsEndpoint(baseURL)
 	models, err := fetchOpenAIModels(ctx, endpoint, cfg)
 	if err != nil {
 		return DiscoveryResult{}, err
 	}
+
 	return DiscoveryResult{
-		Provider: "openai",
+		Provider: provider,
 		Models:   models,
 		Source:   endpoint,
 	}, nil
+}
+
+func discoverOpenAIModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
+	return discoverOpenAICompatibleModels(ctx, cfg)
 }
 
 func discoverOllamaModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
@@ -211,6 +221,8 @@ func effectiveHTTPClient(client *http.Client) *http.Client {
 
 func normalizeDiscoveryProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "deepseek":
+		return "deepseek"
 	case "gemini-cli", "gemini_cli":
 		return "gemini"
 	case "agy-sdk", "agy_sdk", "antigravity-sdk":

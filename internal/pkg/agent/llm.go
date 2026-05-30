@@ -7,17 +7,12 @@ import (
 	"github.com/qtopie/domour/internal/pkg/copilot/shared"
 )
 
-func historyToSchema(history []shared.Message) []*schema.Message {
-	if len(history) == 0 {
-		return nil
+func historyToSchema(history []shared.Message, memorySummary string) []*schema.Message {
+	messages := make([]*schema.Message, 0, len(history)+1)
+	if strings.TrimSpace(memorySummary) != "" {
+		messages = append(messages, schema.SystemMessage("【前情会话背景与记忆摘要】:\n"+strings.TrimSpace(memorySummary)))
 	}
-	start := 0
-	if len(history) > 8 {
-		start = len(history) - 8
-	}
-
-	messages := make([]*schema.Message, 0, len(history[start:]))
-	for _, item := range history[start:] {
+	for _, item := range history {
 		content := strings.TrimSpace(item.Content)
 		if content == "" {
 			continue

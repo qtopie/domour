@@ -33,3 +33,19 @@ func TestNewChatModelSupportsOllamaWithCustomBaseURL(t *testing.T) {
 		t.Fatal("NewChatModel(ollama custom base url) returned nil model")
 	}
 }
+
+func TestNewChatModelSupportsDeepSeek(t *testing.T) {
+	t.Parallel()
+
+	model, err := NewChatModel(t.Context(), &Config{
+		Provider: "deepseek",
+		Model:    "deepseek-chat",
+		APIKey:   "fake-key",
+	})
+	if err != nil {
+		t.Fatalf("NewChatModel(deepseek) error = %v", err)
+	}
+	if model == nil {
+		t.Fatal("NewChatModel(deepseek) returned nil model")
+	}
+}

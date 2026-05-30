@@ -27,46 +27,58 @@ type MotorClient interface {
 }
 
 type BrainChatRequest struct {
-	SessionID    string
-	Seq          int32
-	Workspace    string
-	Message      string
-	Filename     string
-	FrontPart    string
-	BackPart     string
-	Attachments  []BrainAttachment
-	Interception *ChatInterception
-	History      []shared.Message
+	SessionID     string
+	Seq           int32
+	Workspace     string
+	Message       string
+	Filename      string
+	FrontPart     string
+	BackPart      string
+	Attachments   []BrainAttachment
+	Interception  *ChatInterception
+	History       []shared.Message
+	MemorySummary string
+	Provider      string
+	Model         string
 }
 
 type BrainDiagramRequest struct {
-	Workspace   string
-	Message     string
-	Filename    string
-	FrontPart   string
-	BackPart    string
-	Attachments []BrainAttachment
-	History     []shared.Message
+	Workspace     string
+	Message       string
+	Filename      string
+	FrontPart     string
+	BackPart      string
+	Attachments   []BrainAttachment
+	History       []shared.Message
+	MemorySummary string
+	Provider      string
+	Model         string
 }
 
 type BrainCopilotRequest struct {
-	Workspace    string
-	Message      string
-	Filename     string
-	CodeBefore   string
-	CodeAfter    string
-	CursorOffset int32
-	Attachments  []BrainAttachment
-	History      []shared.Message
+	Workspace     string
+	Message       string
+	Filename      string
+	CodeBefore    string
+	CodeAfter     string
+	CursorOffset  int32
+	Attachments   []BrainAttachment
+	History       []shared.Message
+	MemorySummary string
+	Provider      string
+	Model         string
 }
 
 type BrainAutopilotRequest struct {
-	Workspace   string
-	Goal        string
-	Constraints []string
-	MaxSteps    int32
-	Attachments []BrainAttachment
-	History     []shared.Message
+	Workspace     string
+	Goal          string
+	Constraints   []string
+	MaxSteps      int32
+	Attachments   []BrainAttachment
+	History       []shared.Message
+	MemorySummary string
+	Provider      string
+	Model         string
 }
 
 type BrainTextResponse struct {
