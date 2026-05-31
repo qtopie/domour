@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/qtopie/domour/internal/infra/db"
-	"github.com/qtopie/domour/internal/pkg/copilot/shared"
+	"github.com/qtopie/domour/internal/agent/shared"
 )
 
 type SurrealStore struct {
@@ -90,6 +90,25 @@ func (s *SurrealStore) GetHistory(ctx context.Context, sessionID string) ([]shar
 		return nil, err
 	}
 	return sess.History, nil
+}
+
+func (s *SurrealStore) ListSessions(ctx context.Context) ([]Session, error) {
+	res, err := s.db.Select(ctx, "session")
+	if err != nil {
+		return nil, err
+	}
+
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return nil, err
+	}
+
+	var sessions []Session
+	if err := json.Unmarshal(bytes, &sessions); err != nil {
+		return nil, err
+	}
+
+	return sessions, nil
 }
 
 func (s *SurrealStore) Close() error {

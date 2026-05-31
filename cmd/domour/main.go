@@ -8,17 +8,27 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/qtopie/domour/internal/app/modelmanager"
-	"github.com/qtopie/domour/internal/pkg/bootstrap"
+	"github.com/qtopie/domour/internal/bootstrap"
+	"github.com/qtopie/domour/internal/infra/db"
+	"github.com/qtopie/domour/internal/session"
 )
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		if err := runModelsCommand(os.Args[2:]); err != nil {
 			log.Fatalf("domour models failed: %v", err)
+		}
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "sessions" {
+		if err := runSessionsCommand(os.Args[2:]); err != nil {
+			log.Fatalf("domour sessions failed: %v", err)
 		}
 		return
 	}
@@ -130,5 +140,74 @@ func runModelsSet(args []string) error {
 	fmt.Printf("provider: %s\n", resp.Provider)
 	fmt.Printf("model: %s\n", resp.Model)
 	fmt.Printf("config: %s\n", resp.ConfigPath)
+	return nil
+}
+
+func runSessionsCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("expected subcommand: list")
+	}
+
+	switch args[0] {
+	case "list":
+		return runSessionsList(args[1:])
+	default:
+		return fmt.Errorf("unsupported sessions subcommand %q", args[0])
+	}
+}
+
+func runSessionsList(args []string) error {
+	fs := flag.NewFlagSet("sessions list", flag.ContinueOnError)
+	provider := fs.String("provider", "", "filter sessions by LLM provider")
+	sessionID := fs.String("session", "", "filter sessions by session ID")
+	jsonOutput := fs.Bool("json", false, "print JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	var store session.Store
+	if os.Getenv("DOMOUR_USE_SURREAL") == "true" {
+		surrealDB, err := db.NewSurrealDB(db.Config{
+			Address:   os.Getenv("DOMOUR_SURREAL_ADDR"),
+			User:      os.Getenv("DOMOUR_SURREAL_USER"),
+			Pass:      os.Getenv("DOMOUR_SURREAL_PASS"),
+			Namespace: "domour",
+			Database:  "agent",
+		})
+		if err == nil {
+			store = session.NewSurrealStore(surrealDB)
+			defer store.Close()
+		}
+	}
+
+	results, err := session.QuerySessions(context.Background(), store, session.QueryFilter{
+		Provider:  *provider,
+		SessionID: *sessionID,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOutput {
+		return json.NewEncoder(os.Stdout).Encode(results)
+	}
+
+	fmt.Printf("%-38s | %-12s | %-22s | %-19s | %s\n", "SESSION ID", "PROVIDER", "MODEL", "UPDATED AT", "LAST MESSAGE")
+	fmt.Println(strings.Repeat("-", 120))
+	for _, res := range results {
+		lastMsg := res.LastMessage
+		if len(lastMsg) > 40 {
+			lastMsg = lastMsg[:37] + "..."
+		}
+		lastMsg = strings.ReplaceAll(lastMsg, "\n", " ")
+
+		fmt.Printf("%-38s | %-12s | %-22s | %-19s | %s\n",
+			res.SessionID,
+			res.Provider,
+			res.Model,
+			res.UpdatedAt.Format("2006-01-02 15:04:05"),
+			lastMsg,
+		)
+	}
 	return nil
 }

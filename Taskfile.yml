@@ -1,0 +1,73 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GO: go
+  SURREAL_BIND: 127.0.0.1:8000
+  SURREAL_USER: root
+  SURREAL_PASS: root
+  SURREAL_ENGINE: memory
+  NATS_PORT: 4222
+  NATS_HTTP_PORT: 8222
+  NATS_STORE: /tmp/domour-nats
+
+tasks:
+  default:
+    desc: Run all build tasks
+    cmds:
+      - task: build
+
+  gen:
+    desc: Generate protobuf code using buf
+    cmds:
+      - cmd: command -v buf >/dev/null 2>&1 || { echo "Buf is not installed. Install it with 'brew install buf'."; exit 1; }
+        silent: true
+      - buf generate
+
+  build:
+    desc: Build all binaries (domour and domour-chat)
+    deps:
+      - gen
+    cmds:
+      - go build -v -o bin/domour ./cmd/domour
+      - go build -v -o bin/domour-chat ./cmd/domour-chat
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v ./...
+
+  clean:
+    desc: Clean generated files and compiled binaries
+    cmds:
+      - echo "Cleaning generated files and binaries..."
+      - rm -rf gen bin/
+
+  surrealdb:
+    desc: Start a local SurrealDB instance for development
+    cmds:
+      - cmd: command -v surreal >/dev/null 2>&1 || { echo "SurrealDB CLI is missing. Install it via 'brew install surrealdb'."; exit 1; }
+        silent: true
+      - echo "Starting SurrealDB on {{.SURREAL_BIND}} (press Ctrl+C to stop)..."
+      - |
+        surreal start \
+          --user {{.SURREAL_USER}} \
+          --pass {{.SURREAL_PASS}} \
+          --bind {{.SURREAL_BIND}} \
+          --log debug \
+          {{.SURREAL_ENGINE}}
+
+  nats:
+    desc: Start a local NATS server with JetStream enabled
+    cmds:
+      - cmd: command -v nats-server >/dev/null 2>&1 || { echo "NATS Server is missing. Install it via 'brew install nats-server'."; exit 1; }
+        silent: true
+      - echo "Starting NATS Server with JetStream on 0.0.0.0:{{.NATS_PORT}}..."
+      - mkdir -p {{.NATS_STORE}}
+      - |
+        nats-server \
+          -js \
+          --port {{.NATS_PORT}} \
+          --http_port {{.NATS_HTTP_PORT}} \
+          --jetstream_store_dir {{.NATS_STORE}}

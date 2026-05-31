@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qtopie/domour/internal/pkg/copilot/shared"
+	"github.com/qtopie/domour/internal/agent/shared"
 )
 
 func TestMemoryStore_FullSession(t *testing.T) {

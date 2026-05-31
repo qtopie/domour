@@ -11,7 +11,7 @@ import (
 	"github.com/qtopie/domour/internal/infra/cache/l2"
 	"github.com/qtopie/domour/internal/infra/db"
 	"github.com/qtopie/domour/internal/infra/eventbus"
-	"github.com/qtopie/domour/internal/pkg/copilot/shared"
+	"github.com/qtopie/domour/internal/agent/shared"
 )
 
 type Manager struct {

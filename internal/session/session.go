@@ -3,7 +3,7 @@ package session
 import (
 	"time"
 
-	"github.com/qtopie/domour/internal/pkg/copilot/shared"
+	"github.com/qtopie/domour/internal/agent/shared"
 )
 
 type Session struct {

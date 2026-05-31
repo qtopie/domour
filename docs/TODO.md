@@ -2,7 +2,7 @@
 
 ## 阶段一：基础模型与通信协议 (已完成或进行中)
 - [x] 定义多用户对话助手接口 (`chat.proto`)：支持会话分支、合并请求、状态追踪
-- [x] 定义无声辅助助手接口 (`assist.proto`)：支持上下文同步、异步建议、反馈闭环
+- [x] ~~定义无声辅助助手接口 (`assist.proto`)~~ (已废弃，并入 Copilot 统一处理)
 - [x] 定义全自动守护助手接口 (`autopilot.proto`)：支持长期任务目标、工具执行回调、人类在环授权拦截
 - [x] 确立跨语言 RPC 通信层：基于 gRPC + Protobuf + 双向 Stream 流
 - [x] 确立 `domour` 核心引擎模块架构：大脑 (Brain) / 小脑 (Cerebellum) / 脑干 (Brainstem) 物理层级划分
@@ -38,7 +38,7 @@
 
 ## 阶段五：上层助手服务实现 (Service Layer)
 - [ ] **ChatService (应用层)**：使用编排好的小脑，接入客户端多路复用长连接
-- [ ] **AssistService (应用层)**：实现 `ContextSync` 和 `UserAction` 分析，高频返回推断和 `Command`
+- [ ] ~~**AssistService (应用层)**~~ (已废弃，并入 Copilot)
 - [ ] **AutopilotService (应用层)**：接通自动化后台任务和 `RequireHumanApproval` (授权推送拦截) 流程
 
 ## 阶段六：测试、观测与打磨

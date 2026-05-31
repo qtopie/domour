@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qtopie/domour/internal/pkg/copilot/shared"
+	"github.com/qtopie/domour/internal/agent/shared"
 )
 
 // MemoryStore is an in-memory session store used by the MVP server.
@@ -87,6 +87,17 @@ func (s *MemoryStore) SaveSession(_ context.Context, sess Session) error {
 	sess.UpdatedAt = time.Now()
 	s.sessions[sess.ID] = sess
 	return nil
+}
+
+func (s *MemoryStore) ListSessions(_ context.Context) ([]Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	list := make([]Session, 0, len(s.sessions))
+	for _, sess := range s.sessions {
+		list = append(list, sess)
+	}
+	return list, nil
 }
 
 func (s *MemoryStore) Close() error {

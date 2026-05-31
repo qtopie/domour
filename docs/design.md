@@ -161,3 +161,66 @@
   - 分布式编排与下发 (`TaskDispatcher` / 将物理任务投递给边缘节点)。
   - 全局事件总线 (`EventBus` / 网络通信)。
   - 兜底持久化与缓存支撑 (`PersistentStorage`)。
+
+---
+
+## 6. 项目最新重构与会话查询设计 (2026-05 重构里程碑)
+
+为了彻底根治项目中后期出现的目录重名、Server 职责冲突及双重架构混乱（“精神分裂”），我们于 2026 年 5 月底进行了一次深度的架构理顺与重大功能升级。
+
+### 6.1 “内核开源，业务私有” 的全新目录蓝图
+
+我们重新划定了 **“内核（Core）对外公用，业务编排（App/Agent）对内私有”** 的边界，彻底拆解并消除了具有误导性的 `internal/pkg/` 双重重名路径：
+
+```text
+.
+├── proto/               # 契约：定义最纯净、无重复的三大服务 (Chat / Copilot / Autopilot)
+├── gen/                 # 自动生成：纯净编译的 gRPC & Protobuf 目标 Go 代码
+├── cmd/                 # 编译入口：清理了 .bak 等历史残留，保留 domour 和 domour-chat
+│
+├── pkg/                 # 【核心内核】供外部插件、边缘节点或内部引用，不包含任何私有业务
+│   └── core/            
+│       ├── brain/       # 基础大脑接口、状态与观察定义
+│       ├── brainstem/   # 脑干控制
+│       ├── cerebellum/  # 小脑（协调/记忆/运动）
+│       ├── llm/         # 统一的大模型客户端内核 (Ollama/Gemini/Claude API & CLI 等)
+│       ├── stem/        # 【原 internal/pkg/stem】信号入口过滤器
+│       ├── motor/       # 【原 internal/pkg/motor】物理执行与工具执行核心
+│       └── skill/       # 【原 internal/pkg/skill】Skill Markdown 解析核心
+│
+└── internal/            # 【私有业务】Domour 核心业务，外部不可引用，避免依赖循环
+    ├── bootstrap/       # 【原 internal/pkg/bootstrap】gRPC & HTTP 服务端启动器
+    ├── app/             # 应用层管理 (config, modelmanager)
+    ├── session/         # 会话生命周期与 SurrealDB/Memory 持久化管理
+    └── agent/           # 【原 internal/pkg/agent】Agent 具体业务编排与控制流
+        ├── shared/      # 跨组件共享的 Request/Message 模型
+        ├── diencephalon/# 间脑：上层 Agent 与底层 llm 驱动的动态转发路由器
+        ├── mvp/         # 兜底规则脑 (Diagram/Copilot 逻辑容错防线)
+        ├── observer/    # 复杂度评估 Eino 节点
+        ├── planner/     # 计划生成 Eino 节点
+        ├── react/       # ReAct 模式 Eino 节点
+        ├── simple/      # 简单对话处理 Eino 节点
+        └── worker/      # 原子执行 Eino 节点
+```
+
+通过此重构，循环导入的风险直接降为零，依赖方向变为绝对单向：
+$$\text{cmd} \rightarrow \text{internal (业务/传输)} \rightarrow \text{pkg/core (内核契约)} \rightarrow \text{gen (gRPC/Protobuf)}$$
+
+### 6.2 统一会话查询与延迟加载缓存 (Lazy-Load & Cache) 设计
+
+随着不同 LLM Provider（特别是 CLI 本地命令行工具如 `gemini`、`agy` 等）的使用，会话数据出现了“云端（DB）”和“本地（CLI Log）”割裂的痛点。为此，我们设计并落地了**统一会话查询与延迟加载缓存服务**：
+
+#### 1. 统一会话查询 (`QuerySessions`)
+* **多源归并**：查询服务首先从 SurrealDB 或 MemoryStore 中读取在线对话会话，随后自动递归扫描本地 CLI 的历史文件目录（`~/.gemini/tmp/workspace/chats/*.jsonl` 和 `~/.antigravity/...`）。
+* **CLI 日志清洗**：能够提取 `.jsonl` 增量日志的会话 ID、模型、最近活跃时间，并利用正则表达式自动脱敏 `[SYSTEM]` 提示词以呈现纯净的对话末尾摘要。
+* **全局时间线排序**：去重合并后，统一按 `UpdatedAt` 降序排列。
+* **终端集成**：提供了 `domour sessions list` 统一查询子命令，支持 `-provider` 过滤与 `-json` 输出。
+
+#### 2. 会话延迟加载与自动缓存 (`Lazy-Load & Cache`)
+* **痛点**：CLI 产生的会话仅保存在本地磁盘的 `.jsonl` 中，当用户通过 gRPC 连接想继续该会话时，服务端由于数据库没有该记录，会将其当作新会话处理，导致历史丢失。
+* **解决方案**：
+  * 在 `internal/agent/server.go` 的 `getSession` 中加入拦截探针。
+  * 如果在 active DB store 中找不到对应的 SessionID 记录，服务端会自动调用 `QuerySessions` 探测本地 CLI 缓存。
+  * 发现匹配的本地 CLI 日志后，自动逆向解析出历史 Message 数组和模型参数，**将其写入 SurrealDB / 内存数据库进行动态缓存初始化**。
+  * 后续的对话将在此缓存基础上继续追加并持久化，实现了 **“本地 CLI 调试会话 ➡️ 网络 gRPC 续写对话”** 的无缝连接。
+

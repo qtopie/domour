@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	appconfig "github.com/qtopie/domour/internal/app/config"
-	"github.com/qtopie/domour/internal/pkg/brain/diencephalon"
+	"github.com/qtopie/domour/internal/agent/diencephalon"
 	brainllm "github.com/qtopie/domour/pkg/core/llm"
 )
 

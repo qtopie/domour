@@ -491,6 +491,16 @@ func resolveCLICommand(command string) (string, error) {
 				return path, nil
 			}
 		}
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			downloadsDir := filepath.Join(homeDir, ".claude", "downloads")
+			if files, err := filepath.Glob(filepath.Join(downloadsDir, "claude-*")); err == nil && len(files) > 0 {
+				for i := len(files) - 1; i >= 0; i-- {
+					if info, err := os.Stat(files[i]); err == nil && !info.IsDir() {
+						return files[i], nil
+					}
+				}
+			}
+		}
 		return "", fmt.Errorf("cli command %q not found", command)
 	default:
 		if path, ok := checkLocal(command); ok {
