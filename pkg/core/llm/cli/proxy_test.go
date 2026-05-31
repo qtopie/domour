@@ -206,3 +206,60 @@ done
 		t.Fatalf("expected trace to contain CONFIG_CONTENT:, but got:\n%s", traceStr)
 	}
 }
+
+func TestVProxyDebugMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	traceFile := filepath.Join(tmpDir, "trace-debug.log")
+
+	vproxyName := "vproxy"
+	var scriptContent string
+	if filepath.Separator == '\\' {
+		vproxyName = "vproxy.bat"
+		scriptContent = fmt.Sprintf(`@echo off
+echo ARGS: %%* >> "%s"
+`, traceFile)
+	} else {
+		scriptContent = fmt.Sprintf(`#!/bin/bash
+echo "ARGS: $*" >> "%s"
+`, traceFile)
+	}
+
+	vproxyPath := filepath.Join(tmpDir, vproxyName)
+	err := os.WriteFile(vproxyPath, []byte(scriptContent), 0755)
+	if err != nil {
+		t.Fatalf("failed to write mock vproxy script: %v", err)
+	}
+
+	originalPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", originalPath)
+	newPath := tmpDir + string(filepath.ListSeparator) + originalPath
+	os.Setenv("PATH", newPath)
+
+	cmd := "true"
+	if filepath.Separator == '\\' {
+		cmd = "cmd.exe"
+	}
+
+	m, err := New(&Config{
+		Provider: "qodercli",
+		Command:  cmd,
+		ProxyURL: "socks5://127.0.0.1:9999",
+		Debug:    true,
+	})
+	if err != nil {
+		t.Fatalf("failed to create CLI Chat Model: %v", err)
+	}
+
+	cliModel := m.(*CLIChatModel)
+	cliModel.performHealthCheck()
+
+	traceData, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("failed to read trace file: %v", err)
+	}
+
+	traceStr := string(traceData)
+	if !strings.Contains(traceStr, "-v") {
+		t.Fatalf("expected trace to contain -v flag when debug mode is enabled, but got:\n%s", traceStr)
+	}
+}

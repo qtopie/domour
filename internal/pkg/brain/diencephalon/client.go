@@ -19,6 +19,7 @@ type Config struct {
 	BaseURL  string
 	Model    string
 	ProxyURL string
+	Debug    bool
 }
 
 type Response struct {
@@ -72,6 +73,7 @@ func New(ctx context.Context, cfg Config) (Client, error) {
 		BaseURL:  cfg.BaseURL,
 		Model:    cfg.Model,
 		ProxyURL: cfg.ProxyURL,
+		Debug:    cfg.Debug,
 	})
 	if err != nil {
 		return nil, err
@@ -132,6 +134,7 @@ func ResolveConfig(entry string, domourCfg appconfig.DomourConfig) Config {
 				domourCfg.ProxyForProvider(provider),
 			),
 		),
+		Debug: domourCfg.IsDebug(),
 	}
 }
 

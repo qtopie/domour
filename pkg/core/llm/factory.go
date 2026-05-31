@@ -22,6 +22,7 @@ type Config struct {
 	BaseURL  string // Optional for providers like OpenAI
 	Model    string // e.g. "gpt-4", "gemini-pro"
 	ProxyURL string // Optional, supports "http://", "https://", "socks5://", "socks5h://"
+	Debug    bool
 }
 
 // NewChatModel creates a new LLM instance based on the provider config.
@@ -37,13 +38,21 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 	// 		APIKey: cfg.APIKey,
 	// 	})
 	case "agy-sdk", "agy_sdk", "antigravity-sdk":
-		return NewAGYSDKChatModel(ctx, cfg)
+		return cli.New(&cli.Config{
+			Provider: "agy-sdk",
+			Command:  "agy",
+			Model:    cfg.Model,
+			ProxyURL: cfg.ProxyURL,
+			BaseURL:  cfg.BaseURL,
+			Debug:    cfg.Debug,
+		})
 	case "agy-cli", "agy_cli", "agy":
 		return cli.New(&cli.Config{
 			Provider: "agy-cli",
 			Command:  "agy",
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
+			Debug:    cfg.Debug,
 		})
 	case "gemini-cli", "gemini_cli":
 		return cli.New(&cli.Config{
@@ -51,6 +60,7 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			Command:  "gemini",
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
+			Debug:    cfg.Debug,
 		})
 	case "github-copilot-cli", "copilot-cli", "github-copilot":
 		return cli.New(&cli.Config{
@@ -58,6 +68,7 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			Command:  "copilot",
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
+			Debug:    cfg.Debug,
 		})
 	case "qodercli", "qoder-cli":
 		return cli.New(&cli.Config{
@@ -65,6 +76,15 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			Command:  "qodercli",
 			Model:    cfg.Model,
 			ProxyURL: cfg.ProxyURL,
+			Debug:    cfg.Debug,
+		})
+	case "claude", "claude-code":
+		return cli.New(&cli.Config{
+			Provider: "claude",
+			Command:  "claude-code",
+			Model:    cfg.Model,
+			ProxyURL: cfg.ProxyURL,
+			Debug:    cfg.Debug,
 		})
 	case "azure", "azure-openai", "azure_openai":
 		azureCfg := *cfg

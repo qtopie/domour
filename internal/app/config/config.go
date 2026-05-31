@@ -319,6 +319,13 @@ func (c DomourConfig) IsLogAsJSON() bool {
 	return c.LogAsJSON
 }
 
+func (c DomourConfig) IsDebug() bool {
+	if value := strings.ToLower(strings.TrimSpace(os.Getenv("DOMOUR_DEBUG"))); value != "" {
+		return value == "true" || value == "1" || value == "yes"
+	}
+	return false
+}
+
 func loadOrCreateDomourConfig(path string) (DomourConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

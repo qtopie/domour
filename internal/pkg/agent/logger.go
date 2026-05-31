@@ -21,8 +21,17 @@ func (s *Server) logError(ctx context.Context, method string, sessionID string, 
 	s.writeLog(ctx, "error", err.Error(), method, sessionID)
 }
 
+func (s *Server) logDebug(ctx context.Context, method string, sessionID string, msg string) {
+	s.writeLog(ctx, "debug", msg, method, sessionID)
+}
+
 func (s *Server) writeLog(ctx context.Context, level, msg, method, sessionID string) {
 	cfg, _ := appconfig.LoadDomourConfig()
+
+	if level == "debug" && !cfg.IsDebug() {
+		return
+	}
+
 	traceID := getTraceID(ctx)
 	now := time.Now().Format(time.RFC3339)
 	scope := "cosmos.domour"

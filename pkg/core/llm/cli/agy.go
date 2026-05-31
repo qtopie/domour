@@ -16,12 +16,24 @@ import (
 )
 
 type agyProvider struct {
-	command  string
-	model    string
-	proxyURL string
+	command     string
+	model       string
+	proxyURL    string
+	apiKey      string
+	harnessPath string
+	isSDKMode   bool
 }
 
 func (p *agyProvider) GetGenerateArgs(ctx context.Context, prompt string, assetPaths []string, runtime *providerruntime.SessionRuntime) ([]string, error) {
+	// If harnessPath is set, set the ANTIGRAVITY_HARNESS_PATH env var
+	if p.harnessPath != "" {
+		os.Setenv("ANTIGRAVITY_HARNESS_PATH", p.harnessPath)
+	}
+
+	if p.isSDKMode && p.apiKey != "" {
+		os.Setenv("GEMINI_API_KEY", p.apiKey)
+	}
+
 	// For agy, --prompt runs prompt non-interactively, and --dangerously-skip-permissions skips interactive prompts
 	args := []string{"--prompt", prompt, "--dangerously-skip-permissions"}
 	if runtime.Workspace != "" {
@@ -36,6 +48,9 @@ func (p *agyProvider) GetGenerateArgs(ctx context.Context, prompt string, assetP
 }
 
 func (p *agyProvider) HealthCheck(ctx context.Context) (string, error) {
+	if p.isSDKMode {
+		return "SDK Harness Mode: " + p.harnessPath, nil
+	}
 	health, err := p.GetQuotas(ctx)
 	if err != nil {
 		return "", err
@@ -160,4 +175,58 @@ func loadAgyOAuthCreds() (*GeminiOAuthCreds, error) {
 	}
 	
 	return &creds, nil
+}
+
+func discoverHarnessPath(baseURL string) string {
+	// 1. Try ANTIGRAVITY_HARNESS_PATH env var
+	if path := os.Getenv("ANTIGRAVITY_HARNESS_PATH"); path != "" {
+		return path
+	}
+
+	// 2. Try baseURL if it's a local path
+	if baseURL != "" && !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		if fi, err := os.Stat(baseURL); err == nil && fi.IsDir() {
+			return baseURL
+		}
+	}
+
+	// 3. Try to locate via sibling directories (smart dev workspace lookup)
+	if cwd, err := os.Getwd(); err == nil {
+		current := cwd
+		for i := 0; i < 5; i++ {
+			// Check if current directory has a sibling/child 'antigravity-sdk-python/localharness'
+			target := filepath.Join(current, "antigravity-sdk-python", "localharness")
+			if fi, err := os.Stat(target); err == nil && fi.IsDir() {
+				return target
+			}
+			// Check if current directory has a sibling/child 'localharness'
+			target = filepath.Join(current, "localharness")
+			if fi, err := os.Stat(target); err == nil && fi.IsDir() {
+				return target
+			}
+
+			parent := filepath.Dir(current)
+			if parent == current {
+				break
+			}
+			current = parent
+		}
+	}
+
+	// 4. Try to locate via PATH environment variable
+	if pathEnv := os.Getenv("PATH"); pathEnv != "" {
+		for _, dir := range filepath.SplitList(pathEnv) {
+			if strings.Contains(dir, "localharness") {
+				if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+					return dir
+				}
+			}
+			target := filepath.Join(dir, "localharness")
+			if fi, err := os.Stat(target); err == nil && fi.IsDir() {
+				return target
+			}
+		}
+	}
+
+	return ""
 }

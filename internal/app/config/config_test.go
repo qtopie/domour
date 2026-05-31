@@ -148,3 +148,41 @@ func TestDaprAddressAndAppIDPreferEnv(t *testing.T) {
 		t.Fatalf("ServiceAppID(brain) = %q, want %q", got, "brain-from-env")
 	}
 }
+
+func TestIsDebug(t *testing.T) {
+	cfg := DomourConfig{}
+	
+	t.Run("DefaultFalse", func(t *testing.T) {
+		if cfg.IsDebug() {
+			t.Error("IsDebug() should be false by default")
+		}
+	})
+
+	t.Run("EnvTrue", func(t *testing.T) {
+		t.Setenv("DOMOUR_DEBUG", "true")
+		if !cfg.IsDebug() {
+			t.Error("IsDebug() should be true when DOMOUR_DEBUG=true")
+		}
+	})
+
+	t.Run("Env1", func(t *testing.T) {
+		t.Setenv("DOMOUR_DEBUG", "1")
+		if !cfg.IsDebug() {
+			t.Error("IsDebug() should be true when DOMOUR_DEBUG=1")
+		}
+	})
+
+	t.Run("EnvYes", func(t *testing.T) {
+		t.Setenv("DOMOUR_DEBUG", "yes")
+		if !cfg.IsDebug() {
+			t.Error("IsDebug() should be true when DOMOUR_DEBUG=yes")
+		}
+	})
+
+	t.Run("EnvFalse", func(t *testing.T) {
+		t.Setenv("DOMOUR_DEBUG", "false")
+		if cfg.IsDebug() {
+			t.Error("IsDebug() should be false when DOMOUR_DEBUG=false")
+		}
+	})
+}

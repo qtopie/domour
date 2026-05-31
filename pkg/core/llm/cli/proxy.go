@@ -25,6 +25,9 @@ type Config struct {
 	Command  string
 	Model    string
 	ProxyURL string
+	BaseURL  string
+	APIKey   string
+	Debug    bool
 }
 
 type cliProvider interface {
@@ -37,6 +40,7 @@ type CLIChatModel struct {
 	command      string
 	model        string
 	proxyURL     string
+	debug        bool
 	providerImpl cliProvider
 
 	mu           sync.RWMutex
@@ -68,6 +72,7 @@ func New(cfg *Config) (model.ChatModel, error) {
 		command:    resolvedCmd,
 		model:      strings.TrimSpace(cfg.Model),
 		proxyURL:   strings.TrimSpace(cfg.ProxyURL),
+		debug:      cfg.Debug,
 		stopChan:   make(chan struct{}),
 		resetTimer: make(chan struct{}, 1),
 	}
@@ -77,10 +82,22 @@ func New(cfg *Config) (model.ChatModel, error) {
 		m.providerImpl = &geminiProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
 	case "agy-cli", "agy":
 		m.providerImpl = &agyProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
+	case "agy-sdk":
+		harnessPath := discoverHarnessPath(cfg.BaseURL)
+		m.providerImpl = &agyProvider{
+			command:     resolvedCmd,
+			model:       m.model,
+			proxyURL:    m.proxyURL,
+			apiKey:      cfg.APIKey,
+			harnessPath: harnessPath,
+			isSDKMode:   true,
+		}
 	case "github-copilot-cli":
 		m.providerImpl = &copilotProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
 	case "qodercli":
 		m.providerImpl = &qoderProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
+	case "claude":
+		m.providerImpl = &claudeProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
 	default:
 		return nil, fmt.Errorf("unsupported cli provider %q", provider)
 	}
@@ -159,8 +176,12 @@ func (m *CLIChatModel) wrapWithVProxy(ctx context.Context, command string, args 
 		_ = os.Remove(configPath)
 	}
 
-	// Wrap command with vproxy: vproxy -c <temp-config-path> <command> <args...>
-	vproxyArgs := []string{"-c", configPath, command}
+	// Wrap command with vproxy: vproxy [-v] -c <temp-config-path> <command> <args...>
+	vproxyArgs := []string{}
+	if m.debug {
+		vproxyArgs = append(vproxyArgs, "-v")
+	}
+	vproxyArgs = append(vproxyArgs, "-c", configPath, command)
 	vproxyArgs = append(vproxyArgs, args...)
 
 	cmd := exec.CommandContext(ctx, vproxyPath, vproxyArgs...)
@@ -192,6 +213,10 @@ func (m *CLIChatModel) performHealthCheck() {
 	cmd, _, cleanup := m.wrapWithVProxy(ctx, m.command, args)
 	defer cleanup()
 	cmd.Env = applyProxyEnv(os.Environ(), m.proxyURL)
+
+	if m.debug {
+		fmt.Fprintf(os.Stderr, "[CLI Debug] Health check: %s %s\n", cmd.Path, strings.Join(cmd.Args[1:], " "))
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -342,6 +367,10 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 		cmd.Dir = runtime.Workspace
 	}
 
+	if m.debug {
+		fmt.Fprintf(os.Stderr, "[CLI Debug] Invoking: %s %s\n", cmd.Path, strings.Join(cmd.Args[1:], " "))
+	}
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -456,6 +485,13 @@ func resolveCLICommand(command string) (string, error) {
 			}
 		}
 		return "", fmt.Errorf("cli command %q not found", command)
+	case "claude":
+		for _, candidate := range []string{"claude", "claude-code"} {
+			if path, ok := checkLocal(candidate); ok {
+				return path, nil
+			}
+		}
+		return "", fmt.Errorf("cli command %q not found", command)
 	default:
 		if path, ok := checkLocal(command); ok {
 			return path, nil
@@ -474,6 +510,8 @@ func normalizeCLIProvider(provider, command string) string {
 		return "github-copilot-cli"
 	case "qodercli", "qoder-cli", "qoder":
 		return "qodercli"
+	case "claude", "claude-code", "claude_cli":
+		return "claude"
 	default:
 		switch strings.ToLower(strings.TrimSpace(command)) {
 		case "gemini":
@@ -484,6 +522,8 @@ func normalizeCLIProvider(provider, command string) string {
 			return "github-copilot-cli"
 		case "qodercli", "qoder":
 			return "qodercli"
+		case "claude":
+			return "claude"
 		default:
 			return strings.ToLower(strings.TrimSpace(command))
 		}
