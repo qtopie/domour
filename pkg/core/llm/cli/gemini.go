@@ -29,7 +29,10 @@ func (p *geminiProvider) GetGenerateArgs(ctx context.Context, prompt string, ass
 	if p.model != "" {
 		args = append([]string{"--model", p.model}, args...)
 	}
-	if runtime.ConversationStarted {
+	if runtime.DomourSessionID != "" {
+		args = append(args, "--resume", runtime.DomourSessionID)
+		providerruntime.DefaultManager().MarkResume(runtime)
+	} else if runtime.ConversationStarted {
 		args = append(args, "--resume", "latest")
 		providerruntime.DefaultManager().MarkResume(runtime)
 	}
