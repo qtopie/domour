@@ -26,6 +26,42 @@ import (
 )
 
 // Config defines the configuration for the OpenTelemetry setup.
+var LogLevel = new(slog.LevelVar)
+
+func SetLogLevel(level string) {
+	switch level {
+	case "debug":
+		LogLevel.Set(slog.LevelDebug)
+	case "info":
+		LogLevel.Set(slog.LevelInfo)
+	case "warn":
+		LogLevel.Set(slog.LevelWarn)
+	case "error":
+		LogLevel.Set(slog.LevelError)
+	}
+}
+
+type levelHandler struct {
+	handler slog.Handler
+	level   slog.Leveler
+}
+
+func (h *levelHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.level.Level()
+}
+
+func (h *levelHandler) Handle(ctx context.Context, r slog.Record) error {
+	return h.handler.Handle(ctx, r)
+}
+
+func (h *levelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &levelHandler{handler: h.handler.WithAttrs(attrs), level: h.level}
+}
+
+func (h *levelHandler) WithGroup(name string) slog.Handler {
+	return &levelHandler{handler: h.handler.WithGroup(name), level: h.level}
+}
+
 type Config struct {
 	ServiceName    string
 	ServiceVersion string
