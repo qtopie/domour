@@ -3,6 +3,7 @@ package l2
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -13,14 +14,33 @@ type Cache[V any] struct {
 	ttl time.Duration
 }
 
+func safeBadgerOpen(opts badger.Options) (db *badger.DB, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("badger open panic: %v", r)
+		}
+	}()
+	db, err = badger.Open(opts)
+	return db, err
+}
+
 func NewCache[V any](path string, ttl time.Duration) (*Cache[V], error) {
 	opts := badger.DefaultOptions(path)
 	// Suppress verbose logging
 	opts.Logger = nil
 
-	db, err := badger.Open(opts)
+	db, err := safeBadgerOpen(opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open badger db: %w", err)
+		// Cache is corrupted or panicked. Automatically delete and recreate it.
+		fmt.Printf("[L2Cache] Badger DB corrupted or failed to open: %v. Recreating...\n", err)
+		_ = os.RemoveAll(path)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return nil, err
+		}
+		db, err = safeBadgerOpen(opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open badger db after recreate: %w", err)
+		}
 	}
 
 	return &Cache[V]{
