@@ -136,11 +136,41 @@ func CheckAllProviders(ctx context.Context) {
 	}
 	registryMu.RUnlock()
 
+	domourCfg, err := appconfig.LoadDomourConfig()
+
 	for _, name := range names {
 		start := time.Now()
 		// Run health check with a short timeout to prevent hanging
 		checkCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		cl, err := New(checkCtx, Config{Provider: name, Model: "healthcheck"})
+
+		var apiKey, baseURL, proxyURL string
+		if err == nil {
+			apiKey = domourCfg.APIKeyForProvider(name)
+			baseURL = domourCfg.BaseURLForProvider(name)
+			proxyURL = domourCfg.ProxyForProvider(name)
+		}
+
+		// Also allow environment variable fallbacks for the healthcheck
+		if apiKey == "" {
+			apiKey = firstNonEmpty(
+				strings.TrimSpace(osEnv("DOMOUR_" + strings.ToUpper(name) + "_API_KEY")),
+				strings.TrimSpace(osEnv("DOMOUR_DEFAULT_API_KEY")),
+			)
+		}
+		if baseURL == "" {
+			baseURL = firstNonEmpty(
+				strings.TrimSpace(osEnv("DOMOUR_" + strings.ToUpper(name) + "_BASE_URL")),
+				strings.TrimSpace(osEnv("DOMOUR_DEFAULT_BASE_URL")),
+			)
+		}
+
+		cl, err := New(checkCtx, Config{
+			Provider: name,
+			Model:    "healthcheck",
+			APIKey:   apiKey,
+			BaseURL:  baseURL,
+			ProxyURL: proxyURL,
+		})
 		if err != nil {
 			SetProviderHealth(name, false, err)
 			cancel()
@@ -292,6 +322,8 @@ type Client struct {
 	Type         string // "cli" or "api"
 	provider     string
 	model        string
+	apiKey       string
+	baseURL      string
 	Trust        TrustLevel
 	Intelligence IntelligenceLevel
 	Tags         map[string]string
@@ -371,6 +403,8 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		Type:         cliType,
 		provider:     strings.TrimSpace(cfg.Provider),
 		model:        strings.TrimSpace(cfg.Model),
+		apiKey:       strings.TrimSpace(cfg.APIKey),
+		baseURL:      strings.TrimSpace(cfg.BaseURL),
 		Trust:        trust,
 		Intelligence: intel,
 		Tags:         tags,
@@ -449,6 +483,8 @@ func (c *Client) IsReady(ctx context.Context) (bool, error) {
 	// For API providers, attempt model discovery as a health check
 	_, err := brainllm.DiscoverModels(ctx, &brainllm.Config{
 		Provider: c.provider,
+		APIKey:   c.apiKey,
+		BaseURL:  c.baseURL,
 	})
 	if err == nil {
 		return true, nil
