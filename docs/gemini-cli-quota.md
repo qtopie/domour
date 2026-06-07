@@ -26,7 +26,7 @@ Project ID 是动态获取的，流程如下：
 
 ## API 实现方案
 
-在 `domour` 项目中，该逻辑封装在 `pkg/core/llm/gemini_api.go` 中。
+在 `domour` 项目中，该逻辑封装在 `internal/core/llm/gemini_api.go` 中。
 
 ### 接口概览
 1. **`loadCodeAssist`**

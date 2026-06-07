@@ -26,12 +26,11 @@ tasks:
       - buf generate
 
   build:
-    desc: Build all binaries (domour and domour-chat)
+    desc: Build the local CLI version
     deps:
       - gen
     cmds:
-      - go build -v -o bin/domour ./cmd/domour
-      - go build -v -o bin/domour-chat ./cmd/domour-chat
+      - go build -v -o bin/domour ./cmd
 
   test:
     desc: Run all tests

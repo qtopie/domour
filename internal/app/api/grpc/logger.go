@@ -1,0 +1,69 @@
+package grpc
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"time"
+
+	appconfig "github.com/qtopie/domour/internal/config"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/metadata"
+)
+
+func (s *Server) logCall(ctx context.Context, method string, sessionID string) {
+	msg := fmt.Sprintf("calling %s", method)
+	s.writeLog(ctx, "info", msg, method, sessionID)
+}
+
+func (s *Server) logError(ctx context.Context, method string, sessionID string, err error) {
+	s.writeLog(ctx, "error", err.Error(), method, sessionID)
+}
+
+func (s *Server) logDebug(ctx context.Context, method string, sessionID string, msg string) {
+	s.writeLog(ctx, "debug", msg, method, sessionID)
+}
+
+func (s *Server) writeLog(ctx context.Context, level, msg, method, sessionID string) {
+	cfg, _ := appconfig.LoadDomourConfig()
+
+	if level == "debug" && !cfg.IsDebug() {
+		return
+	}
+
+	traceID := getTraceID(ctx)
+	now := time.Now().Format(time.RFC3339)
+	scope := "cosmos.domour"
+
+	if cfg.IsLogAsJSON() {
+		logEntry := map[string]interface{}{
+			"time":       now,
+			"level":      level,
+			"msg":        msg,
+			"scope":      scope,
+			"type":       "log",
+			"trace_id":   traceID,
+			"method":     method,
+			"session_id": sessionID,
+		}
+		data, _ := json.Marshal(logEntry)
+		fmt.Fprintln(os.Stderr, string(data))
+	} else {
+		fmt.Fprintf(os.Stderr, "time=\"%s\" level=%s msg=\"%s\" scope=%s type=log trace_id=%s method=%s session_id=%s\n",
+			now, level, msg, scope, traceID, method, sessionID)
+	}
+}
+
+func getTraceID(ctx context.Context) string {
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.IsValid() {
+		return spanCtx.TraceID().String()
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if ids := md.Get("x-trace-id"); len(ids) > 0 {
+			return ids[0]
+		}
+	}
+	return "00000000000000000000000000000000"
+}

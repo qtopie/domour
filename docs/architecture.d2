@@ -1,0 +1,74 @@
+direction: right
+
+digital_organism: "Digital Organism Architecture (Biomimetic Flow)" {
+  style: {
+    stroke-width: 4
+    fill: "#f8f9fa"
+  }
+
+  domour: "domour (Cognitive & Motor Layer)" {
+    cerebrum: "大脑 (Cerebrum) - 阶段 3" {
+      description: "核心认知与路径规划"
+      logic: "意图识别 / 任务拆解"
+      
+      style: {
+        fill: "#e7f3ff"
+        stroke: "#0078d4"
+      }
+    }
+
+    cerebellum: "小脑 (Cerebellum) - 阶段 2 & 4" {
+      description: "肌肉记忆与动作执行"
+      memory: "2. 技能缓存检索"
+      motor: "4. 精准调用与自修复"
+      
+      style: {
+        fill: "#fff4ce"
+        stroke: "#ffb900"
+      }
+    }
+    
+    cerebrum -> cerebellum: "3 -> 4: 逻辑指令下达"
+    cerebellum -> cerebrum: "4 -> 3: 异常反馈/数据清洗"
+  }
+
+  cosmos_star: "cosmos-star (Brainstem Layer) - 阶段 1" {
+    brainstem: "脑干 (Brainstem)" {
+      description: "1. 脊髓反射 (规则/安全/拦截)"
+      shape: diamond
+      style: {
+        fill: "#fde7e9"
+        stroke: "#a80000"
+      }
+    }
+  }
+
+  cosmos_assistant: "cosmos-assistant (Living Organism)" {
+    terminal: "活体终端" {
+      input: "Input: 用户指令"
+      output: "5. 结果呈现与硬化"
+      
+      style: {
+        fill: "#dff6dd"
+        stroke: "#107c10"
+      }
+    }
+  }
+
+  # Instruction Flow
+  cosmos_assistant.terminal.input -> cosmos_star.brainstem: "1. 安全扫描与静态匹配"
+  cosmos_star.brainstem -> domour.cerebellum: "2. 肌肉记忆检索"
+  domour.cerebellum -> domour.cerebrum: "3. 复杂意图规划 (Cache Miss)"
+  domour.cerebrum -> domour.cerebellum: "4. 指令执行与自修复"
+  domour.cerebellum -> cosmos_assistant.terminal.output: "5. 最终响应与经验硬化"
+  
+  cosmos_star.brainstem -> physical_world: "物理/数字世界执行" {
+    style: {
+      stroke-dash: 5
+    }
+  }
+}
+
+physical_world: "Physical & Digital World" {
+  shape: cloud
+}
