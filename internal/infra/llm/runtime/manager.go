@@ -18,6 +18,7 @@ const requestMetadataKey contextKey = "domour.provider.runtime.request"
 type RequestMetadata struct {
 	SessionID string
 	Workspace string
+	Mode      string
 }
 
 type SessionRuntime struct {

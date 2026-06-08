@@ -6,6 +6,7 @@ import (
 	autopilotpb "github.com/qtopie/domour/gen/assistant/autopilot"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/llm"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 )
 
 func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotRequest) (*autopilotpb.AutopilotResponse, error) {
@@ -47,9 +48,13 @@ func (s *Server) Autopilot(ctx context.Context, req *autopilotpb.AutopilotReques
 }
 
 func mergeAutopilotMeta(ctx context.Context, sessionID string, meta map[string]string) map[string]string {
+	modeVal := "balanced"
+	if rmeta := providerruntime.RequestMetadataFromContext(ctx); rmeta.Mode != "" {
+		modeVal = rmeta.Mode
+	}
 	out := map[string]string{
 		"entry":     "autopilot",
-		"mode":      "mvp",
+		"mode":      modeVal,
 		"sessionId": sessionID,
 		"traceId":   getTraceID(ctx),
 	}

@@ -34,10 +34,11 @@ func TestRequestMetadataRoundTrip(t *testing.T) {
 	ctx := WithRequestMetadata(context.Background(), RequestMetadata{
 		SessionID: "s1",
 		Workspace: "/tmp/work",
+		Mode:      "stealth",
 	})
 
 	meta := RequestMetadataFromContext(ctx)
-	if meta.SessionID != "s1" || meta.Workspace != "/tmp/work" {
+	if meta.SessionID != "s1" || meta.Workspace != "/tmp/work" || meta.Mode != "stealth" {
 		t.Fatalf("unexpected metadata: %+v", meta)
 	}
 }

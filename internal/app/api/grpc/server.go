@@ -11,6 +11,7 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/bionic/session"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
+	"google.golang.org/grpc/metadata"
 )
 
 // AssistantService defines the interface for assistant application logic
@@ -53,9 +54,16 @@ func firstNonEmpty(value, fallback string) string {
 }
 
 func withRuntimeMetadata(ctx context.Context, sessionID, workspace string) context.Context {
+	mode := "balanced"
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if modes := md.Get("x-domour-mode"); len(modes) > 0 {
+			mode = modes[0]
+		}
+	}
 	return providerruntime.WithRequestMetadata(ctx, providerruntime.RequestMetadata{
 		SessionID: sessionID,
 		Workspace: strings.TrimSpace(workspace),
+		Mode:      mode,
 	})
 }
 

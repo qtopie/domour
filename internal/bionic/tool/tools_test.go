@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -143,4 +144,27 @@ func (fakeMCPClient) CallTool(_ context.Context, name string, _ map[string]inter
 
 func (fakeMCPClient) Close(context.Context) error {
 	return nil
+}
+
+func TestManagerExecutesRuntimeInfoTool(t *testing.T) {
+	manager, err := NewDefaultManager()
+	if err != nil {
+		t.Fatalf("failed to create default manager: %v", err)
+	}
+	defer manager.Close()
+
+	result, err := manager.Execute(context.Background(), Command{
+		Action: "runtime.info",
+	})
+	if err != nil {
+		t.Fatalf("failed to execute runtime.info tool: %v", err)
+	}
+
+	if result.Observation == "" {
+		t.Fatalf("expected non-empty observation from runtime.info")
+	}
+
+	if !strings.Contains(result.Observation, "go_version") {
+		t.Fatalf("expected observation to contain 'go_version'")
+	}
 }

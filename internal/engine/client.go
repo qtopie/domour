@@ -23,6 +23,7 @@ type CognitorClient interface {
 type ExecutorClient interface {
 	Execute(ctx context.Context, command tool.Command) (tool.Result, error)
 	Veto(ctx context.Context, action string) bool
+	ListTools(ctx context.Context) ([]tool.ToolInfo, error)
 }
 
 // localCognitorClient implements CognitorClient using local configuration.
@@ -146,6 +147,10 @@ func (m *localExecutorClient) Execute(ctx context.Context, command tool.Command)
 
 func (m *localExecutorClient) Veto(ctx context.Context, action string) bool {
 	return shouldRefuseOutput(action, "")
+}
+
+func (m *localExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, error) {
+	return m.manager.List(), nil
 }
 
 func shouldRefuseOutput(prompt, content string) bool {

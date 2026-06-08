@@ -139,6 +139,10 @@ func CheckAllProviders(ctx context.Context) {
 	domourCfg, err := appconfig.LoadDomourConfig()
 
 	for _, name := range names {
+		// Only check providers that are currently in use or enabled
+		if err == nil && !domourCfg.IsProviderInUse(name) {
+			continue
+		}
 		start := time.Now()
 		// Run health check with a short timeout to prevent hanging
 		checkCtx, cancel := context.WithTimeout(ctx, 4*time.Second)

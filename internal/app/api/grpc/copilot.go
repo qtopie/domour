@@ -6,6 +6,7 @@ import (
 	copilotpb "github.com/qtopie/domour/gen/assistant/copilot"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/llm"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 	"google.golang.org/grpc"
 )
 
@@ -55,9 +56,13 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 }
 
 func mergeCopilotMeta(ctx context.Context, sessionID string, meta map[string]string) map[string]string {
+	modeVal := "balanced"
+	if rmeta := providerruntime.RequestMetadataFromContext(ctx); rmeta.Mode != "" {
+		modeVal = rmeta.Mode
+	}
 	out := map[string]string{
 		"entry":     "copilot",
-		"mode":      "mvp",
+		"mode":      modeVal,
 		"sessionId": sessionID,
 		"traceId":   getTraceID(ctx),
 	}

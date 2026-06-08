@@ -55,7 +55,11 @@ func (m *mockDiencephalonClient) Generate(ctx context.Context, messages []*schem
 }
 
 func (m *mockDiencephalonClient) Stream(ctx context.Context, messages []*schema.Message, opts ...einomodel.Option) (*schema.StreamReader[*schema.Message], error) {
-	return nil, nil
+	msg, err := m.Generate(ctx, messages, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
 }
 
 func (m *mockDiencephalonClient) BindTools(tools []*schema.ToolInfo) error { return nil }
@@ -78,6 +82,9 @@ func (m *mockExecutorClient) Execute(ctx context.Context, command tool.Command) 
 }
 func (m *mockExecutorClient) Veto(ctx context.Context, action string) bool {
 	return false
+}
+func (m *mockExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, error) {
+	return nil, nil
 }
 
 type mockServerStreamingServer struct {

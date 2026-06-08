@@ -112,6 +112,10 @@ func NewDefaultManager() (*Manager, error) {
 		manager.Close()
 		return nil, err
 	}
+	if err := manager.Register(NewRuntimeInfoTool()); err != nil {
+		manager.Close()
+		return nil, err
+	}
 	if err := manager.LoadDefaultSkillSources(); err != nil {
 		manager.Close()
 		return nil, err

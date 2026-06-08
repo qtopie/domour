@@ -2,7 +2,9 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
 	"github.com/qtopie/domour/internal/bionic/session"
+	"github.com/qtopie/domour/internal/bionic/tool"
+	"github.com/qtopie/domour/internal/cognitor/proxy"
 	appconfig "github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 )
@@ -202,4 +206,134 @@ func (s *AssistantService) compressSessionIfNeeded(ctx context.Context, sess *se
 	}
 
 	return nil
+}
+
+func (s *AssistantService) runToolCallingLoop(
+	ctx context.Context,
+	brainClient *proxy.Client,
+	messages []*schema.Message,
+	yield func(event shared.MotorStreamEvent) error,
+	streamFinal bool,
+	stage string,
+) (*schema.Message, error) {
+	// 1. Retrieve registered tools from Executor
+	tools, err := s.engine.Executor().ListTools(ctx)
+	toolMapping := make(map[string]string)
+	if err == nil && len(tools) > 0 {
+		for _, t := range tools {
+			sanitized := tool.SanitizeToolName(t.Name)
+			toolMapping[sanitized] = t.Name
+		}
+		einoTools := tool.GetEinoToolSchemas(tools)
+		if bindErr := brainClient.BindTools(einoTools); bindErr != nil {
+			// Log/ignore bind errors
+		}
+	}
+
+	// 2. Loop until no more tool calls
+	for loop := 0; loop < 10; loop++ {
+		sr, err := brainClient.Chat.Stream(ctx, messages)
+		if err != nil {
+			return nil, err
+		}
+		if sr == nil {
+			return nil, fmt.Errorf("model client returned nil StreamReader")
+		}
+
+		var chunks []*schema.Message
+		isToolCall := false
+
+		for {
+			chunk, recvErr := sr.Recv()
+			if recvErr == io.EOF {
+				break
+			}
+			if recvErr != nil {
+				sr.Close()
+				return nil, recvErr
+			}
+
+			chunks = append(chunks, chunk)
+
+			if len(chunk.ToolCalls) > 0 {
+				isToolCall = true
+			}
+
+			// Stream content to user in real-time if we want to stream and it's not a tool call
+			if streamFinal && !isToolCall && chunk.Content != "" {
+				_ = yield(shared.MotorStreamEvent{
+					Stage:   stage,
+					Content: chunk.Content,
+					Done:    false,
+					Meta:    map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()},
+				})
+			}
+		}
+		sr.Close()
+
+		respMsg, err := schema.ConcatMessages(chunks)
+		if err != nil {
+			return nil, fmt.Errorf("concat message chunks: %w", err)
+		}
+
+		if len(respMsg.ToolCalls) == 0 {
+			return respMsg, nil
+		}
+
+		// Append the assistant response to messages history
+		messages = append(messages, respMsg)
+
+		// Execute tool calls
+		for _, tc := range respMsg.ToolCalls {
+			originalName := tc.Function.Name
+			if mappedName, ok := toolMapping[tc.Function.Name]; ok {
+				originalName = mappedName
+			}
+
+			// Yield progress update
+			_ = yield(shared.MotorStreamEvent{
+				Stage:   "motor",
+				Content: fmt.Sprintf("Calling tool %q with args: %s\n", originalName, tc.Function.Arguments),
+				Done:    false,
+				Meta:    map[string]string{"tool": originalName},
+			})
+
+			var args map[string]interface{}
+			var observation string
+
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				observation = fmt.Sprintf("Error parsing tool arguments: %v", err)
+			} else {
+				cmd := tool.Command{
+					ID:     tc.ID,
+					Action: originalName,
+					Input:  args,
+				}
+				res, err := s.engine.Executor().Execute(ctx, cmd)
+				if err != nil {
+					observation = fmt.Sprintf("Tool execution failed: %v", err)
+				} else {
+					observation = res.Observation
+				}
+			}
+
+			// Yield tool completion update
+			_ = yield(shared.MotorStreamEvent{
+				Stage:   "motor",
+				Content: fmt.Sprintf("Tool %q observation:\n%s\n", originalName, observation),
+				Done:    false,
+				Meta:    map[string]string{"tool": originalName},
+			})
+
+			// Append tool observation message
+			toolMsg := &schema.Message{
+				Role:       schema.Tool,
+				Content:    observation,
+				ToolCallID: tc.ID,
+			}
+			messages = append(messages, toolMsg)
+		}
+	}
+
+	return nil, fmt.Errorf("max tool execution loops reached")
 }

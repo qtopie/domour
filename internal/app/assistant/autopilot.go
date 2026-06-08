@@ -87,9 +87,14 @@ func (s *AssistantService) Autopilot(ctx context.Context, req shared.MotorAutopi
 	}
 	messages = append(messages, userMsg)
 
-	resp, err := brainClient.GenerateText(ctx, messages)
+	respMsg, err := s.runToolCallingLoop(ctx, brainClient, messages, func(event shared.MotorStreamEvent) error { return nil }, false, "")
 	if err != nil {
-		return shared.MotorAutopilotResponse{}, fmt.Errorf("generate text: %w", err)
+		return shared.MotorAutopilotResponse{}, fmt.Errorf("run tool calling loop: %w", err)
+	}
+	resp := proxy.Response{
+		Content:  respMsg.Content,
+		Provider: brainClient.Provider(),
+		Model:    brainClient.Model(),
 	}
 
 	// Safety check / Veto on generated plan/response

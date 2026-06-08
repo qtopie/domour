@@ -4,10 +4,16 @@ import (
 	"context"
 	"fmt"
 	"html"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
+
+	"oss.terrastruct.com/d2/d2graph"
+	"oss.terrastruct.com/d2/d2layouts/d2dagrelayout"
+	"oss.terrastruct.com/d2/d2lib"
+	"oss.terrastruct.com/d2/d2renderers/d2svg"
+	"oss.terrastruct.com/d2/d2themes/d2themescatalog"
+	"oss.terrastruct.com/d2/lib/log"
+	"oss.terrastruct.com/d2/lib/textmeasure"
+	"oss.terrastruct.com/util-go/go2"
 )
 
 type D2Renderer struct{}
@@ -63,29 +69,37 @@ func normalizeFormat(format string) string {
 }
 
 func renderD2ToSVG(ctx context.Context, source string) (string, error) {
-	dir, err := os.MkdirTemp("", "domour-d2-*")
+	ruler, err := textmeasure.NewRuler()
 	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(dir)
-
-	inputPath := filepath.Join(dir, "diagram.d2")
-	outputPath := filepath.Join(dir, "diagram.svg")
-	if err := os.WriteFile(inputPath, []byte(source), 0o600); err != nil {
-		return "", err
+		return "", fmt.Errorf("create ruler failed: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "d2", inputPath, outputPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("d2 render failed: %w: %s", err, strings.TrimSpace(string(output)))
+	layoutResolver := func(engine string) (d2graph.LayoutGraph, error) {
+		return d2dagrelayout.DefaultLayout, nil
 	}
 
-	rendered, err := os.ReadFile(outputPath)
-	if err != nil {
-		return "", err
+	renderOpts := &d2svg.RenderOpts{
+		Pad:     go2.Pointer(int64(5)),
+		ThemeID: &d2themescatalog.NeutralDefault.ID,
 	}
-	return string(rendered), nil
+
+	compileOpts := &d2lib.CompileOptions{
+		LayoutResolver: layoutResolver,
+		Ruler:          ruler,
+	}
+
+	lctx := log.WithDefault(ctx)
+	diagram, _, err := d2lib.Compile(lctx, source, compileOpts, renderOpts)
+	if err != nil {
+		return "", fmt.Errorf("compile d2 source failed: %w", err)
+	}
+
+	svgBytes, err := d2svg.Render(diagram, renderOpts)
+	if err != nil {
+		return "", fmt.Errorf("render d2 svg failed: %w", err)
+	}
+
+	return string(svgBytes), nil
 }
 
 func wrapHTML(svg string, command Command) string {

@@ -24,6 +24,10 @@ func (m *mockExecutorClient) Veto(ctx context.Context, action string) bool {
 	return false
 }
 
+func (m *mockExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, error) {
+	return nil, nil
+}
+
 func TestRuntimeBiomorphicPathways(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

@@ -559,3 +559,32 @@ func normalizeAndDeduplicateModelIDs(models []string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// IsProviderInUse returns true if the provider is currently in use or explicitly enabled.
+func (c DomourConfig) IsProviderInUse(provider string) bool {
+	p := normalizeProviderKey(provider)
+	if p == "" {
+		return false
+	}
+
+	// Check default provider
+	if c.DefaultProviderName() == p {
+		return true
+	}
+
+	// Check entries
+	for _, entry := range c.Entries {
+		if normalizeProviderKey(entry.Provider) == p {
+			return true
+		}
+	}
+
+	// Check if explicitly enabled in providers config
+	if c.Providers != nil {
+		if pc, ok := c.Providers[p]; ok && pc.Enabled {
+			return true
+		}
+	}
+
+	return false
+}

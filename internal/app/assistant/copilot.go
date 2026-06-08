@@ -83,32 +83,19 @@ func (s *AssistantService) Copilot(ctx context.Context, req shared.MotorCopilotR
 	}
 	messages = append(messages, userMsg)
 
-	resp, err := brainClient.GenerateText(ctx, messages)
+	respMsg, err := s.runToolCallingLoop(ctx, brainClient, messages, yield, true, "copilot")
 	if err != nil {
-		return fmt.Errorf("generate text: %w", err)
+		return fmt.Errorf("run tool calling loop: %w", err)
+	}
+	resp := proxy.Response{
+		Content:  respMsg.Content,
+		Provider: brainClient.Provider(),
+		Model:    brainClient.Model(),
 	}
 
 	// Veto on output
 	if s.engine.Executor().Veto(ctx, resp.Content) {
 		return yieldCopilotRefusal(yield, resp.Provider, resp.Model, mode)
-	}
-
-	// Simulated Streaming
-	chunks := splitReplyChunks(resp.Content)
-	for _, chunk := range chunks {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			if err := yield(shared.MotorStreamEvent{
-				Stage:   "copilot",
-				Content: chunk,
-				Done:    false,
-				Meta:    map[string]string{"provider": resp.Provider, "model": resp.Model, "mode": mode},
-			}); err != nil {
-				return err
-			}
-		}
 	}
 
 	// Stream final done message

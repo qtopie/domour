@@ -47,8 +47,6 @@ type CLIChatModel struct {
 	ready        bool
 	lastCheckErr error
 	stats        string
-	stopChan     chan struct{}
-	resetTimer   chan struct{}
 }
 
 func New(cfg *Config) (model.ChatModel, error) {
@@ -73,8 +71,6 @@ func New(cfg *Config) (model.ChatModel, error) {
 		model:      strings.TrimSpace(cfg.Model),
 		proxyURL:   strings.TrimSpace(cfg.ProxyURL),
 		debug:      cfg.Debug,
-		stopChan:   make(chan struct{}),
-		resetTimer: make(chan struct{}, 1),
 	}
 
 	switch provider {
@@ -102,38 +98,7 @@ func New(cfg *Config) (model.ChatModel, error) {
 		return nil, fmt.Errorf("unsupported cli provider %q", provider)
 	}
 
-	// Start background health monitor
-	go m.runHealthMonitor()
-
 	return m, nil
-}
-
-func (m *CLIChatModel) runHealthMonitor() {
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-m.stopChan:
-			return
-		case <-timer.C:
-			m.performHealthCheck()
-			timer.Reset(5 * time.Minute)
-		case <-m.resetTimer:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			timer.Reset(5 * time.Minute)
-			
-			m.mu.Lock()
-			m.ready = true
-			m.lastCheckErr = nil
-			m.mu.Unlock()
-		}
-	}
 }
 
 func (m *CLIChatModel) wrapWithVProxy(ctx context.Context, command string, args []string) (*exec.Cmd, string, func()) {
@@ -389,10 +354,10 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 		return "", fmt.Errorf("%s CLI returned empty output", m.command)
 	}
 	
-	select {
-	case m.resetTimer <- struct{}{}:
-	default:
-	}
+	m.mu.Lock()
+	m.ready = true
+	m.lastCheckErr = nil
+	m.mu.Unlock()
 
 	providerruntime.DefaultManager().MarkSuccess(runtime)
 	return output, nil

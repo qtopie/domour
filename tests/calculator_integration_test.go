@@ -89,6 +89,10 @@ func (m *testExecutorClient) Veto(ctx context.Context, action string) bool {
 	return false
 }
 
+func (m *testExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, error) {
+	return m.manager.List(), nil
+}
+
 func TestCalculatorReasoningLoop(t *testing.T) {
 	ctx := context.Background()
 

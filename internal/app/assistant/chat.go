@@ -11,6 +11,7 @@ import (
 	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/infra/llm"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 )
 
 func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest, provider, model string, yield func(event shared.MotorStreamEvent) error) error {
@@ -30,6 +31,15 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	}
 
 	// Resolve Brain LLM Client
+	// Apply System Mode overrides (e.g. stealth mode forces ollama local model for privacy)
+	rmeta := providerruntime.RequestMetadataFromContext(ctx)
+	if rmeta.Mode == "stealth" {
+		if provider != "ollama" {
+			provider = "ollama"
+			model = "" // fallback to default local model
+		}
+	}
+
 	brainClient, err := s.engine.Cognitor().GetClientWithOverride(ctx, "chat", provider, model)
 	if err != nil {
 		return fmt.Errorf("get brain client: %w", err)
@@ -155,9 +165,9 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 		messages = append(messages, userMsg)
 
-		resp, err := brainClient.GenerateText(ctx, messages)
+		respMsg, err := s.runToolCallingLoop(ctx, brainClient, messages, yield, true, "reply")
 		if err != nil {
-			return fmt.Errorf("generate text: %w", err)
+			return fmt.Errorf("run tool calling loop: %w", err)
 		}
 
 		// Re-evaluate context refresh loop
@@ -166,33 +176,15 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 			continue
 		}
 
-		finalContent = resp.Content
-		lastProvider = resp.Provider
-		lastModel = resp.Model
+		finalContent = respMsg.Content
+		lastProvider = brainClient.Provider()
+		lastModel = brainClient.Model()
 		break
 	}
 
 	// Safety check / Veto
 	if s.engine.Executor().Veto(ctx, userMessage) || s.engine.Executor().Veto(ctx, finalContent) {
 		return yieldRefusal(yield, lastProvider, lastModel)
-	}
-
-	// Simulated Streaming back to client
-	chunks := splitReplyChunks(finalContent)
-	for _, chunk := range chunks {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			if err := yield(shared.MotorStreamEvent{
-				Stage:   "reply",
-				Content: chunk,
-				Done:    false,
-				Meta:    map[string]string{"provider": lastProvider, "model": lastModel},
-			}); err != nil {
-				return err
-			}
-		}
 	}
 
 	// Stream final done message

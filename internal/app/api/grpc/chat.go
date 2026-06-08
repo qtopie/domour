@@ -6,6 +6,7 @@ import (
 	chatpb "github.com/qtopie/domour/gen/assistant/chat"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/llm"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 	"google.golang.org/grpc"
 )
 
@@ -50,9 +51,13 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 }
 
 func mergeChatMeta(ctx context.Context, sessionID string, meta map[string]string, stage string) map[string]string {
+	modeVal := "balanced"
+	if rmeta := providerruntime.RequestMetadataFromContext(ctx); rmeta.Mode != "" {
+		modeVal = rmeta.Mode
+	}
 	out := map[string]string{
 		"entry":     "chat",
-		"mode":      "mvp",
+		"mode":      modeVal,
 		"stage":     stage,
 		"sessionId": sessionID,
 		"traceId":   getTraceID(ctx),
