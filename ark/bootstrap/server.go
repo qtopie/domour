@@ -10,6 +10,7 @@ import (
 	"github.com/qtopie/domour/ark/telemetry"
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/config"
+	"google.golang.org/grpc"
 )
 
 // Run initializes the application by loading configuration, assembling 
@@ -45,4 +46,15 @@ func Run(ctx context.Context) error {
 	}
 
 	return app.Run(ctx)
+}
+
+// RegisterAssistantServices initializes the assistant and registers its gRPC services
+// onto the provided server. This allows embedding Domour into a host process.
+func RegisterAssistantServices(s *grpc.Server) error {
+	cfg, _ := config.LoadDomourConfig()
+	app, err := assistant.NewApp(&cfg)
+	if err != nil {
+		return err
+	}
+	return app.RegisterGRPC(s)
 }
