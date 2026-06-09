@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -56,39 +53,10 @@ func (p *claudeProvider) GetGenerateArgs(ctx context.Context, prompt string, ass
 	return args, nil
 }
 
-type claudeAuthStatus struct {
-	LoggedIn    bool   `json:"loggedIn"`
-	AuthMethod  string `json:"authMethod"`
-	APIProvider string `json:"apiProvider"`
-}
-
 func (p *claudeProvider) HealthCheck(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, p.command, "auth", "status", "--json")
-	if p.proxyURL != "" {
-		cmd.Env = append(os.Environ(),
-			"HTTPS_PROXY="+p.proxyURL,
-			"https_proxy="+p.proxyURL,
-			"HTTP_PROXY="+p.proxyURL,
-			"http_proxy="+p.proxyURL,
-		)
+	path, err := exec.LookPath(p.command)
+	if err != nil {
+		return "", fmt.Errorf("claude tool not found: %w", err)
 	}
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to check auth status: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-
-	var status claudeAuthStatus
-	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
-		return "", fmt.Errorf("failed to parse auth status json: %w: %s", err, stdout.String())
-	}
-
-	if !status.LoggedIn {
-		return "", fmt.Errorf("claude code is not logged in. please run: %s auth login", p.command)
-	}
-
-	return fmt.Sprintf("Authenticated (Method: %s, Provider: %s)", status.AuthMethod, status.APIProvider), nil
+	return fmt.Sprintf("Claude tool is available: %s", path), nil
 }
