@@ -16,7 +16,7 @@ import (
 // Run initializes the application by loading configuration, assembling 
 // bionic components, and starting all background neural event loops.
 // It blocks until the context is canceled or a critical error occurs.
-func Run(ctx context.Context) error {
+func Run(ctx context.Context, opts ...Option) error {
 	cfg, err := config.LoadDomourConfig()
 	if err != nil {
 		// Let NewApp handle the error or use defaults if cfg is nil
@@ -45,7 +45,31 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("failed to create app: %w", err)
 	}
 
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	if o.grpcServer != nil {
+		// If using shared gRPC server, we only need to start background loops (HTTP, engine)
+		return app.RunBackground(ctx)
+	}
+
 	return app.Run(ctx)
+}
+
+// Option defines a functional option for the Run method.
+type Option func(*options)
+
+type options struct {
+	grpcServer *grpc.Server
+}
+
+// WithGRPCServer allows passing an existing gRPC server to reuse.
+func WithGRPCServer(s *grpc.Server) Option {
+	return func(o *options) {
+		o.grpcServer = s
+	}
 }
 
 // RegisterAssistantServices initializes the assistant and registers its gRPC services

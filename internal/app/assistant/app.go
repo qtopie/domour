@@ -21,8 +21,6 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-// App is the assembled server application. It owns the configuration, session store
-// and manages the lifecycle of the servers.
 type App struct {
 	cfg   config.DomourConfig
 	store session.Store
@@ -31,7 +29,6 @@ type App struct {
 	httpAddr string
 }
 
-// NewApp constructs an App with the given config.
 func NewApp(cfg *config.DomourConfig) (*App, error) {
 	var actualCfg config.DomourConfig
 	if cfg != nil {
@@ -55,9 +52,7 @@ func NewApp(cfg *config.DomourConfig) (*App, error) {
 func (a *App) GRPCAddr() string { return a.grpcAddr }
 func (a *App) HTTPAddr() string { return a.httpAddr }
 
-// RegisterGRPC registers the assistant services onto the provided gRPC server.
 func (a *App) RegisterGRPC(s *grpc.Server) error {
-	// 1. Initialize Engine
 	cognitorClient, err := engine.NewReloadableCognitorClient()
 	if err != nil {
 		return fmt.Errorf("failed to init cognitor client: %w", err)
@@ -68,16 +63,13 @@ func (a *App) RegisterGRPC(s *grpc.Server) error {
 	}
 	eng := engine.NewEngine(cognitorClient, executorClient)
 
-	// 2. Initialize AssistantService
 	appService := NewAssistantService(eng, a.store)
 
-	// 3. Initialize API gRPC server handler
 	service, err := internalgrpc.NewServer(appService)
 	if err != nil {
 		return fmt.Errorf("failed to init agent server: %w", err)
 	}
 
-	// 4. Register gRPC service implementations
 	copilotpb.RegisterCopilotServiceServer(s, service)
 	chatpb.RegisterChatServiceServer(s, service)
 	autopilotpb.RegisterAutopilotServiceServer(s, service)
@@ -86,27 +78,56 @@ func (a *App) RegisterGRPC(s *grpc.Server) error {
 	return nil
 }
 
-// Run starts the core Engine, gRPC server, and the internal brain HTTP server.
-// It blocks until the context is canceled or an error occurs.
 func (a *App) Run(ctx context.Context) error {
 	return a.RunWithNotify(ctx, nil)
 }
 
-// RunWithNotify starts the servers and sends a signal on the ready channel when listeners are active.
+func (a *App) RunBackground(ctx context.Context) error {
+	cognitorClient, _ := engine.NewReloadableCognitorClient()
+	executorClient, _ := engine.NewConfiguredExecutorClient()
+	eng := engine.NewEngine(cognitorClient, executorClient)
+
+	internalMux, err := internalhttp.NewInternalBrainMux(eng.Cognitor())
+	if err != nil {
+		return fmt.Errorf("failed to init internal brain mux: %w", err)
+	}
+
+	internalAddr := resolveInternalHTTPAddress()
+	internalLis, err := net.Listen("tcp", internalAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on internal http %s: %w", internalAddr, err)
+	}
+	a.httpAddr = internalLis.Addr().String()
+
+	internalServer := &http.Server{
+		Handler: internalMux,
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = internalServer.Shutdown(context.Background())
+		_ = internalLis.Close()
+		a.store.Close()
+	}()
+
+	fmt.Println("Starting internal brain HTTP on", a.httpAddr)
+	if err := internalServer.Serve(internalLis); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("internal brain HTTP server error: %w", err)
+	}
+
+	return nil
+}
+
 func (a *App) RunWithNotify(ctx context.Context, ready chan<- struct{}) error {
-	// 1. Initialize Engine & Register Services on a fresh server
 	grpcServer := grpc.NewServer()
 	if err := a.RegisterGRPC(grpcServer); err != nil {
 		return err
 	}
 
-	// 2. Initialize Engine (re-init for HTTP mux, slightly redundant but safer for now)
-	// In a real refactor we'd share the engine instance
 	cognitorClient, _ := engine.NewReloadableCognitorClient()
 	executorClient, _ := engine.NewConfiguredExecutorClient()
 	eng := engine.NewEngine(cognitorClient, executorClient)
 
-	// 3. Initialize API internal brain HTTP mux
 	internalMux, err := internalhttp.NewInternalBrainMux(eng.Cognitor())
 	if err != nil {
 		return fmt.Errorf("failed to init internal brain mux: %w", err)
@@ -131,7 +152,6 @@ func (a *App) RunWithNotify(ctx context.Context, ready chan<- struct{}) error {
 	}
 	a.grpcAddr = lis.Addr().String()
 
-	// Graceful shutdown
 	go func() {
 		<-ctx.Done()
 		grpcServer.GracefulStop()
