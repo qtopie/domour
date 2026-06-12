@@ -34,15 +34,15 @@ func (p *agyProvider) GetGenerateArgs(ctx context.Context, prompt string, assetP
 		os.Setenv("GEMINI_API_KEY", p.apiKey)
 	}
 
-	// For agy, --print runs prompt non-interactively, and --dangerously-skip-permissions skips interactive prompts
+	// For agy, --print runs prompt non-interactively
 	args := []string{"--print", prompt, "--dangerously-skip-permissions"}
 	if runtime.Workspace != "" {
 		args = append(args, "--add-dir", runtime.Workspace)
 	}
-	if runtime.DomourSessionID != "" {
+	if runtime.DomourSessionID != "" && runtime.DomourSessionID != "default-session" && runtime.ConversationStarted {
 		args = append(args, "--conversation", runtime.DomourSessionID)
 		providerruntime.DefaultManager().MarkResume(runtime)
-	} else if runtime.ConversationStarted {
+	} else if runtime.ConversationStarted && runtime.DomourSessionID != "default-session" {
 		args = append(args, "--continue")
 		providerruntime.DefaultManager().MarkResume(runtime)
 	}

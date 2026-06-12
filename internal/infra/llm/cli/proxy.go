@@ -10,14 +10,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"log/slog"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Config struct {
@@ -103,22 +109,36 @@ func New(cfg *Config) (model.ChatModel, error) {
 
 func (m *CLIChatModel) wrapWithVProxy(ctx context.Context, command string, args []string) (*exec.Cmd, string, func()) {
 	cleanup := func() {}
+
+	// If no proxy is requested, execute directly
 	if m.proxyURL == "" {
 		return exec.CommandContext(ctx, command, args...), command, cleanup
 	}
 
-	// Check if vproxy is available
+	// Check if vproxy is available in PATH
 	vproxyPath, err := exec.LookPath("vproxy")
 	if err != nil {
-		// Fallback to direct execution
+		// vproxy not found, fallback to direct execution
 		return exec.CommandContext(ctx, command, args...), command, cleanup
 	}
 
-	// Create a temporary vproxy.json configuration
+	// Case 1: Use vproxy with its default/global config (ProxyURL is exactly "vproxy")
+	if m.proxyURL == "vproxy" || m.proxyURL == "default" {
+		vproxyArgs := []string{}
+		if m.debug {
+			vproxyArgs = append(vproxyArgs, "-v")
+		}
+		vproxyArgs = append(vproxyArgs, command)
+		vproxyArgs = append(vproxyArgs, args...)
+
+		return exec.CommandContext(ctx, vproxyPath, vproxyArgs...), vproxyPath, cleanup
+	}
+
+	// Case 2: ProxyURL is a specific URL - Generate temporary config
 	tempFile, err := os.CreateTemp("", "vproxy-*.json")
 	if err != nil {
-		// Fallback to direct execution
-		return exec.CommandContext(ctx, command, args...), command, cleanup
+		// Fallback to vproxy with default config if temp file fails
+		return exec.CommandContext(ctx, vproxyPath, append([]string{command}, args...)...), vproxyPath, cleanup
 	}
 
 	configData := map[string]any{
@@ -141,7 +161,6 @@ func (m *CLIChatModel) wrapWithVProxy(ctx context.Context, command string, args 
 		_ = os.Remove(configPath)
 	}
 
-	// Wrap command with vproxy: vproxy [-v] -c <temp-config-path> <command> <args...>
 	vproxyArgs := []string{}
 	if m.debug {
 		vproxyArgs = append(vproxyArgs, "-v")
@@ -149,8 +168,7 @@ func (m *CLIChatModel) wrapWithVProxy(ctx context.Context, command string, args 
 	vproxyArgs = append(vproxyArgs, "-c", configPath, command)
 	vproxyArgs = append(vproxyArgs, args...)
 
-	cmd := exec.CommandContext(ctx, vproxyPath, vproxyArgs...)
-	return cmd, vproxyPath, cleanup
+	return exec.CommandContext(ctx, vproxyPath, vproxyArgs...), vproxyPath, cleanup
 }
 
 func (m *CLIChatModel) performHealthCheck() {
@@ -263,6 +281,13 @@ type cliAttachment struct {
 }
 
 func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []cliAttachment) (string, error) {
+	tracer := otel.Tracer("domour.llm.cli")
+	ctx, span := tracer.Start(ctx, "CLIChatModel.invoke", trace.WithAttributes(
+		attribute.String("provider", m.provider),
+		attribute.String("command", m.command),
+	))
+	defer span.End()
+
 	metadata := providerruntime.RequestMetadataFromContext(ctx)
 	runtime, err := providerruntime.DefaultManager().Prepare(
 		m.provider,
@@ -270,11 +295,13 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 		metadata.Workspace,
 	)
 	if err != nil {
+		span.RecordError(err)
 		return "", err
 	}
 
 	assetsDir := filepath.Join(runtime.Workspace, "assets")
 	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+		span.RecordError(err)
 		return "", fmt.Errorf("failed to create assets dir: %w", err)
 	}
 
@@ -288,6 +315,7 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 		if attachment.Base64Data != nil {
 			data, err = base64Decode(*attachment.Base64Data)
 			if err != nil {
+				span.RecordError(err)
 				return "", fmt.Errorf("decode attachment %d: %w", i+1, err)
 			}
 		} else if attachment.URL != nil {
@@ -296,6 +324,7 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 				srcPath := strings.TrimPrefix(rawURL, "file://")
 				data, err = os.ReadFile(srcPath)
 				if err != nil {
+					span.RecordError(err)
 					return "", fmt.Errorf("read attachment %d: %w", i+1, err)
 				}
 			} else {
@@ -318,6 +347,7 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 
 		if !seenAssets[filename] {
 			if err := os.WriteFile(targetPath, data, 0o644); err != nil {
+				span.RecordError(err)
 				return "", fmt.Errorf("write asset %s: %w", filename, err)
 			}
 			seenAssets[filename] = true
@@ -327,18 +357,38 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 
 	args, err := m.providerImpl.GetGenerateArgs(ctx, prompt, assetPaths, runtime)
 	if err != nil {
+		span.RecordError(err)
 		return "", err
 	}
 
 	cmd, _, cleanup := m.wrapWithVProxy(ctx, m.command, args)
 	defer cleanup()
-	cmd.Env = applyProxyEnv(os.Environ(), m.proxyURL)
+
+	// If using vproxy, we should NOT set proxy env vars as they might confuse the underlying tool
+	// or conflict with vproxy's transparent redirection.
+	if m.proxyURL != "" && strings.Contains(cmd.Path, "vproxy") {
+		// Just use default env, don't inject proxies
+		cmd.Env = os.Environ()
+	} else {
+		cmd.Env = applyProxyEnv(os.Environ(), m.proxyURL)
+	}
+
 	if runtime.Workspace != "" {
-		cmd.Dir = runtime.Workspace
+		// Ensure workspace exists before setting it as Dir
+		if _, err := os.Stat(runtime.Workspace); err == nil {
+			cmd.Dir = runtime.Workspace
+		}
 	}
 
 	if m.debug {
-		fmt.Fprintf(os.Stderr, "[CLI Debug] Invoking: %s %s\n", cmd.Path, strings.Join(cmd.Args[1:], " "))
+		// Log arguments with %q to see exactly how they are quoted
+		quotedArgs := make([]string, len(cmd.Args))
+		for i, arg := range cmd.Args {
+			quotedArgs[i] = fmt.Sprintf("%q", arg)
+		}
+		fmt.Fprintf(os.Stderr, "[CLI Debug] Invoking: %s\n", strings.Join(quotedArgs, " "))
+	} else {
+		fmt.Fprintf(os.Stderr, "[CLI] Executing %s...\n", m.command)
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -346,12 +396,40 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s CLI invocation failed: %w: %s", m.command, err, strings.TrimSpace(stderr.String()))
+		errMsg := strings.TrimSpace(stderr.String())
+		err = fmt.Errorf("%s CLI invocation failed: %w: %s", m.command, err, errMsg)
+		slog.Error("CLI invocation failed", "error", err, "stderr", errMsg)
+		span.RecordError(err)
+		return "", err
 	}
 
 	output := strings.TrimSpace(stdout.String())
 	if output == "" {
-		return "", fmt.Errorf("%s CLI returned empty output", m.command)
+		errMsg := strings.TrimSpace(stderr.String())
+		slog.Warn("CLI returned empty output", "stderr", errMsg)
+		return "", fmt.Errorf("%s CLI returned empty output. Stderr: %s", m.command, errMsg)
+	}
+
+	// Remove ANSI escape codes (colors, etc.)
+	output = StripANSI(output)
+
+	// Filter out common CLI warnings that might be captured in stdout
+	lines := strings.Split(output, "\n")
+	var filteredLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Warning:") || strings.HasPrefix(line, "Warning ") {
+			slog.Warn("CLI Warning captured in stdout", "warning", line)
+			fmt.Fprintf(os.Stderr, "[CLI Warning] %s\n", line)
+			continue
+		}
+		filteredLines = append(filteredLines, line)
+	}
+	output = strings.TrimSpace(strings.Join(filteredLines, "\n"))
+
+	if output == "" {
+		errMsg := strings.TrimSpace(stdout.String())
+		slog.Error("CLI only returned warnings", "output", errMsg)
+		return "", fmt.Errorf("%s CLI only returned warnings: %s", m.command, errMsg)
 	}
 	
 	m.mu.Lock()
@@ -359,11 +437,21 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 	m.lastCheckErr = nil
 	m.mu.Unlock()
 
+	slog.Info("CLI invocation succeeded", "provider", m.provider, "output_len", len(output))
 	providerruntime.DefaultManager().MarkSuccess(runtime)
 	return output, nil
 }
 
 func (m *CLIChatModel) buildCLIPrompt(messages []*schema.Message) (string, []cliAttachment, error) {
+	if len(messages) == 1 {
+		// Strictly return only content for single-message requests to ensure CLI compatibility
+		content, attachments, err := m.stringifyCLIMessage(messages[0])
+		if err != nil {
+			return "", nil, err
+		}
+		return strings.TrimSpace(content), attachments, nil
+	}
+
 	var parts []string
 	var allAttachments []cliAttachment
 	for _, msg := range messages {
@@ -386,6 +474,13 @@ func (m *CLIChatModel) buildCLIPrompt(messages []*schema.Message) (string, []cli
 		parts = append(parts, fmt.Sprintf("[%s]\n%s", role, content))
 	}
 	return strings.Join(parts, "\n\n"), allAttachments, nil
+}
+
+// StripANSI removes ANSI escape codes from a string
+func StripANSI(str string) string {
+	const ansi = "[\u001B\u009B][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]"
+	re := regexp.MustCompile(ansi)
+	return re.ReplaceAllString(str, "")
 }
 
 func (m *CLIChatModel) stringifyCLIMessage(msg *schema.Message) (string, []cliAttachment, error) {
