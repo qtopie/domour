@@ -9,7 +9,7 @@ import (
 	chatpb "github.com/qtopie/domour/gen/assistant/chat"
 	copilotpb "github.com/qtopie/domour/gen/assistant/copilot"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/internal/bionic/session"
+	"github.com/qtopie/domour/pkg/bionic/session"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 	"google.golang.org/grpc/metadata"
 )

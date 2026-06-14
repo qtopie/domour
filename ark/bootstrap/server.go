@@ -10,6 +10,7 @@ import (
 	"github.com/qtopie/domour/ark/telemetry"
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/config"
+	"github.com/qtopie/domour/pkg/bionic/session"
 	"google.golang.org/grpc"
 )
 
@@ -40,14 +41,19 @@ func Run(ctx context.Context, opts ...Option) error {
 		}()
 	}
 
-	app, err := assistant.NewApp(&cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create app: %w", err)
-	}
-
 	var o options
 	for _, opt := range opts {
 		opt(&o)
+	}
+
+	appOpts := []assistant.AppOption{}
+	if o.store != nil {
+		appOpts = append(appOpts, assistant.WithStore(o.store))
+	}
+
+	app, err := assistant.NewApp(&cfg, appOpts...)
+	if err != nil {
+		return fmt.Errorf("failed to create app: %w", err)
 	}
 
 	if o.grpcServer != nil {
@@ -63,12 +69,20 @@ type Option func(*options)
 
 type options struct {
 	grpcServer *grpc.Server
+	store      session.Store
 }
 
 // WithGRPCServer allows passing an existing gRPC server to reuse.
 func WithGRPCServer(s *grpc.Server) Option {
 	return func(o *options) {
 		o.grpcServer = s
+	}
+}
+
+// WithStore allows passing a custom session store/manager.
+func WithStore(store session.Store) Option {
+	return func(o *options) {
+		o.store = store
 	}
 }
 

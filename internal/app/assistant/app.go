@@ -13,7 +13,7 @@ import (
 	copilotpb "github.com/qtopie/domour/gen/assistant/copilot"
 	internalgrpc "github.com/qtopie/domour/internal/app/api/grpc"
 	internalhttp "github.com/qtopie/domour/internal/app/api/http"
-	"github.com/qtopie/domour/internal/bionic/session"
+	"github.com/qtopie/domour/pkg/bionic/session"
 	"github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	db "github.com/qtopie/domour/internal/infra/storage"
@@ -29,7 +29,15 @@ type App struct {
 	httpAddr string
 }
 
-func NewApp(cfg *config.DomourConfig) (*App, error) {
+type AppOption func(*App)
+
+func WithStore(store session.Store) AppOption {
+	return func(a *App) {
+		a.store = store
+	}
+}
+
+func NewApp(cfg *config.DomourConfig, opts ...AppOption) (*App, error) {
 	var actualCfg config.DomourConfig
 	if cfg != nil {
 		actualCfg = *cfg
@@ -43,10 +51,16 @@ func NewApp(cfg *config.DomourConfig) (*App, error) {
 
 	store := InitStore(&actualCfg)
 
-	return &App{
+	app := &App{
 		cfg:   actualCfg,
 		store: store,
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(app)
+	}
+
+	return app, nil
 }
 
 func (a *App) GRPCAddr() string { return a.grpcAddr }

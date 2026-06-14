@@ -61,7 +61,7 @@ func TestSession_HandleInitialize_Default(t *testing.T) {
 	transport := &mockTransport{}
 	sess := NewSession(transport)
 
-	// Case 2: Default (Cognitive) Mode
+	// Case 2: Default (Proxy) Mode
 	initParams := acp.InitializeRequest{
 		Capabilities: acp.ClientCapabilities{},
 	}
@@ -78,7 +78,7 @@ func TestSession_HandleInitialize_Default(t *testing.T) {
 		t.Fatalf("HandleMessage failed: %v", err)
 	}
 
-	if sess.Mode() != acp.ModeCognitive {
-		t.Errorf("Expected default mode %s, got %s", acp.ModeCognitive, sess.Mode())
+	if sess.Mode() != acp.ModeProxy {
+		t.Errorf("Expected default mode %s, got %s", acp.ModeProxy, sess.Mode())
 	}
 }

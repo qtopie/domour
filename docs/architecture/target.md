@@ -9,6 +9,8 @@
 3. **高风险动作必须可审计**：自动化不等于绕过确认、授权和回滚。
 4. **cosmos-star 可插拔**：系统应在没有 cosmos-star 的情况下仍能工作。
 5. **存储与计算分离，协议直通 (Storage-Compute Separation, Protocol Passthrough)**：针对 SurrealDB 等具备高级特性（图查询、实时监听）的数据库，利用 Dapr 或 P2P 机制进行节点发现与连接路由，但业务层必须保持原生协议（如 SurrealQL over WebSocket）直通，严禁因 Dapr State Store 的 KV 抽象而牺牲数据库的核心能力。
+6. **接口设计与实现分离 (Separation of Interface & Implementation)**：在小脑（编排与执行）、脑干（底座与通信）、间脑（LLM 代理接口）等各个层次上，必须充分遵循接口与具体实现解耦的原则。智能体应既能在分布式 Dapr 托管环境中运行（通过 DurableAgent 保证长周期状态恢复），也能在无 Dapr 的单机/嵌入式边缘场景下平滑降级，以保证协议的兼容性和部署的灵活性。
+
 
 ## 2. 目标分层
 
@@ -30,6 +32,10 @@
 - 技能路由
 - 执行计划生成
 - 结果汇总与协同输出
+
+**架构原则：Eino Inside, Dapr Outside**
+- **Eino (微观思维)**: 作为 Domour 的核心逻辑引擎，负责具体的推理图 (Graph)、反思循环和工具路由。它代表了 Agent 的“智商”。
+- **Dapr Agents (宏观外壳)**: 作为可选的托管与协同框架，负责分布式状态持久化 (Durable Workflow) 和跨节点事件总线。它代表了 Agent 的“体质”。
 
 建议把 Domour 看成 **agent orchestrator**，而不是所有能力都内聚在一个模型里。
 
@@ -57,6 +63,13 @@
 - 长连接与后台服务协调
 
 但在设计上必须明确：**它是增强层，不是当前单机版 agent 的启动前提。**
+
+在没有 Dapr 运行时的场景下（如在资源受限的嵌入式设备或完全离线的边缘节点上运行时），框架会自动退化与降级：
+- **存储**：从 Dapr State Store 降级为本地内存存储 (`MemoryStore`) 或轻量级嵌入式 KV 存储（如 `BadgerDB`）。
+- **通信**：从 Dapr Pub/Sub 降级为本地进程内的 Go Channels 或局域网内的轻量级 NATS 消息队列。
+- **编排**：由基于 Dapr Workflow 的分布式持久化执行，降级为进程内直接基于 Go Ticker/Channels 的高频战术小脑循环 (`CerebellumNode`)。
+
+这不仅保障了协议的向后兼容，还消除了 Dapr Sidecar 的网络和资源开销，提供极低的时延和 100% 的离线自治能力。
 
 ## 3. 目标请求生命周期
 

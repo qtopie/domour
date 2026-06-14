@@ -14,7 +14,7 @@ import (
 
 	"github.com/qtopie/domour/ark/bootstrap"
 	"github.com/qtopie/domour/internal/app/assistant"
-	"github.com/qtopie/domour/internal/bionic/session"
+	"github.com/qtopie/domour/pkg/bionic/session"
 	"github.com/qtopie/domour/internal/config/modelmanager"
 )
 

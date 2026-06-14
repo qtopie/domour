@@ -334,14 +334,18 @@ type Client struct {
 	Chat         model.ChatModel
 }
 
-func NewTestClient(provider, model string, chat model.ChatModel) *Client {
+func NewTestClient(provider, modelName string, chat model.ChatModel) *Client {
+	var wrappedChat model.ChatModel
+	if chat != nil {
+		wrappedChat = &sanitizingChatModel{ChatModel: chat}
+	}
 	return &Client{
 		Type:         "api",
 		provider:     provider,
-		model:        model,
+		model:        modelName,
 		Trust:        TrustGeneral,
 		Intelligence: IntelligenceHigh,
-		Chat:         chat,
+		Chat:         wrappedChat,
 	}
 }
 
@@ -412,7 +416,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		Trust:        trust,
 		Intelligence: intel,
 		Tags:         tags,
-		Chat:         client,
+		Chat:         &sanitizingChatModel{ChatModel: client},
 	}, nil
 }
 
@@ -502,6 +506,7 @@ func (c *Client) IsReady(ctx context.Context) (bool, error) {
 }
 
 func (c *Client) GenerateMessage(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
+	sanitizeMessages(messages)
 	// Set a timeout of 30 seconds for the LLM execution if no timeout exists in the context
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -608,4 +613,26 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func sanitizeMessages(messages []*schema.Message) {
+	for _, m := range messages {
+		if m.Content == "" {
+			m.Content = " "
+		}
+	}
+}
+
+type sanitizingChatModel struct {
+	model.ChatModel
+}
+
+func (m *sanitizingChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	sanitizeMessages(in)
+	return m.ChatModel.Generate(ctx, in, opts...)
+}
+
+func (m *sanitizingChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	sanitizeMessages(in)
+	return m.ChatModel.Stream(ctx, in, opts...)
 }

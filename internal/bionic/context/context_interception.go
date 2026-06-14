@@ -13,7 +13,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	appconfig "github.com/qtopie/domour/internal/config"
-	"github.com/qtopie/domour/internal/infra/cache/l1"
+	"github.com/qtopie/domour/pkg/infra/cache/l1"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 )
 

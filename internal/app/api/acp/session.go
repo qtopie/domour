@@ -22,7 +22,7 @@ type session struct {
 func NewSession(transport Transport) *session {
 	return &session{
 		id:        uuid.New().String(),
-		mode:      acp.ModeCognitive, // Default mode
+		mode:      acp.ModeProxy, // Default mode
 		transport: transport,
 	}
 }

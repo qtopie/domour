@@ -45,3 +45,4 @@ Design First(Documentation), Implement Next, Evaluate and Review Finnaly
 - `docs/brain.md`: Detailed Brain/Thinking layer design.
 - `docs/architecture/target.md`: Evolution strategy.
 - `docs/features/plugins/skill-schema.md`: Definition for custom Agent skills.
+- `docs/ai-agent-acp.md`: Introduction to AI Agent ACP Protocol and IDE collaboration.

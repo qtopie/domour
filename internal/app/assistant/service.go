@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
-	"github.com/qtopie/domour/internal/bionic/session"
+	"github.com/qtopie/domour/pkg/bionic/session"
 	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	appconfig "github.com/qtopie/domour/internal/config"
@@ -276,6 +277,8 @@ func (s *AssistantService) runToolCallingLoop(
 			return nil, fmt.Errorf("concat message chunks: %w", err)
 		}
 
+		log.Printf("[AssistantService] Loop %d: model returned %d tool calls, content: %q", loop, len(respMsg.ToolCalls), respMsg.Content)
+
 		if len(respMsg.ToolCalls) == 0 {
 			return respMsg, nil
 		}
@@ -289,6 +292,8 @@ func (s *AssistantService) runToolCallingLoop(
 			if mappedName, ok := toolMapping[tc.Function.Name]; ok {
 				originalName = mappedName
 			}
+
+			log.Printf("[AssistantService] Executing tool %s (%s) -> ID: %q, Args: %s", originalName, tc.Function.Name, tc.ID, tc.Function.Arguments)
 
 			// Yield progress update
 			_ = yield(shared.MotorStreamEvent{
@@ -316,6 +321,8 @@ func (s *AssistantService) runToolCallingLoop(
 					observation = res.Observation
 				}
 			}
+
+			log.Printf("[AssistantService] Tool %s observation: %q", originalName, observation)
 
 			// Yield tool completion update
 			_ = yield(shared.MotorStreamEvent{

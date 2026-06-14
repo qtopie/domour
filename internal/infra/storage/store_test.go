@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/internal/bionic/session"
+	"github.com/qtopie/domour/pkg/bionic/session"
 )
 
 func TestMemoryStore_FullSession(t *testing.T) {
