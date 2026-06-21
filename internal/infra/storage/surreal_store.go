@@ -112,7 +112,7 @@ func (s *SurrealStore) ListSessions(ctx context.Context) ([]shared.Session, erro
 
 func (s *SurrealStore) Close() error {
 	if s.db != nil {
-		s.db.Close()
+		return s.db.Close()
 	}
 	return nil
 }

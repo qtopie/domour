@@ -6,16 +6,18 @@ import (
 	"testing"
 	"time"
 
+	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	chatpb "github.com/qtopie/domour/gen/assistant/chat"
 	appgrpc "github.com/qtopie/domour/internal/app/api/grpc"
 	"github.com/qtopie/domour/internal/app/assistant"
-	"github.com/qtopie/domour/internal/infra/storage"
 	"github.com/qtopie/domour/internal/bionic/tool"
-	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
-	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/qtopie/domour/internal/engine"
+	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
+	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
+	"github.com/qtopie/domour/internal/infra/storage"
 	"google.golang.org/grpc"
 )
 
@@ -110,7 +112,9 @@ func TestServer_SessionLocking(t *testing.T) {
 	chatClient := &mockDiencephalonClient{}
 	brain := &mockCognitorClient{chat: chatClient}
 	eng := engine.NewEngine(brain, &mockExecutorClient{})
-	appService := assistant.NewAssistantService(eng, store)
+	eb := localbus.NewEventBus()
+	orch := localorch.NewLocalOrchestrator(eng, eb)
+	appService := assistant.NewAssistantService(eng, store, eb, orch)
 
 	srv, err := appgrpc.NewServer(appService)
 	if err != nil {

@@ -50,8 +50,9 @@ type DiencephalonNode struct {
 	ResponseIn  chan MotorFeedback
 	ResponseOut chan MotorFeedback
 
-	sessions map[string]*State
-	mu       sync.Mutex
+	sessions          map[string]*State
+	responseListeners map[string]chan<- MotorFeedback
+	mu                sync.Mutex
 }
 
 func NewDiencephalonNode() *DiencephalonNode {
@@ -66,7 +67,25 @@ func NewDiencephalonNode() *DiencephalonNode {
 		CorrectionOut: make(chan CognitiveResult, 10),
 		ResponseIn:    make(chan MotorFeedback, 20),
 		ResponseOut:   make(chan MotorFeedback, 20),
-		sessions:      make(map[string]*State),
+		sessions:          make(map[string]*State),
+		responseListeners: make(map[string]chan<- MotorFeedback),
+	}
+}
+
+func (d *DiencephalonNode) RegisterListener(sessionID string, ch chan<- MotorFeedback) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.responseListeners == nil {
+		d.responseListeners = make(map[string]chan<- MotorFeedback)
+	}
+	d.responseListeners[sessionID] = ch
+}
+
+func (d *DiencephalonNode) UnregisterListener(sessionID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.responseListeners != nil {
+		delete(d.responseListeners, sessionID)
 	}
 }
 
@@ -121,7 +140,10 @@ func (d *DiencephalonNode) startRoutingLoop(ctx context.Context) {
 				}
 			} else {
 				// Convert to global query Event and drive the coordinator
-				sessionID := fmt.Sprintf("G%d", signal.Timestamp.UnixNano())
+				sessionID := signal.SessionID
+				if sessionID == "" {
+					sessionID = fmt.Sprintf("G%d", signal.Timestamp.UnixNano())
+				}
 				state := d.getOrCreateState(sessionID)
 
 				queryStr := fmt.Sprintf("%v", signal.Data)
@@ -180,6 +202,19 @@ func (d *DiencephalonNode) startRelayLoops(ctx context.Context) {
 			go d.drive(ctx, state, ev)
 
 		case resp := <-d.ResponseIn:
+			d.mu.Lock()
+			listener, ok := d.responseListeners[resp.ActionID]
+			d.mu.Unlock()
+			if ok {
+				select {
+				case listener <- resp:
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+					log.Printf("[Thalamus-Warning] Listener channel blocked for session %s", resp.ActionID)
+				}
+			}
+
 			select {
 			case d.ResponseOut <- resp:
 			case <-ctx.Done():
@@ -232,6 +267,7 @@ func (d *DiencephalonNode) drive(ctx context.Context, state *State, ev Event) {
 	case ActionCallLLM:
 		sig := SensorySignal{
 			Ctx:       ctx,
+			SessionID: state.SessionID,
 			Source:    "thalamus",
 			Data:      next.Payload.(string),
 			Timestamp: getTimestampFromSessionID(state.SessionID),

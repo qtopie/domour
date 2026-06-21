@@ -62,8 +62,9 @@ func NewSurrealDB(cfg Config) (*SurrealDB, error) {
 	return &SurrealDB{db: db}, nil
 }
 
-func (s *SurrealDB) Close() {
+func (s *SurrealDB) Close() error {
 	_ = s.db.Close(context.Background())
+	return nil
 }
 
 // Query executes a raw SQL query

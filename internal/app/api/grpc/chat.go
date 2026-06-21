@@ -34,13 +34,44 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 	}
 
 	err = s.app.Chat(ctx, motorReq, req.GetProvider(), req.GetModel(), func(event shared.MotorStreamEvent) error {
-		return stream.Send(&chatpb.ChatResponse{
+		typ := chatpb.ChunkType_CHUNK_TEXT
+		if event.Type != 0 {
+			typ = chatpb.ChunkType(event.Type)
+		}
+		resp := &chatpb.ChatResponse{
 			SessionId: sessionID,
 			Seq:       req.GetSeq(),
+			Type:      typ,
 			Content:   event.Content,
 			Done:      event.Done,
 			Meta:      mergeChatMeta(stream.Context(), sessionID, event.Meta, event.Stage),
-		})
+		}
+		if event.Thinking != nil {
+			resp.Thinking = &chatpb.ThinkingDetail{
+				Engine:    event.Thinking.Engine,
+				Stage:     event.Thinking.Stage,
+				ElapsedMs: event.Thinking.ElapsedMs,
+			}
+		}
+		if event.Collaboration != nil {
+			resp.Collaboration = &chatpb.CollaborationDetail{
+				FromNode:    event.Collaboration.FromNode,
+				ToNode:      event.Collaboration.ToNode,
+				EventType:   event.Collaboration.EventType,
+				Description: event.Collaboration.Description,
+			}
+		}
+		if event.ToolCall != nil {
+			resp.ToolCall = &chatpb.ToolCallDetail{
+				ToolName:    event.ToolCall.ToolName,
+				ToolId:      event.ToolCall.ToolID,
+				Status:      event.ToolCall.Status,
+				Arguments:   event.ToolCall.Arguments,
+				Observation: event.ToolCall.Observation,
+				DurationMs:  event.ToolCall.DurationMs,
+			}
+		}
+		return stream.Send(resp)
 	})
 	if err != nil {
 		s.logError(stream.Context(), "Chat", sessionID, err)

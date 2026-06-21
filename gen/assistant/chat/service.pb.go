@@ -22,6 +22,61 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ChunkType int32
+
+const (
+	ChunkType_CHUNK_UNKNOWN       ChunkType = 0
+	ChunkType_CHUNK_TEXT          ChunkType = 1 // Standard content stream chunk
+	ChunkType_CHUNK_THINKING      ChunkType = 2 // Reasoning / thoughts (e.g., DeepSeek <think> or CoT)
+	ChunkType_CHUNK_COLLABORATION ChunkType = 3 // Inter-node message transfer (agent collaboration)
+	ChunkType_CHUNK_TOOL_CALL     ChunkType = 4 // Tool execution event
+)
+
+// Enum value maps for ChunkType.
+var (
+	ChunkType_name = map[int32]string{
+		0: "CHUNK_UNKNOWN",
+		1: "CHUNK_TEXT",
+		2: "CHUNK_THINKING",
+		3: "CHUNK_COLLABORATION",
+		4: "CHUNK_TOOL_CALL",
+	}
+	ChunkType_value = map[string]int32{
+		"CHUNK_UNKNOWN":       0,
+		"CHUNK_TEXT":          1,
+		"CHUNK_THINKING":      2,
+		"CHUNK_COLLABORATION": 3,
+		"CHUNK_TOOL_CALL":     4,
+	}
+)
+
+func (x ChunkType) Enum() *ChunkType {
+	p := new(ChunkType)
+	*p = x
+	return p
+}
+
+func (x ChunkType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ChunkType) Descriptor() protoreflect.EnumDescriptor {
+	return file_assistant_chat_service_proto_enumTypes[0].Descriptor()
+}
+
+func (ChunkType) Type() protoreflect.EnumType {
+	return &file_assistant_chat_service_proto_enumTypes[0]
+}
+
+func (x ChunkType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ChunkType.Descriptor instead.
+func (ChunkType) EnumDescriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{0}
+}
+
 type ChatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -139,12 +194,17 @@ func (x *ChatRequest) GetModel() string {
 }
 
 type ChatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Seq           int32                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	Done          bool                   `protobuf:"varint,4,opt,name=done,proto3" json:"done,omitempty"`
-	Meta          map[string]string      `protobuf:"bytes,5,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Seq       int32                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	Type      ChunkType              `protobuf:"varint,3,opt,name=type,proto3,enum=assistant.chat.ChunkType" json:"type,omitempty"`
+	Content   string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"` // Text data associated with the chunk
+	// Structured payloads
+	Thinking      *ThinkingDetail      `protobuf:"bytes,5,opt,name=thinking,proto3" json:"thinking,omitempty"`
+	Collaboration *CollaborationDetail `protobuf:"bytes,6,opt,name=collaboration,proto3" json:"collaboration,omitempty"`
+	ToolCall      *ToolCallDetail      `protobuf:"bytes,7,opt,name=tool_call,json=toolCall,proto3" json:"tool_call,omitempty"`
+	Done          bool                 `protobuf:"varint,8,opt,name=done,proto3" json:"done,omitempty"`
+	Meta          map[string]string    `protobuf:"bytes,9,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -193,11 +253,39 @@ func (x *ChatResponse) GetSeq() int32 {
 	return 0
 }
 
+func (x *ChatResponse) GetType() ChunkType {
+	if x != nil {
+		return x.Type
+	}
+	return ChunkType_CHUNK_UNKNOWN
+}
+
 func (x *ChatResponse) GetContent() string {
 	if x != nil {
 		return x.Content
 	}
 	return ""
+}
+
+func (x *ChatResponse) GetThinking() *ThinkingDetail {
+	if x != nil {
+		return x.Thinking
+	}
+	return nil
+}
+
+func (x *ChatResponse) GetCollaboration() *CollaborationDetail {
+	if x != nil {
+		return x.Collaboration
+	}
+	return nil
+}
+
+func (x *ChatResponse) GetToolCall() *ToolCallDetail {
+	if x != nil {
+		return x.ToolCall
+	}
+	return nil
 }
 
 func (x *ChatResponse) GetDone() bool {
@@ -212,6 +300,218 @@ func (x *ChatResponse) GetMeta() map[string]string {
 		return x.Meta
 	}
 	return nil
+}
+
+type ThinkingDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Engine        string                 `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"` // e.g., "deepseek-r1", "simple", "react"
+	Stage         string                 `protobuf:"bytes,2,opt,name=stage,proto3" json:"stage,omitempty"`   // e.g., "plan", "reflect", "thought"
+	ElapsedMs     int64                  `protobuf:"varint,3,opt,name=elapsed_ms,json=elapsedMs,proto3" json:"elapsed_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ThinkingDetail) Reset() {
+	*x = ThinkingDetail{}
+	mi := &file_assistant_chat_service_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ThinkingDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ThinkingDetail) ProtoMessage() {}
+
+func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ThinkingDetail.ProtoReflect.Descriptor instead.
+func (*ThinkingDetail) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ThinkingDetail) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *ThinkingDetail) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *ThinkingDetail) GetElapsedMs() int64 {
+	if x != nil {
+		return x.ElapsedMs
+	}
+	return 0
+}
+
+type CollaborationDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromNode      string                 `protobuf:"bytes,1,opt,name=from_node,json=fromNode,proto3" json:"from_node,omitempty"`    // "diencephalon", "cerebrum", "cerebellum", "brainstem"
+	ToNode        string                 `protobuf:"bytes,2,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`          // "diencephalon", "cerebrum", "cerebellum", "brainstem"
+	EventType     string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // "sensory_relay", "pons_copy", "correction_report"
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollaborationDetail) Reset() {
+	*x = CollaborationDetail{}
+	mi := &file_assistant_chat_service_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollaborationDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollaborationDetail) ProtoMessage() {}
+
+func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollaborationDetail.ProtoReflect.Descriptor instead.
+func (*CollaborationDetail) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CollaborationDetail) GetFromNode() string {
+	if x != nil {
+		return x.FromNode
+	}
+	return ""
+}
+
+func (x *CollaborationDetail) GetToNode() string {
+	if x != nil {
+		return x.ToNode
+	}
+	return ""
+}
+
+func (x *CollaborationDetail) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *CollaborationDetail) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type ToolCallDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ToolName      string                 `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	ToolId        string                 `protobuf:"bytes,2,opt,name=tool_id,json=toolId,proto3" json:"tool_id,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`           // "started", "completed", "failed"
+	Arguments     string                 `protobuf:"bytes,4,opt,name=arguments,proto3" json:"arguments,omitempty"`     // JSON arguments
+	Observation   string                 `protobuf:"bytes,5,opt,name=observation,proto3" json:"observation,omitempty"` // Tool output (populated on completion)
+	DurationMs    int64                  `protobuf:"varint,6,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolCallDetail) Reset() {
+	*x = ToolCallDetail{}
+	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolCallDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolCallDetail) ProtoMessage() {}
+
+func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolCallDetail.ProtoReflect.Descriptor instead.
+func (*ToolCallDetail) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ToolCallDetail) GetToolName() string {
+	if x != nil {
+		return x.ToolName
+	}
+	return ""
+}
+
+func (x *ToolCallDetail) GetToolId() string {
+	if x != nil {
+		return x.ToolId
+	}
+	return ""
+}
+
+func (x *ToolCallDetail) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ToolCallDetail) GetArguments() string {
+	if x != nil {
+		return x.Arguments
+	}
+	return ""
+}
+
+func (x *ToolCallDetail) GetObservation() string {
+	if x != nil {
+		return x.Observation
+	}
+	return ""
+}
+
+func (x *ToolCallDetail) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
 }
 
 var File_assistant_chat_service_proto protoreflect.FileDescriptor
@@ -232,17 +532,47 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"\vattachments\x18\b \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\x12\x1a\n" +
 	"\bprovider\x18\t \x01(\tR\bprovider\x12\x14\n" +
 	"\x05model\x18\n" +
-	" \x01(\tR\x05model\"\xe2\x01\n" +
+	" \x01(\tR\x05model\"\xd5\x03\n" +
 	"\fChatResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
-	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\tR\acontent\x12\x12\n" +
-	"\x04done\x18\x04 \x01(\bR\x04done\x12:\n" +
-	"\x04meta\x18\x05 \x03(\v2&.assistant.chat.ChatResponse.MetaEntryR\x04meta\x1a7\n" +
+	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12-\n" +
+	"\x04type\x18\x03 \x01(\x0e2\x19.assistant.chat.ChunkTypeR\x04type\x12\x18\n" +
+	"\acontent\x18\x04 \x01(\tR\acontent\x12:\n" +
+	"\bthinking\x18\x05 \x01(\v2\x1e.assistant.chat.ThinkingDetailR\bthinking\x12I\n" +
+	"\rcollaboration\x18\x06 \x01(\v2#.assistant.chat.CollaborationDetailR\rcollaboration\x12;\n" +
+	"\ttool_call\x18\a \x01(\v2\x1e.assistant.chat.ToolCallDetailR\btoolCall\x12\x12\n" +
+	"\x04done\x18\b \x01(\bR\x04done\x12:\n" +
+	"\x04meta\x18\t \x03(\v2&.assistant.chat.ChatResponse.MetaEntryR\x04meta\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012R\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"]\n" +
+	"\x0eThinkingDetail\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x14\n" +
+	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x1d\n" +
+	"\n" +
+	"elapsed_ms\x18\x03 \x01(\x03R\telapsedMs\"\x8c\x01\n" +
+	"\x13CollaborationDetail\x12\x1b\n" +
+	"\tfrom_node\x18\x01 \x01(\tR\bfromNode\x12\x17\n" +
+	"\ato_node\x18\x02 \x01(\tR\x06toNode\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x03 \x01(\tR\teventType\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\"\xbf\x01\n" +
+	"\x0eToolCallDetail\x12\x1b\n" +
+	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12\x17\n" +
+	"\atool_id\x18\x02 \x01(\tR\x06toolId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1c\n" +
+	"\targuments\x18\x04 \x01(\tR\targuments\x12 \n" +
+	"\vobservation\x18\x05 \x01(\tR\vobservation\x12\x1f\n" +
+	"\vduration_ms\x18\x06 \x01(\x03R\n" +
+	"durationMs*p\n" +
+	"\tChunkType\x12\x11\n" +
+	"\rCHUNK_UNKNOWN\x10\x00\x12\x0e\n" +
+	"\n" +
+	"CHUNK_TEXT\x10\x01\x12\x12\n" +
+	"\x0eCHUNK_THINKING\x10\x02\x12\x17\n" +
+	"\x13CHUNK_COLLABORATION\x10\x03\x12\x13\n" +
+	"\x0fCHUNK_TOOL_CALL\x10\x042R\n" +
 	"\vChatService\x12C\n" +
 	"\x04Chat\x12\x1b.assistant.chat.ChatRequest\x1a\x1c.assistant.chat.ChatResponse0\x01B-Z+github.com/qtopie/domour/gen/assistant/chatb\x06proto3"
 
@@ -258,23 +588,32 @@ func file_assistant_chat_service_proto_rawDescGZIP() []byte {
 	return file_assistant_chat_service_proto_rawDescData
 }
 
-var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_assistant_chat_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_assistant_chat_service_proto_goTypes = []any{
-	(*ChatRequest)(nil),       // 0: assistant.chat.ChatRequest
-	(*ChatResponse)(nil),      // 1: assistant.chat.ChatResponse
-	nil,                       // 2: assistant.chat.ChatResponse.MetaEntry
-	(*common.Attachment)(nil), // 3: assistant.common.v1.Attachment
+	(ChunkType)(0),              // 0: assistant.chat.ChunkType
+	(*ChatRequest)(nil),         // 1: assistant.chat.ChatRequest
+	(*ChatResponse)(nil),        // 2: assistant.chat.ChatResponse
+	(*ThinkingDetail)(nil),      // 3: assistant.chat.ThinkingDetail
+	(*CollaborationDetail)(nil), // 4: assistant.chat.CollaborationDetail
+	(*ToolCallDetail)(nil),      // 5: assistant.chat.ToolCallDetail
+	nil,                         // 6: assistant.chat.ChatResponse.MetaEntry
+	(*common.Attachment)(nil),   // 7: assistant.common.v1.Attachment
 }
 var file_assistant_chat_service_proto_depIdxs = []int32{
-	3, // 0: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
-	2, // 1: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
-	0, // 2: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
-	1, // 3: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	7, // 0: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
+	0, // 1: assistant.chat.ChatResponse.type:type_name -> assistant.chat.ChunkType
+	3, // 2: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
+	4, // 3: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
+	5, // 4: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
+	6, // 5: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
+	1, // 6: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
+	2, // 7: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
+	7, // [7:8] is the sub-list for method output_type
+	6, // [6:7] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_assistant_chat_service_proto_init() }
@@ -287,13 +626,14 @@ func file_assistant_chat_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_assistant_chat_service_proto_rawDesc), len(file_assistant_chat_service_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_assistant_chat_service_proto_goTypes,
 		DependencyIndexes: file_assistant_chat_service_proto_depIdxs,
+		EnumInfos:         file_assistant_chat_service_proto_enumTypes,
 		MessageInfos:      file_assistant_chat_service_proto_msgTypes,
 	}.Build()
 	File_assistant_chat_service_proto = out.File

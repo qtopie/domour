@@ -16,6 +16,8 @@ import (
 	"github.com/qtopie/domour/pkg/bionic/session"
 	"github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
+	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
+	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 	db "github.com/qtopie/domour/internal/infra/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -77,7 +79,10 @@ func (a *App) RegisterGRPC(s *grpc.Server) error {
 	}
 	eng := engine.NewEngine(cognitorClient, executorClient)
 
-	appService := NewAssistantService(eng, a.store)
+	eb := localbus.NewEventBus()
+	orch := localorch.NewLocalOrchestrator(eng, eb)
+
+	appService := NewAssistantService(eng, a.store, eb, orch)
 
 	service, err := internalgrpc.NewServer(appService)
 	if err != nil {
@@ -87,7 +92,16 @@ func (a *App) RegisterGRPC(s *grpc.Server) error {
 	copilotpb.RegisterCopilotServiceServer(s, service)
 	chatpb.RegisterChatServiceServer(s, service)
 	autopilotpb.RegisterAutopilotServiceServer(s, service)
-	reflection.Register(s)
+	hasReflection := false
+	for svcName := range s.GetServiceInfo() {
+		if strings.Contains(svcName, "reflection") {
+			hasReflection = true
+			break
+		}
+	}
+	if !hasReflection {
+		reflection.Register(s)
+	}
 
 	return nil
 }

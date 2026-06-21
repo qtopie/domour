@@ -2,12 +2,14 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
+	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/llm"
 )
 
@@ -87,12 +89,61 @@ func (s *AssistantService) Autopilot(ctx context.Context, req shared.MotorAutopi
 	}
 	messages = append(messages, userMsg)
 
-	respMsg, err := s.runToolCallingLoop(ctx, brainClient, messages, func(event shared.MotorStreamEvent) error { return nil }, false, "")
+	workflowID := fmt.Sprintf("autopilot-%s-%d", sessionID, req.Seq)
+	topic := fmt.Sprintf("agent/workflow/%s/stream", workflowID)
+	doneChan := make(chan struct{})
+	var finalErr error
+
+	sub, err := s.eb.Subscribe(ctx, topic, func(data []byte) {
+		var event shared.MotorStreamEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			return
+		}
+		if event.Done {
+			if event.Err != nil {
+				finalErr = event.Err
+			}
+			close(doneChan)
+		}
+	})
 	if err != nil {
-		return shared.MotorAutopilotResponse{}, fmt.Errorf("run tool calling loop: %w", err)
+		return shared.MotorAutopilotResponse{}, fmt.Errorf("subscribe stream: %w", err)
 	}
+
+	input := dapr.AgentWorkflowInput{
+		SessionID:   sessionID,
+		Messages:    messages,
+		Provider:    brainClient.Provider(),
+		Model:       brainClient.Model(),
+		StreamFinal: false,
+		Stage:       "autopilot",
+	}
+
+	_, err = s.orchestrator.StartWorkflow(ctx, workflowID, input)
+	if err != nil {
+		sub.Unsubscribe()
+		return shared.MotorAutopilotResponse{}, fmt.Errorf("start agent workflow: %w", err)
+	}
+
+	select {
+	case <-doneChan:
+	case <-ctx.Done():
+		sub.Unsubscribe()
+		return shared.MotorAutopilotResponse{}, ctx.Err()
+	}
+	sub.Unsubscribe()
+
+	if finalErr != nil {
+		return shared.MotorAutopilotResponse{}, fmt.Errorf("workflow execution failed: %w", finalErr)
+	}
+
+	wfStatus, err := s.orchestrator.GetWorkflowStatus(ctx, workflowID)
+	if err != nil {
+		return shared.MotorAutopilotResponse{}, fmt.Errorf("get workflow status: %w", err)
+	}
+
 	resp := proxy.Response{
-		Content:  respMsg.Content,
+		Content:  wfStatus.Result.Content,
 		Provider: brainClient.Provider(),
 		Model:    brainClient.Model(),
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -32,7 +33,23 @@ type Engine interface {
 
 	// Results returns the read-only channel of final responses produced by the Diencephalon.
 	Results() <-chan brain.MotorFeedback
+
+	AddObserver(sessionID string, obs SignalObserver)
+	RemoveObserver(sessionID string)
+	Diencephalon() *brain.DiencephalonNode
 }
+
+type SignalEvent struct {
+	SessionID   string
+	Timestamp   time.Time
+	FromNode    string
+	ToNode      string
+	EventType   string
+	Description string
+	Payload     any
+}
+
+type SignalObserver func(event SignalEvent)
 
 type engineModelClient struct {
 	client CognitorClient
@@ -63,6 +80,9 @@ type coreEngine struct {
 	cerebrum     *brain.CerebrumNode
 	cerebellum   *brain.CerebellumNode
 	brainstem    *brain.BrainstemNode
+
+	observers map[string]SignalObserver
+	obsMu     sync.RWMutex
 }
 
 // NewEngine constructs a new Engine instance with the given LLM and motor clients.
@@ -71,18 +91,56 @@ func NewEngine(brainClient CognitorClient, motor ExecutorClient) Engine {
 	if brainClient != nil {
 		modelClient = &engineModelClient{client: brainClient}
 	}
-	return &coreEngine{
+	e := &coreEngine{
 		brain:        brainClient,
 		motor:        motor,
 		diencephalon: brain.NewDiencephalonNode(),
 		cerebrum:     brain.NewCerebrumNode(),
 		cerebellum:   brain.NewCerebellumNode(motor, modelClient),
 		brainstem:    brain.NewBrainstemNode(),
+		observers:    make(map[string]SignalObserver),
+	}
+	e.cerebellum.SignalCallback = func(sessionID string, eventType string, desc string, payload any) {
+		e.notifyObservers(sessionID, SignalEvent{
+			SessionID:   sessionID,
+			Timestamp:   time.Now(),
+			FromNode:    "cerebellum",
+			ToNode:      "motor",
+			EventType:   eventType,
+			Description: desc,
+			Payload:     payload,
+		})
+	}
+	return e
+}
+
+func (e *coreEngine) AddObserver(sessionID string, obs SignalObserver) {
+	e.obsMu.Lock()
+	defer e.obsMu.Unlock()
+	e.observers[sessionID] = obs
+}
+
+func (e *coreEngine) RemoveObserver(sessionID string) {
+	e.obsMu.Lock()
+	defer e.obsMu.Unlock()
+	delete(e.observers, sessionID)
+}
+
+func (e *coreEngine) notifyObservers(sessionID string, ev SignalEvent) {
+	e.obsMu.RLock()
+	obs, ok := e.observers[sessionID]
+	e.obsMu.RUnlock()
+	if ok {
+		obs(ev)
 	}
 }
 
 func (e *coreEngine) Cognitor() CognitorClient {
 	return e.brain
+}
+
+func (e *coreEngine) Diencephalon() *brain.DiencephalonNode {
+	return e.diencephalon
 }
 
 func (e *coreEngine) Executor() ExecutorClient {
@@ -147,12 +205,25 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if taskCtx == nil {
 					taskCtx = ctx
 				}
+				sessionID := sig.SessionID
+				if sessionID == "" {
+					sessionID = fmt.Sprintf("G%d", sig.Timestamp.UnixNano())
+				}
 				task := brain.CognitiveTask{
 					Ctx:     taskCtx,
-					GoalID:  fmt.Sprintf("G%d", sig.Timestamp.UnixNano()),
+					GoalID:  sessionID,
 					Prompt:  fmt.Sprintf("%v", sig.Data),
 					Context: sig.Data,
 				}
+				e.notifyObservers(sessionID, SignalEvent{
+					SessionID:   sessionID,
+					Timestamp:   time.Now(),
+					FromNode:    "diencephalon",
+					ToNode:      "cerebrum",
+					EventType:   "sensory_relay",
+					Description: "Relaying user query to Cerebrum for macro planning",
+					Payload:     sig.Data,
+				})
 				select {
 				case e.cerebrum.TaskIn <- task:
 				case <-taskCtx.Done():
@@ -174,6 +245,19 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				sessionID := sig.SessionID
+				if sessionID == "" {
+					sessionID = fmt.Sprintf("G%d", sig.Timestamp.UnixNano())
+				}
+				e.notifyObservers(sessionID, SignalEvent{
+					SessionID:   sessionID,
+					Timestamp:   time.Now(),
+					FromNode:    "diencephalon",
+					ToNode:      "cerebellum",
+					EventType:   "telemetry_relay",
+					Description: "Relaying tactile telemetry signal to Cerebellum",
+					Payload:     sig.Data,
+				})
 				brain.EvictAndPushChannel(e.cerebellum.TelemetryIn, sig)
 			}
 		}
@@ -189,6 +273,15 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				e.notifyObservers(cogResult.GoalID, SignalEvent{
+					SessionID:   cogResult.GoalID,
+					Timestamp:   time.Now(),
+					FromNode:    "cerebrum",
+					ToNode:      "diencephalon",
+					EventType:   "cognitive_plan",
+					Description: fmt.Sprintf("Cerebrum produced plan: %v", cogResult.Plan),
+					Payload:     cogResult,
+				})
 				select {
 				case e.diencephalon.CommandIn <- cogResult:
 				case <-ctx.Done():
@@ -210,6 +303,15 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				e.notifyObservers(cmdRelay.GoalID, SignalEvent{
+					SessionID:   cmdRelay.GoalID,
+					Timestamp:   time.Now(),
+					FromNode:    "diencephalon",
+					ToNode:      "brainstem",
+					EventType:   "command_relay",
+					Description: fmt.Sprintf("Diencephalon relaying command to Brainstem (Intent: %s)", cmdRelay.Intent),
+					Payload:     cmdRelay,
+				})
 				select {
 				case e.brainstem.CommandIn <- cmdRelay:
 				case <-ctx.Done():
@@ -231,6 +333,15 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				e.notifyObservers(ponsCopy.GoalID, SignalEvent{
+					SessionID:   ponsCopy.GoalID,
+					Timestamp:   time.Now(),
+					FromNode:    "brainstem",
+					ToNode:      "cerebellum",
+					EventType:   "pons_split",
+					Description: "Pons split copy sent to Cerebellum",
+					Payload:     ponsCopy,
+				})
 				select {
 				case e.cerebellum.CognitiveIn <- ponsCopy:
 				case <-ctx.Done():
@@ -252,6 +363,15 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				e.notifyObservers(correction.GoalID, SignalEvent{
+					SessionID:   correction.GoalID,
+					Timestamp:   time.Now(),
+					FromNode:    "cerebellum",
+					ToNode:      "diencephalon",
+					EventType:   "correction_report",
+					Description: fmt.Sprintf("Cerebellum reported feedback/correction: %s", correction.Intent),
+					Payload:     correction,
+				})
 				select {
 				case e.diencephalon.CorrectionIn <- correction:
 				case <-ctx.Done():
@@ -273,6 +393,15 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				e.notifyObservers(corrRelay.GoalID, SignalEvent{
+					SessionID:   corrRelay.GoalID,
+					Timestamp:   time.Now(),
+					FromNode:    "diencephalon",
+					ToNode:      "cerebrum",
+					EventType:   "correction_relay",
+					Description: "Diencephalon relaying correction upward to Cerebrum",
+					Payload:     corrRelay,
+				})
 				select {
 				case e.cerebrum.CorrectionIn <- corrRelay:
 				case <-ctx.Done():
@@ -294,6 +423,15 @@ func (e *coreEngine) routeNeuroSignals(ctx context.Context) {
 				if !ok {
 					return
 				}
+				e.notifyObservers(finalResp.ActionID, SignalEvent{
+					SessionID:   finalResp.ActionID,
+					Timestamp:   time.Now(),
+					FromNode:    "brainstem",
+					ToNode:      "diencephalon",
+					EventType:   "response_relay",
+					Description: "Relaying final response from Brainstem to Diencephalon gateway",
+					Payload:     finalResp.Output,
+				})
 				select {
 				case e.diencephalon.ResponseIn <- finalResp:
 				case <-ctx.Done():

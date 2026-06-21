@@ -101,6 +101,13 @@
 
 ### 2.4 Durable Agent 运行时引擎 (`dapr.DurableAgent`)
 *   **痛点**：`DurableAgent` 引擎目前是强耦合 Dapr 侧车（Workflow & Actor 调度）的。在无 Dapr 运行时的情况下，Agent 无法在单机直接唤醒。
+*   **流式输出（Stream）支持设计**：
+    由于 Durable Workflow 框架具有确定性重放（Replay）特性，编排器（Orchestrator）无法直接持有活动的 gRPC/HTTP 连接进行 `stream.Send()`。
+    我们采用**事件总线旁路流式推送（EventBus Bypass Streaming）**方案：
+    1. 宿主服务（`AssistantService.Chat`）在启动工作流前，订阅基于该工作流 ID 的事件主题：`agent/workflow/{workflow_id}/stream`。
+    2. 工作流中的 Activity 执行大模型对话或工具调用时，将产生的实时 Token 块发布到该事件主题。
+    3. `AssistantService` 监听到事件后，通过原有接口的 `yield` 回调实时推送给客户端。
+    4. 工作流重放时，由于已经执行成功的 Activity 会被跳过，因此不会产生重复的流事件，从而完美避免了流式输出重复的问题。
 *   **接口设计** (在 `internal/infra/dapr/daprclient.go` 定义)：
     ```go
     package dapr
@@ -108,12 +115,12 @@
     import "context"
 
     type DurableAgentOrchestrator interface {
-        StartWorkflow(ctx context.Context, agentID string, input any) (string, error)
+        StartWorkflow(ctx context.Context, workflowID string, input any) (string, error)
         GetWorkflowStatus(ctx context.Context, workflowID string) (any, error)
     }
     ```
 *   **具体实现**：
-    *   `local` (Domour 内置)：利用本地 Go Ticker / Channels 与本地 SQLite 结合，实现轻量级、具备“步骤记录与重试”机制的单机小脑循环（CerebellumNode）。
+    *   `local` (Domour 内置)：利用本地 Go Ticker / Channels 与本地缓存（如 Badger 或本地 SurrealDB 实例）结合，实现轻量级、具备“步骤记录与重试”机制的单机小脑循环（CerebellumNode）。
     *   `dapr` (当前的 DurableAgent 封装)：基于 Dapr Workflow 引擎，提供分布式环境的断点强力恢复保障。
 
 ---

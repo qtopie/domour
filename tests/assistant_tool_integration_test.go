@@ -14,6 +14,8 @@ import (
 	"github.com/qtopie/domour/internal/brain"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/engine"
+	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
+	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 )
 
 type mockAssistantDiencephalonClient struct {
@@ -124,6 +126,9 @@ func (e *mockAssistantEngine) Executor() engine.ExecutorClient { return e.execut
 func (e *mockAssistantEngine) Start(ctx context.Context) error { return nil }
 func (e *mockAssistantEngine) Submit(ctx context.Context, signal brain.SensorySignal) error { return nil }
 func (e *mockAssistantEngine) Results() <-chan brain.MotorFeedback { return nil }
+func (e *mockAssistantEngine) AddObserver(sessionID string, obs engine.SignalObserver) {}
+func (e *mockAssistantEngine) RemoveObserver(sessionID string) {}
+func (e *mockAssistantEngine) Diencephalon() *brain.DiencephalonNode { return nil }
 
 func TestAssistantServiceToolCallingLoop(t *testing.T) {
 	ctx := context.Background()
@@ -148,7 +153,9 @@ func TestAssistantServiceToolCallingLoop(t *testing.T) {
 	eng := &mockAssistantEngine{cognitor: cognitor, executor: executor}
 
 	// 2. Initialize AssistantService
-	service := assistant.NewAssistantService(eng, nil)
+	eb := localbus.NewEventBus()
+	orch := localorch.NewLocalOrchestrator(eng, eb)
+	service := assistant.NewAssistantService(eng, nil, eb, orch)
 
 	// 3. Call Chat and verify streaming and results
 	req := shared.MotorChatRequest{

@@ -80,6 +80,7 @@ type Module interface {
 // SensorySignal represents raw input data or stimulus received by the Diencephalon.
 type SensorySignal struct {
 	Ctx       context.Context
+	SessionID string
 	Source    string
 	Data      interface{}
 	Timestamp time.Time

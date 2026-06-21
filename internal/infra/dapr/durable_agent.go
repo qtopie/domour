@@ -2,10 +2,12 @@ package dapr
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 
+	"github.com/cloudwego/eino/schema"
 	daprClient "github.com/dapr/go-sdk/client"
 	"github.com/dapr/go-sdk/workflow"
 )
@@ -98,6 +100,11 @@ func (c *DurableAgentClient) StartAgentTask(ctx context.Context, workflowName st
 	return id, nil
 }
 
+// StartWorkflow starts a workflow using Dapr client.
+func (c *DurableAgentClient) StartWorkflow(ctx context.Context, agentID string, input any) (string, error) {
+	return c.StartAgentTask(ctx, "DurableAgentTaskWorkflow", agentID, input)
+}
+
 // GetTaskStatus retrieves the current status of a durable agent task.
 func (c *DurableAgentClient) GetTaskStatus(ctx context.Context, instanceID string) (*workflow.Metadata, error) {
 	meta, err := c.client.FetchWorkflowMetadata(ctx, instanceID)
@@ -105,6 +112,29 @@ func (c *DurableAgentClient) GetTaskStatus(ctx context.Context, instanceID strin
 		return nil, fmt.Errorf("failed to get agent task status: %w", err)
 	}
 	return meta, nil
+}
+
+// GetWorkflowStatus retrieves the workflow status from Dapr and converts it to the common WorkflowState.
+func (c *DurableAgentClient) GetWorkflowStatus(ctx context.Context, workflowID string) (*WorkflowState, error) {
+	meta, err := c.GetTaskStatus(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &WorkflowState{
+		Status: meta.RuntimeStatus.String(),
+	}
+
+	if meta.RuntimeStatus == workflow.StatusCompleted && meta.SerializedOutput != "" {
+		var res schema.Message
+		if err := json.Unmarshal([]byte(meta.SerializedOutput), &res); err == nil {
+			state.Result = &res
+		}
+	} else if meta.RuntimeStatus == workflow.StatusFailed || meta.RuntimeStatus == workflow.StatusTerminated {
+		state.Err = fmt.Errorf("workflow failed with status: %s", meta.RuntimeStatus)
+	}
+
+	return state, nil
 }
 
 func getFreshDaprClient() (daprClient.Client, error) {

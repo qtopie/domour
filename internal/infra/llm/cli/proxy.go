@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -244,11 +245,107 @@ func (m *CLIChatModel) Generate(ctx context.Context, input []*schema.Message, _ 
 }
 
 func (m *CLIChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	msg, err := m.Generate(ctx, input, opts...)
+	prompt, attachments, err := m.buildCLIPrompt(input)
 	if err != nil {
 		return nil, err
 	}
-	return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+
+	sr, sw := schema.Pipe[*schema.Message](100)
+
+	go func() {
+		defer sw.Close()
+
+		metadata := providerruntime.RequestMetadataFromContext(ctx)
+		runtime, err := providerruntime.DefaultManager().Prepare(
+			m.provider,
+			metadata.SessionID,
+			metadata.Workspace,
+		)
+		if err != nil {
+			sw.Send(nil, err)
+			return
+		}
+
+		assetsDir := filepath.Join(runtime.Workspace, "assets")
+		if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+			sw.Send(nil, fmt.Errorf("failed to create assets dir: %w", err))
+			return
+		}
+
+		assetPaths, err := m.prepareAssets(assetsDir, attachments)
+		if err != nil {
+			sw.Send(nil, err)
+			return
+		}
+
+		args, err := m.providerImpl.GetGenerateArgs(ctx, prompt, assetPaths, runtime)
+		if err != nil {
+			sw.Send(nil, err)
+			return
+		}
+
+		cmd, _, cleanup := m.wrapWithVProxy(ctx, m.command, args)
+		defer cleanup()
+
+		if m.proxyURL != "" && strings.Contains(cmd.Path, "vproxy") {
+			cmd.Env = os.Environ()
+		} else {
+			cmd.Env = applyProxyEnv(os.Environ(), m.proxyURL)
+		}
+
+		if runtime.Workspace != "" {
+			if _, err := os.Stat(runtime.Workspace); err == nil {
+				cmd.Dir = runtime.Workspace
+			}
+		}
+
+		if m.debug {
+			quotedArgs := make([]string, len(cmd.Args))
+			for i, arg := range cmd.Args {
+				quotedArgs[i] = fmt.Sprintf("%q", arg)
+			}
+			fmt.Fprintf(os.Stderr, "[CLI Debug] Stream Invoking: %s\n", strings.Join(quotedArgs, " "))
+		} else {
+			fmt.Fprintf(os.Stderr, "[CLI] Stream Executing %s...\n", m.command)
+		}
+
+		cmd.Stderr = os.Stderr
+
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			sw.Send(nil, err)
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			sw.Send(nil, err)
+			return
+		}
+
+		scanner := bufio.NewScanner(stdoutPipe)
+		for scanner.Scan() {
+			text := scanner.Text()
+			text = StripANSI(text)
+			if strings.HasPrefix(text, "Warning:") || strings.HasPrefix(text, "Warning ") {
+				continue
+			}
+			sw.Send(schema.AssistantMessage(text+"\n", nil), nil)
+		}
+
+		if err := cmd.Wait(); err != nil {
+			sw.Send(nil, err)
+			return
+		}
+
+		m.mu.Lock()
+		m.ready = true
+		m.lastCheckErr = nil
+		m.mu.Unlock()
+
+		providerruntime.DefaultManager().MarkSuccess(runtime)
+	}()
+
+	return sr, nil
 }
 
 func (m *CLIChatModel) BindTools(_ []*schema.ToolInfo) error {
@@ -305,54 +402,10 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 		return "", fmt.Errorf("failed to create assets dir: %w", err)
 	}
 
-	var assetPaths []string
-	seenAssets := make(map[string]bool)
-
-	for i, attachment := range attachments {
-		var data []byte
-		var err error
-
-		if attachment.Base64Data != nil {
-			data, err = base64Decode(*attachment.Base64Data)
-			if err != nil {
-				span.RecordError(err)
-				return "", fmt.Errorf("decode attachment %d: %w", i+1, err)
-			}
-		} else if attachment.URL != nil {
-			rawURL := *attachment.URL
-			if strings.HasPrefix(rawURL, "file://") {
-				srcPath := strings.TrimPrefix(rawURL, "file://")
-				data, err = os.ReadFile(srcPath)
-				if err != nil {
-					span.RecordError(err)
-					return "", fmt.Errorf("read attachment %d: %w", i+1, err)
-				}
-			} else {
-				continue
-			}
-		}
-
-		if len(data) == 0 {
-			continue
-		}
-
-		hash := sha256.Sum256(data)
-		assetUUID := uuid.NewSHA1(uuid.NameSpaceDNS, hash[:]).String()
-		ext := ".bin"
-		if parts := strings.Split(attachment.MIMEType, "/"); len(parts) == 2 {
-			ext = "." + parts[1]
-		}
-		filename := assetUUID + ext
-		targetPath := filepath.Join(assetsDir, filename)
-
-		if !seenAssets[filename] {
-			if err := os.WriteFile(targetPath, data, 0o644); err != nil {
-				span.RecordError(err)
-				return "", fmt.Errorf("write asset %s: %w", filename, err)
-			}
-			seenAssets[filename] = true
-		}
-		assetPaths = append(assetPaths, filepath.Join("assets", filename))
+	assetPaths, err := m.prepareAssets(assetsDir, attachments)
+	if err != nil {
+		span.RecordError(err)
+		return "", err
 	}
 
 	args, err := m.providerImpl.GetGenerateArgs(ctx, prompt, assetPaths, runtime)
@@ -626,4 +679,54 @@ func base64Decode(data string) ([]byte, error) {
 		data = data[idx+1:]
 	}
 	return base64.StdEncoding.DecodeString(data)
+}
+
+func (m *CLIChatModel) prepareAssets(assetsDir string, attachments []cliAttachment) ([]string, error) {
+	var assetPaths []string
+	seenAssets := make(map[string]bool)
+
+	for i, attachment := range attachments {
+		var data []byte
+		var err error
+
+		if attachment.Base64Data != nil {
+			data, err = base64Decode(*attachment.Base64Data)
+			if err != nil {
+				return nil, fmt.Errorf("decode attachment %d: %w", i+1, err)
+			}
+		} else if attachment.URL != nil {
+			rawURL := *attachment.URL
+			if strings.HasPrefix(rawURL, "file://") {
+				srcPath := strings.TrimPrefix(rawURL, "file://")
+				data, err = os.ReadFile(srcPath)
+				if err != nil {
+					return nil, fmt.Errorf("read attachment %d: %w", i+1, err)
+				}
+			} else {
+				continue
+			}
+		}
+
+		if len(data) == 0 {
+			continue
+		}
+
+		hash := sha256.Sum256(data)
+		assetUUID := uuid.NewSHA1(uuid.NameSpaceDNS, hash[:]).String()
+		ext := ".bin"
+		if parts := strings.Split(attachment.MIMEType, "/"); len(parts) == 2 {
+			ext = "." + parts[1]
+		}
+		filename := assetUUID + ext
+		targetPath := filepath.Join(assetsDir, filename)
+
+		if !seenAssets[filename] {
+			if err := os.WriteFile(targetPath, data, 0o644); err != nil {
+				return nil, fmt.Errorf("write asset %s: %w", filename, err)
+			}
+			seenAssets[filename] = true
+		}
+		assetPaths = append(assetPaths, filepath.Join("assets", filename))
+	}
+	return assetPaths, nil
 }

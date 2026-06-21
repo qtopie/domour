@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
 	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
+	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 )
@@ -165,9 +167,58 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 		messages = append(messages, userMsg)
 
-		respMsg, err := s.runToolCallingLoop(ctx, brainClient, messages, yield, true, "reply")
+		workflowID := fmt.Sprintf("chat-%s-%d-attempt-%d", sessionID, req.Seq, attempt)
+		topic := fmt.Sprintf("agent/workflow/%s/stream", workflowID)
+		doneChan := make(chan struct{})
+		var finalErr error
+
+		sub, err := s.eb.Subscribe(ctx, topic, func(data []byte) {
+			var event shared.MotorStreamEvent
+			if err := json.Unmarshal(data, &event); err != nil {
+				return
+			}
+			_ = yield(event)
+			if event.Done {
+				if event.Err != nil {
+					finalErr = event.Err
+				}
+				close(doneChan)
+			}
+		})
 		if err != nil {
-			return fmt.Errorf("run tool calling loop: %w", err)
+			return fmt.Errorf("subscribe stream: %w", err)
+		}
+
+		input := dapr.AgentWorkflowInput{
+			SessionID:   sessionID,
+			Messages:    messages,
+			Provider:    brainClient.Provider(),
+			Model:       brainClient.Model(),
+			StreamFinal: true,
+			Stage:       "reply",
+		}
+
+		_, err = s.orchestrator.StartWorkflow(ctx, workflowID, input)
+		if err != nil {
+			sub.Unsubscribe()
+			return fmt.Errorf("start agent workflow: %w", err)
+		}
+
+		select {
+		case <-doneChan:
+		case <-ctx.Done():
+			sub.Unsubscribe()
+			return ctx.Err()
+		}
+		sub.Unsubscribe()
+
+		if finalErr != nil {
+			return fmt.Errorf("workflow execution failed: %w", finalErr)
+		}
+
+		wfStatus, err := s.orchestrator.GetWorkflowStatus(ctx, workflowID)
+		if err != nil {
+			return fmt.Errorf("get workflow status: %w", err)
 		}
 
 		// Re-evaluate context refresh loop
@@ -176,7 +227,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 			continue
 		}
 
-		finalContent = respMsg.Content
+		finalContent = wfStatus.Result.Content
 		lastProvider = brainClient.Provider()
 		lastModel = brainClient.Model()
 		break

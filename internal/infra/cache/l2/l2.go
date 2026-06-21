@@ -1,6 +1,7 @@
 package l2
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,8 +11,7 @@ import (
 )
 
 type Cache[V any] struct {
-	db  *badger.DB
-	ttl time.Duration
+	db *badger.DB
 }
 
 func safeBadgerOpen(opts badger.Options) (db *badger.DB, err error) {
@@ -24,14 +24,12 @@ func safeBadgerOpen(opts badger.Options) (db *badger.DB, err error) {
 	return db, err
 }
 
-func NewCache[V any](path string, ttl time.Duration) (*Cache[V], error) {
+func NewCache[V any](path string) (*Cache[V], error) {
 	opts := badger.DefaultOptions(path)
-	// Suppress verbose logging
 	opts.Logger = nil
 
 	db, err := safeBadgerOpen(opts)
 	if err != nil {
-		// Cache is corrupted or panicked. Automatically delete and recreate it.
 		fmt.Printf("[L2Cache] Badger DB corrupted or failed to open: %v. Recreating...\n", err)
 		_ = os.RemoveAll(path)
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -44,8 +42,7 @@ func NewCache[V any](path string, ttl time.Duration) (*Cache[V], error) {
 	}
 
 	return &Cache[V]{
-		db:  db,
-		ttl: ttl,
+		db: db,
 	}, nil
 }
 
@@ -53,19 +50,22 @@ func (c *Cache[V]) Close() error {
 	return c.db.Close()
 }
 
-func (c *Cache[V]) Set(key string, value V) error {
+func (c *Cache[V]) Set(ctx context.Context, key string, value V, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("failed to marshal value: %w", err)
 	}
 
 	return c.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry([]byte(key), data).WithTTL(c.ttl)
+		e := badger.NewEntry([]byte(key), data)
+		if ttl > 0 {
+			e = e.WithTTL(ttl)
+		}
 		return txn.SetEntry(e)
 	})
 }
 
-func (c *Cache[V]) Get(key string) (V, bool, error) {
+func (c *Cache[V]) Get(ctx context.Context, key string) (V, bool, error) {
 	var v V
 	var valCopy []byte
 
@@ -87,13 +87,13 @@ func (c *Cache[V]) Get(key string) (V, bool, error) {
 	}
 
 	if err := json.Unmarshal(valCopy, &v); err != nil {
-		return v, true, fmt.Errorf("failed to unmarshal value: %w", err) // true because key was found
+		return v, true, fmt.Errorf("failed to unmarshal value: %w", err)
 	}
 
 	return v, true, nil
 }
 
-func (c *Cache[V]) Delete(key string) error {
+func (c *Cache[V]) Delete(ctx context.Context, key string) error {
 	return c.db.Update(func(txn *badger.Txn) error {
 		return txn.Delete([]byte(key))
 	})

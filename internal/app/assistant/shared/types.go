@@ -1,6 +1,10 @@
 package shared
 
-import "strings"
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+)
 
 type UserRequest struct {
 	SessionId string `json:"-"`
@@ -154,12 +158,74 @@ type MotorAutopilotResponse struct {
 }
 
 type MotorStreamEvent struct {
-	Stage   string
-	Content string
-	Done    bool
-	Meta    map[string]string
-	Err     error
+	Stage         string
+	Type          int32 // maps to ChunkType (e.g. 1 for text, 2 for thinking, etc.)
+	Content       string
+	Done          bool
+	Meta          map[string]string
+	Err           error
+
+	// Structured details
+	Thinking      *ThinkingDetail
+	Collaboration *CollaborationDetail
+	ToolCall      *ToolCallDetail
 }
+
+func (e MotorStreamEvent) MarshalJSON() ([]byte, error) {
+	type Alias MotorStreamEvent
+	var errStr string
+	if e.Err != nil {
+		errStr = e.Err.Error()
+	}
+	return json.Marshal(&struct {
+		Alias
+		Err string `json:"Err,omitempty"`
+	}{
+		Alias: Alias(e),
+		Err:   errStr,
+	})
+}
+
+func (e *MotorStreamEvent) UnmarshalJSON(data []byte) error {
+	type Alias MotorStreamEvent
+	aux := &struct {
+		*Alias
+		Err string `json:"Err,omitempty"`
+	}{
+		Alias: (*Alias)(e),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Err != "" {
+		e.Err = errors.New(aux.Err)
+	}
+	return nil
+}
+
+
+type ThinkingDetail struct {
+	Engine    string
+	Stage     string
+	ElapsedMs int64
+}
+
+type CollaborationDetail struct {
+	FromNode    string
+	ToNode      string
+	EventType   string
+	Description string
+}
+
+type ToolCallDetail struct {
+	ToolName    string
+	ToolID      string
+	Status      string
+	Arguments   string
+	Observation string
+	DurationMs  int64
+}
+
 
 type BrainControl struct {
 	Type    string

@@ -84,6 +84,28 @@ func QuerySessions(ctx context.Context, store Store, filter QueryFilter) ([]Sess
 				if err != nil {
 					return nil
 				}
+				if d.IsDir() {
+					name := d.Name()
+					// Prune massive or irrelevant subdirectories in ~/.gemini or ~/.antigravity
+					if name == "antigravity-cli" || name == "antigravity" || name == "antigravity-backup" || name == "antigravity-ide" || name == "bin" || name == "config" || name == "skills" || name == ".git" || name == "node_modules" {
+						return filepath.SkipDir
+					}
+					// Prune directories that don't lead to "chats"
+					rel, err := filepath.Rel(root, path)
+					if err == nil {
+						parts := strings.Split(rel, string(filepath.Separator))
+						hasChats := false
+						for _, p := range parts {
+							if p == "chats" {
+								hasChats = true
+								break
+							}
+						}
+						if !hasChats && len(parts) >= 3 {
+							return filepath.SkipDir
+						}
+					}
+				}
 				// Look for chat jsonl session files
 				if !d.IsDir() && strings.HasSuffix(d.Name(), ".jsonl") && strings.Contains(path, "/chats/") {
 					cliSess, parseErr := parseCliSession(path)

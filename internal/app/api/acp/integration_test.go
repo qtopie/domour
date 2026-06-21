@@ -38,7 +38,7 @@ func TestACP_Integration_HandshakeAndRouting(t *testing.T) {
 	defer cancel()
 
 	// Mock server
-	server := NewServer(nil, nil) // Handlers will be mocked or stubs
+	server := NewServer(nil, nil, nil) // Handlers will be mocked or stubs
 
 	clientIn := make(chan []byte, 10)
 	clientOut := make(chan []byte, 10)

@@ -22,10 +22,48 @@ message ChatRequest {
   string model = 10;
 }
 
+enum ChunkType {
+  CHUNK_UNKNOWN = 0;
+  CHUNK_TEXT = 1;          // Standard content stream chunk
+  CHUNK_THINKING = 2;      // Reasoning / thoughts (e.g., DeepSeek <think> or CoT)
+  CHUNK_COLLABORATION = 3; // Inter-node message transfer (agent collaboration)
+  CHUNK_TOOL_CALL = 4;     // Tool execution event
+}
+
 message ChatResponse {
   string session_id = 1;
   int32 seq = 2;
-  string content = 3;
-  bool done = 4;
-  map<string, string> meta = 5;
+  ChunkType type = 3;
+  string content = 4; // Text data associated with the chunk
+
+  // Structured payloads
+  ThinkingDetail thinking = 5;
+  CollaborationDetail collaboration = 6;
+  ToolCallDetail tool_call = 7;
+
+  bool done = 8;
+  map<string, string> meta = 9;
 }
+
+message ThinkingDetail {
+  string engine = 1;  // e.g., "deepseek-r1", "simple", "react"
+  string stage = 2;   // e.g., "plan", "reflect", "thought"
+  int64 elapsed_ms = 3;
+}
+
+message CollaborationDetail {
+  string from_node = 1; // "diencephalon", "cerebrum", "cerebellum", "brainstem"
+  string to_node = 2;   // "diencephalon", "cerebrum", "cerebellum", "brainstem"
+  string event_type = 3; // "sensory_relay", "pons_copy", "correction_report"
+  string description = 4;
+}
+
+message ToolCallDetail {
+  string tool_name = 1;
+  string tool_id = 2;
+  string status = 3;       // "started", "completed", "failed"
+  string arguments = 4;    // JSON arguments
+  string observation = 5;  // Tool output (populated on completion)
+  int64 duration_ms = 6;
+}
+

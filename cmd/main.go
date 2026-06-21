@@ -9,7 +9,7 @@ import (
 
 	"github.com/qtopie/domour/ark/telemetry"
 	acpapi "github.com/qtopie/domour/internal/app/api/acp"
-	"github.com/qtopie/domour/internal/brain"
+	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/llm"
 )
 
@@ -38,10 +38,6 @@ func runACPServer() {
 
 	slog.Info("Domour ACP Server starting...", "pid", os.Getpid())
 	
-	// Initialize Brain/Diencephalon
-	node := brain.NewDiencephalonNode()
-	node.Start(ctx)
-
 	// Initialize LLM ChatModel for Proxy Mode
 	cfg := &llm.Config{
 		Provider: "agy-cli",
@@ -55,7 +51,24 @@ func runACPServer() {
 		os.Exit(1)
 	}
 
-	server := acpapi.NewServer(node, chatModel)
+	// Initialize Brain/Engine
+	cognitorClient, err := engine.NewReloadableCognitorClient()
+	if err != nil {
+		slog.Error("Failed to initialize cognitor client", "error", err)
+		os.Exit(1)
+	}
+	executorClient, err := engine.NewConfiguredExecutorClient()
+	if err != nil {
+		slog.Error("Failed to initialize executor client", "error", err)
+		os.Exit(1)
+	}
+	eng := engine.NewEngine(cognitorClient, executorClient)
+	if err := eng.Start(ctx); err != nil {
+		slog.Error("Failed to start engine", "error", err)
+		os.Exit(1)
+	}
+
+	server := acpapi.NewServer(eng.Diencephalon(), chatModel, eng)
 	transport := acpapi.NewStdioTransport()
 
 	slog.Info("Domour ACP Server running in stdio mode", "provider", cfg.Provider, "model", cfg.Model)

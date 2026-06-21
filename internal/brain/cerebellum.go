@@ -64,11 +64,12 @@ type ModelClient interface {
 // It runs a single goroutine at 1kHz, handling muscle-memory skill lookup, plan-to-action
 // translation, telemetry, and motor feedback — all in a non-blocking select.
 type CerebellumNode struct {
-	CognitiveIn   chan CognitiveResult
-	TelemetryIn   chan SensorySignal // Telemetry queue. Managed as a ring buffer on write to prevent blocking.
-	CorrectionOut chan CognitiveResult
-	Executor      ToolExecutor
-	Model         ModelClient
+	CognitiveIn    chan CognitiveResult
+	TelemetryIn    chan SensorySignal // Telemetry queue. Managed as a ring buffer on write to prevent blocking.
+	CorrectionOut  chan CognitiveResult
+	Executor       ToolExecutor
+	Model          ModelClient
+	SignalCallback func(sessionID string, eventType string, desc string, payload any)
 }
 
 func NewCerebellumNode(executor ToolExecutor, model ModelClient) *CerebellumNode {
@@ -201,6 +202,9 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 						}
 
 						log.Printf("[Cerebellum] Local LLM tactical thought: %q", llmResp)
+						if c.SignalCallback != nil {
+							c.SignalCallback(cognitive.GoalID, "react_thought", fmt.Sprintf("Tactical thought (loop %d): %s", loop, llmResp), llmResp)
+						}
 
 						if strings.HasPrefix(llmResp, "calculator:") {
 							expr := strings.TrimSpace(strings.TrimPrefix(llmResp, "calculator:"))
@@ -209,11 +213,17 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 								Action: "calculator",
 								Input:  map[string]interface{}{"expression": expr},
 							}
+							if c.SignalCallback != nil {
+								c.SignalCallback(cognitive.GoalID, "tool_call_start", "Running ReAct sub-tool call (calculator)", subCmd)
+							}
 							res, subErr := c.Executor.Execute(ctx, subCmd)
 							if subErr != nil {
 								observation = fmt.Sprintf("tool error: %v", subErr)
 							} else {
 								observation = res.Observation
+							}
+							if c.SignalCallback != nil {
+								c.SignalCallback(cognitive.GoalID, "tool_call_end", "ReAct sub-tool call completed", res)
 							}
 							log.Printf("[Cerebellum] Local tool result: %q", observation)
 						} else if strings.HasPrefix(llmResp, "respond:") {
@@ -256,12 +266,18 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 				}
 
 				log.Printf("[Cerebellum] Executing tool locally: %s with args: %+v", cmd.Action, cmd.Input)
+				if c.SignalCallback != nil {
+					c.SignalCallback(cognitive.GoalID, "tool_call_start", fmt.Sprintf("Calling tool %s", cmd.Action), cmd)
+				}
 				res, err := c.Executor.Execute(ctx, cmd)
 
 				success := err == nil
 				output := ""
 				if success {
 					output = res.Observation
+				}
+				if c.SignalCallback != nil {
+					c.SignalCallback(cognitive.GoalID, "tool_call_end", fmt.Sprintf("Tool %s completed", cmd.Action), res)
 				}
 				log.Printf("[Cerebellum] Local execution feedback for Action %s. Success: %t, Output: %q", cmd.ID, success, output)
 
