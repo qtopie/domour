@@ -54,6 +54,8 @@ go run ./cmd/domour models list
 go run ./cmd/domour models set -entry chat -provider ollama -model qwen2.5-coder
 ```
 
-## 许可证
+## License
 
-GPL-3.0
+This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2026 qtopie. All rights reserved.
