@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -116,6 +118,77 @@ func (p *testProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestAgyVProxyIntegration(t *testing.T) {
+	// Locate real agy binary
+	realAgy, err := exec.LookPath("agy")
+	if err != nil {
+		t.Fatalf("failed to find real agy command: %v", err)
+	}
+
+	// Locate newly compiled vproxy binary from sibling workspace
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	vproxyBin := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "vproxy", "bin", "vproxy")
+	if _, err := os.Stat(vproxyBin); err != nil {
+		t.Fatalf("vproxy binary not found at %s: %v. Please run go build in vproxy first.", vproxyBin, err)
+	}
+
+	// Create symlink or copy of agy named agy-test-bin to bypass global vproxy daemon matching rules
+	tmpBin := t.TempDir()
+	testBinPath := filepath.Join(tmpBin, "agy-test-bin")
+
+	// Try creating symlink, fallback to copy if it fails
+	if err := os.Symlink(realAgy, testBinPath); err != nil {
+		input, err := os.Open(realAgy)
+		if err != nil {
+			t.Fatalf("failed to open real agy: %v", err)
+		}
+		defer input.Close()
+		output, err := os.OpenFile(testBinPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+		if err != nil {
+			t.Fatalf("failed to create agy-test-bin: %v", err)
+		}
+		defer output.Close()
+		if _, err := io.Copy(output, input); err != nil {
+			t.Fatalf("failed to copy agy to agy-test-bin: %v", err)
+		}
+	}
+
+	// Symlink newly compiled vproxy to tmpBin/vproxy
+	testVProxyPath := filepath.Join(tmpBin, "vproxy")
+	if err := os.Symlink(vproxyBin, testVProxyPath); err != nil {
+		input, err := os.Open(vproxyBin)
+		if err != nil {
+			t.Fatalf("failed to open compiled vproxy: %v", err)
+		}
+		defer input.Close()
+		output, err := os.OpenFile(testVProxyPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+		if err != nil {
+			t.Fatalf("failed to create test vproxy: %v", err)
+		}
+		defer output.Close()
+		if _, err := io.Copy(output, input); err != nil {
+			t.Fatalf("failed to copy vproxy: %v", err)
+		}
+	}
+
+	// Set PATH to prepend the tmpBin dir
+	origPath := os.Getenv("PATH")
+	os.Setenv("PATH", tmpBin+string(os.PathListSeparator)+origPath)
+	defer os.Setenv("PATH", origPath)
+
+	// Set VP_BYPASS_DAEMON_CHECK env var to bypass background daemon detection in vproxy
+	origBypass := os.Getenv("VP_BYPASS_DAEMON_CHECK")
+	os.Setenv("VP_BYPASS_DAEMON_CHECK", "1")
+	defer func() {
+		if origBypass == "" {
+			os.Unsetenv("VP_BYPASS_DAEMON_CHECK")
+		} else {
+			os.Setenv("VP_BYPASS_DAEMON_CHECK", origBypass)
+		}
+	}()
+
 	// 1. Isolate config to a temp dir by overriding HOME env var
 	tmpHome := t.TempDir()
 	origHome := os.Getenv("HOME")

@@ -13,7 +13,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/bionic/tool"
-	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/eventbus"
@@ -149,7 +148,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 		var chunks []*schema.Message
 		isToolCall := false
-		isThinking := false
+		thinkParser := NewThinkTagParser()
 
 		for {
 			chunk, recvErr := sr.Recv()
@@ -168,8 +167,12 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			}
 
 			if input.StreamFinal && !isToolCall && chunk.Content != "" {
-				_ = yieldParsedStream(chunk.Content, &isThinking, input.Stage, brainClient, yield)
+				_ = thinkParser.Feed(chunk.Content, input.Stage, brainClient, yield)
 			}
+		}
+		// Flush any remaining buffered partial-tag content after the stream ends
+		if input.StreamFinal && !isToolCall {
+			_ = thinkParser.Flush(input.Stage, brainClient, yield)
 		}
 		sr.Close()
 
@@ -259,80 +262,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 	return nil, fmt.Errorf("max tool execution loops reached")
 }
 
-func yieldParsedStream(content string, isThinking *bool, stage string, brainClient *proxy.Client, yield func(event shared.MotorStreamEvent) error) error {
-	meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
-	temp := content
-	for temp != "" {
-		if !*isThinking {
-			idx := strings.Index(temp, "<think>")
-			if idx == -1 {
-				err := yield(shared.MotorStreamEvent{
-					Stage:   stage,
-					Type:    1, // CHUNK_TEXT
-					Content: temp,
-					Meta:    meta,
-				})
-				if err != nil {
-					return err
-				}
-				break
-			}
-			if idx > 0 {
-				err := yield(shared.MotorStreamEvent{
-					Stage:   stage,
-					Type:    1, // CHUNK_TEXT
-					Content: temp[:idx],
-					Meta:    meta,
-				})
-				if err != nil {
-					return err
-				}
-			}
-			*isThinking = true
-			err := yield(shared.MotorStreamEvent{
-				Stage: stage,
-				Type:  2, // CHUNK_THINKING
-				Thinking: &shared.ThinkingDetail{
-					Engine: brainClient.Provider(),
-					Stage:  "thought",
-				},
-				Meta: meta,
-			})
-			if err != nil {
-				return err
-			}
-			temp = temp[idx+7:]
-		} else {
-			idx := strings.Index(temp, "</think>")
-			if idx == -1 {
-				err := yield(shared.MotorStreamEvent{
-					Stage:   stage,
-					Type:    2, // CHUNK_THINKING
-					Content: temp,
-					Meta:    meta,
-				})
-				if err != nil {
-					return err
-				}
-				break
-			}
-			if idx > 0 {
-				err := yield(shared.MotorStreamEvent{
-					Stage:   stage,
-					Type:    2, // CHUNK_THINKING
-					Content: temp[:idx],
-					Meta:    meta,
-				})
-				if err != nil {
-					return err
-				}
-			}
-			*isThinking = false
-			temp = temp[idx+8:]
-		}
-	}
-	return nil
-}
+// yieldParsedStream is retained for reference but superseded by ThinkTagParser.
 
 func modelSupportsTools(provider, model string) bool {
 	provider = strings.ToLower(strings.TrimSpace(provider))

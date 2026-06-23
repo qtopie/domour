@@ -583,7 +583,7 @@ func resolveCLICommand(command string) (string, error) {
 
 	switch command {
 	case "agy":
-		for _, candidate := range []string{"agy"} {
+		for _, candidate := range []string{"agy-test-bin", "agy"} {
 			if path, ok := checkLocal(candidate); ok {
 				return path, nil
 			}
