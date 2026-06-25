@@ -78,8 +78,14 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	bgCtx := context.WithoutCancel(ctx)
 	go trySendChatInterception(bgCtx, s.interceptor, req)
 
+	// Build chat prompt with optional editor context (pinned files)
+	chatPrompt := BuildChatPrompt(userMessage, req.Workspace, "", "", "")
+	if ec := BuildEditorContextPrompt(req.EditorContext); ec != "" {
+		chatPrompt = ec + "\n\n" + chatPrompt
+	}
+
 	// Check if this looks like a diagram rendering request
-	if IsDiagramLike(userMessage, req.Filename) {
+	if IsDiagramLike(userMessage, "") {
 		format := InferRequestedFormat(userMessage)
 		title := InferDiagramTitle(userMessage)
 
@@ -88,7 +94,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
-			BuildDiagramPrompt(userMessage, req.Workspace, req.Filename, req.FrontPart, req.BackPart, format),
+			BuildDiagramPrompt(userMessage, req.Workspace, "", "", "", format),
 			req.Attachments,
 		)
 		if err != nil {
@@ -123,7 +129,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 
 		// Send summary to client
-		summaryContent := BuildChatSummaryMessage(userMessage, req.Workspace, req.Filename, len(sess.History), summary)
+		summaryContent := BuildChatSummaryMessage(userMessage, req.Workspace, "", len(sess.History), summary)
 		if err := yield(shared.MotorStreamEvent{
 			Stage:   "brain",
 			Content: summaryContent,
@@ -168,7 +174,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
-			BuildChatPrompt(userMessage, req.Workspace, req.Filename, req.FrontPart, req.BackPart),
+			chatPrompt,
 			req.Attachments,
 		)
 		if err != nil {
@@ -219,7 +225,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
-			bioniccontext.ApplyChatInterceptionContext(BuildChatPrompt(userMessage, req.Workspace, req.Filename, req.FrontPart, req.BackPart), snapshot.Interception),
+			bioniccontext.ApplyChatInterceptionContext(chatPrompt, snapshot.Interception),
 			req.Attachments,
 		)
 		if err != nil {

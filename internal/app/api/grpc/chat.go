@@ -27,10 +27,8 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 		Seq:         req.GetSeq(),
 		Workspace:   req.GetWorkspace(),
 		Message:     req.GetMessage(),
-		Filename:    req.GetFilename(),
-		FrontPart:   req.GetFrontPart(),
-		BackPart:    req.GetBackPart(),
 		Attachments: llm.AttachmentsFromProto(req.GetAttachments()),
+		EditorContext: editorContextFromProto(req.GetEditorContext()),
 	}
 
 	err = s.app.Chat(ctx, motorReq, req.GetProvider(), req.GetModel(), func(event shared.MotorStreamEvent) error {
@@ -97,4 +95,23 @@ func mergeChatMeta(ctx context.Context, sessionID string, meta map[string]string
 		out[k] = v
 	}
 	return out
+}
+
+func editorContextFromProto(ec *chatpb.EditorContext) *shared.EditorContext {
+	if ec == nil {
+		return nil
+	}
+	pinned := ec.GetPinnedFiles()
+	if len(pinned) == 0 {
+		return nil
+	}
+	files := make([]shared.PinnedFile, 0, len(pinned))
+	for _, pf := range pinned {
+		files = append(files, shared.PinnedFile{
+			Path:     pf.GetPath(),
+			Content:  pf.GetContent(),
+			Language: pf.GetLanguage(),
+		})
+	}
+	return &shared.EditorContext{PinnedFiles: files}
 }

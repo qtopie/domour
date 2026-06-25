@@ -10,9 +10,6 @@ type UserRequest struct {
 	SessionId string `json:"-"`
 	Seq       int32  `json:"-"`
 	Message   string
-	FrontPart string
-	BackPart  string
-	Filename  string
 	Workspace string
 	History   []Message `json:"history,omitempty"`
 }
@@ -37,23 +34,18 @@ type BrainChatRequest struct {
 	Seq           int32
 	Workspace     string
 	Message       string
-	Filename      string
-	FrontPart     string
-	BackPart      string
 	Attachments   []BrainAttachment
 	Interception  *ChatInterception
 	History       []Message
 	MemorySummary string
 	Provider      string
 	Model         string
+	EditorContext *EditorContext
 }
 
 type BrainDiagramRequest struct {
 	Workspace     string
 	Message       string
-	Filename      string
-	FrontPart     string
-	BackPart      string
 	Attachments   []BrainAttachment
 	History       []Message
 	MemorySummary string
@@ -116,16 +108,26 @@ type BrainStreamEvent struct {
 	Err      error
 }
 
+// EditorContext carries pinned file context from the client workspace.
+type EditorContext struct {
+	PinnedFiles []PinnedFile
+}
+
+// PinnedFile represents a file the user has pinned for context.
+type PinnedFile struct {
+	Path     string
+	Content  string
+	Language string
+}
+
 type MotorChatRequest struct {
-	SessionID   string
-	Seq         int32
-	Workspace   string
-	Message     string
-	Filename    string
-	FrontPart   string
-	BackPart    string
-	Attachments []BrainAttachment
-	History     []Message
+	SessionID     string
+	Seq           int32
+	Workspace     string
+	Message       string
+	Attachments   []BrainAttachment
+	History       []Message
+	EditorContext *EditorContext
 }
 
 type MotorAutopilotRequest struct {

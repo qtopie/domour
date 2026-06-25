@@ -33,6 +33,69 @@ func BuildChatPrompt(userMessage, workspace, filename, frontPart, backPart strin
 	return strings.Join(parts, "\n\n")
 }
 
+// BuildEditorContextPrompt builds a prompt section from pinned editor context files.
+func BuildEditorContextPrompt(ec *shared.EditorContext) string {
+	if ec == nil || len(ec.PinnedFiles) == 0 {
+		return ""
+	}
+	var parts []string
+	parts = append(parts, "The user has pinned the following files for context:")
+	for _, f := range ec.PinnedFiles {
+		lang := f.Language
+		if lang == "" {
+			lang = guessLanguage(f.Path)
+		}
+		parts = append(parts, fmt.Sprintf("--- %s ---\n```%s\n%s\n```", f.Path, lang, f.Content))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func guessLanguage(path string) string {
+	dot := strings.LastIndex(path, ".")
+	if dot < 0 {
+		return ""
+	}
+	ext := strings.ToLower(path[dot+1:])
+	switch ext {
+	case "go":
+		return "go"
+	case "py":
+		return "python"
+	case "js", "ts", "jsx", "tsx":
+		return ext
+	case "rs":
+		return "rust"
+	case "java":
+		return "java"
+	case "c", "h":
+		return "c"
+	case "cpp", "cc", "cxx", "hpp":
+		return "cpp"
+	case "rb":
+		return "ruby"
+	case "json":
+		return "json"
+	case "yaml", "yml":
+		return "yaml"
+	case "md", "markdown":
+		return "markdown"
+	case "sql":
+		return "sql"
+	case "sh", "bash":
+		return "bash"
+	case "dockerfile":
+		return "dockerfile"
+	case "html", "css", "scss":
+		return ext
+	case "toml":
+		return "toml"
+	case "proto":
+		return "protobuf"
+	default:
+		return ""
+	}
+}
+
 func BuildChatSystemPrompt(message string, attachments []shared.BrainAttachment, interception *shared.ChatInterception) string {
 	prompt := "You are Domour Chat. Reply clearly and directly to the user. Use the provided workspace context when useful."
 	if HasImageAttachments(attachments) {

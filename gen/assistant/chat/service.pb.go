@@ -239,12 +239,10 @@ type ChatRequest struct {
 	Seq           int32                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	Workspace     string                 `protobuf:"bytes,3,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	FrontPart     string                 `protobuf:"bytes,5,opt,name=front_part,json=frontPart,proto3" json:"front_part,omitempty"`
-	BackPart      string                 `protobuf:"bytes,6,opt,name=back_part,json=backPart,proto3" json:"back_part,omitempty"`
-	Filename      string                 `protobuf:"bytes,7,opt,name=filename,proto3" json:"filename,omitempty"`
-	Attachments   []*common.Attachment   `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	Provider      string                 `protobuf:"bytes,9,opt,name=provider,proto3" json:"provider,omitempty"`
-	Model         string                 `protobuf:"bytes,10,opt,name=model,proto3" json:"model,omitempty"`
+	Attachments   []*common.Attachment   `protobuf:"bytes,5,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	Provider      string                 `protobuf:"bytes,6,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,7,opt,name=model,proto3" json:"model,omitempty"`
+	EditorContext *EditorContext         `protobuf:"bytes,8,opt,name=editor_context,json=editorContext,proto3" json:"editor_context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -307,27 +305,6 @@ func (x *ChatRequest) GetMessage() string {
 	return ""
 }
 
-func (x *ChatRequest) GetFrontPart() string {
-	if x != nil {
-		return x.FrontPart
-	}
-	return ""
-}
-
-func (x *ChatRequest) GetBackPart() string {
-	if x != nil {
-		return x.BackPart
-	}
-	return ""
-}
-
-func (x *ChatRequest) GetFilename() string {
-	if x != nil {
-		return x.Filename
-	}
-	return ""
-}
-
 func (x *ChatRequest) GetAttachments() []*common.Attachment {
 	if x != nil {
 		return x.Attachments
@@ -345,6 +322,117 @@ func (x *ChatRequest) GetProvider() string {
 func (x *ChatRequest) GetModel() string {
 	if x != nil {
 		return x.Model
+	}
+	return ""
+}
+
+func (x *ChatRequest) GetEditorContext() *EditorContext {
+	if x != nil {
+		return x.EditorContext
+	}
+	return nil
+}
+
+type EditorContext struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PinnedFiles   []*PinnedFile          `protobuf:"bytes,1,rep,name=pinned_files,json=pinnedFiles,proto3" json:"pinned_files,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EditorContext) Reset() {
+	*x = EditorContext{}
+	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EditorContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EditorContext) ProtoMessage() {}
+
+func (x *EditorContext) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EditorContext.ProtoReflect.Descriptor instead.
+func (*EditorContext) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EditorContext) GetPinnedFiles() []*PinnedFile {
+	if x != nil {
+		return x.PinnedFiles
+	}
+	return nil
+}
+
+type PinnedFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Content       string                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Language      string                 `protobuf:"bytes,3,opt,name=language,proto3" json:"language,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PinnedFile) Reset() {
+	*x = PinnedFile{}
+	mi := &file_assistant_chat_service_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PinnedFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PinnedFile) ProtoMessage() {}
+
+func (x *PinnedFile) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PinnedFile.ProtoReflect.Descriptor instead.
+func (*PinnedFile) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PinnedFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PinnedFile) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *PinnedFile) GetLanguage() string {
+	if x != nil {
+		return x.Language
 	}
 	return ""
 }
@@ -367,7 +455,7 @@ type ChatResponse struct {
 
 func (x *ChatResponse) Reset() {
 	*x = ChatResponse{}
-	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	mi := &file_assistant_chat_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -379,7 +467,7 @@ func (x *ChatResponse) String() string {
 func (*ChatResponse) ProtoMessage() {}
 
 func (x *ChatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	mi := &file_assistant_chat_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -392,7 +480,7 @@ func (x *ChatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatResponse.ProtoReflect.Descriptor instead.
 func (*ChatResponse) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{4}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ChatResponse) GetSessionId() string {
@@ -469,7 +557,7 @@ type ThinkingDetail struct {
 
 func (x *ThinkingDetail) Reset() {
 	*x = ThinkingDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[5]
+	mi := &file_assistant_chat_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +569,7 @@ func (x *ThinkingDetail) String() string {
 func (*ThinkingDetail) ProtoMessage() {}
 
 func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[5]
+	mi := &file_assistant_chat_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +582,7 @@ func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThinkingDetail.ProtoReflect.Descriptor instead.
 func (*ThinkingDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{5}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ThinkingDetail) GetEngine() string {
@@ -530,7 +618,7 @@ type CollaborationDetail struct {
 
 func (x *CollaborationDetail) Reset() {
 	*x = CollaborationDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[6]
+	mi := &file_assistant_chat_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -542,7 +630,7 @@ func (x *CollaborationDetail) String() string {
 func (*CollaborationDetail) ProtoMessage() {}
 
 func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[6]
+	mi := &file_assistant_chat_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -555,7 +643,7 @@ func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollaborationDetail.ProtoReflect.Descriptor instead.
 func (*CollaborationDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{6}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CollaborationDetail) GetFromNode() string {
@@ -600,7 +688,7 @@ type ToolCallDetail struct {
 
 func (x *ToolCallDetail) Reset() {
 	*x = ToolCallDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[7]
+	mi := &file_assistant_chat_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -612,7 +700,7 @@ func (x *ToolCallDetail) String() string {
 func (*ToolCallDetail) ProtoMessage() {}
 
 func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[7]
+	mi := &file_assistant_chat_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -625,7 +713,7 @@ func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolCallDetail.ProtoReflect.Descriptor instead.
 func (*ToolCallDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{7}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ToolCallDetail) GetToolName() string {
@@ -684,21 +772,24 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"\x04tags\x18\x04 \x03(\tR\x04tags\x12\x1b\n" +
 	"\tuser_tags\x18\x05 \x03(\tR\buserTags\"G\n" +
 	"\x12ListModelsResponse\x121\n" +
-	"\x06models\x18\x01 \x03(\v2\x19.assistant.chat.ModelInfoR\x06models\"\xc3\x02\n" +
+	"\x06models\x18\x01 \x03(\v2\x19.assistant.chat.ModelInfoR\x06models\"\xb1\x02\n" +
 	"\vChatRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12\x1c\n" +
 	"\tworkspace\x18\x03 \x01(\tR\tworkspace\x12\x18\n" +
-	"\amessage\x18\x04 \x01(\tR\amessage\x12\x1d\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12A\n" +
+	"\vattachments\x18\x05 \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\x12\x1a\n" +
+	"\bprovider\x18\x06 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\a \x01(\tR\x05model\x12D\n" +
+	"\x0eeditor_context\x18\b \x01(\v2\x1d.assistant.chat.EditorContextR\reditorContext\"N\n" +
+	"\rEditorContext\x12=\n" +
+	"\fpinned_files\x18\x01 \x03(\v2\x1a.assistant.chat.PinnedFileR\vpinnedFiles\"V\n" +
 	"\n" +
-	"front_part\x18\x05 \x01(\tR\tfrontPart\x12\x1b\n" +
-	"\tback_part\x18\x06 \x01(\tR\bbackPart\x12\x1a\n" +
-	"\bfilename\x18\a \x01(\tR\bfilename\x12A\n" +
-	"\vattachments\x18\b \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\x12\x1a\n" +
-	"\bprovider\x18\t \x01(\tR\bprovider\x12\x14\n" +
-	"\x05model\x18\n" +
-	" \x01(\tR\x05model\"\xd5\x03\n" +
+	"PinnedFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\x12\x1a\n" +
+	"\blanguage\x18\x03 \x01(\tR\blanguage\"\xd5\x03\n" +
 	"\fChatResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -757,37 +848,41 @@ func file_assistant_chat_service_proto_rawDescGZIP() []byte {
 }
 
 var file_assistant_chat_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_assistant_chat_service_proto_goTypes = []any{
 	(ChunkType)(0),              // 0: assistant.chat.ChunkType
 	(*ListModelsRequest)(nil),   // 1: assistant.chat.ListModelsRequest
 	(*ModelInfo)(nil),           // 2: assistant.chat.ModelInfo
 	(*ListModelsResponse)(nil),  // 3: assistant.chat.ListModelsResponse
 	(*ChatRequest)(nil),         // 4: assistant.chat.ChatRequest
-	(*ChatResponse)(nil),        // 5: assistant.chat.ChatResponse
-	(*ThinkingDetail)(nil),      // 6: assistant.chat.ThinkingDetail
-	(*CollaborationDetail)(nil), // 7: assistant.chat.CollaborationDetail
-	(*ToolCallDetail)(nil),      // 8: assistant.chat.ToolCallDetail
-	nil,                         // 9: assistant.chat.ChatResponse.MetaEntry
-	(*common.Attachment)(nil),   // 10: assistant.common.v1.Attachment
+	(*EditorContext)(nil),       // 5: assistant.chat.EditorContext
+	(*PinnedFile)(nil),          // 6: assistant.chat.PinnedFile
+	(*ChatResponse)(nil),        // 7: assistant.chat.ChatResponse
+	(*ThinkingDetail)(nil),      // 8: assistant.chat.ThinkingDetail
+	(*CollaborationDetail)(nil), // 9: assistant.chat.CollaborationDetail
+	(*ToolCallDetail)(nil),      // 10: assistant.chat.ToolCallDetail
+	nil,                         // 11: assistant.chat.ChatResponse.MetaEntry
+	(*common.Attachment)(nil),   // 12: assistant.common.v1.Attachment
 }
 var file_assistant_chat_service_proto_depIdxs = []int32{
 	2,  // 0: assistant.chat.ListModelsResponse.models:type_name -> assistant.chat.ModelInfo
-	10, // 1: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
-	0,  // 2: assistant.chat.ChatResponse.type:type_name -> assistant.chat.ChunkType
-	6,  // 3: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
-	7,  // 4: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
-	8,  // 5: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
-	9,  // 6: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
-	4,  // 7: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
-	1,  // 8: assistant.chat.ChatService.ListModels:input_type -> assistant.chat.ListModelsRequest
-	5,  // 9: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
-	3,  // 10: assistant.chat.ChatService.ListModels:output_type -> assistant.chat.ListModelsResponse
-	9,  // [9:11] is the sub-list for method output_type
-	7,  // [7:9] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	12, // 1: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
+	5,  // 2: assistant.chat.ChatRequest.editor_context:type_name -> assistant.chat.EditorContext
+	6,  // 3: assistant.chat.EditorContext.pinned_files:type_name -> assistant.chat.PinnedFile
+	0,  // 4: assistant.chat.ChatResponse.type:type_name -> assistant.chat.ChunkType
+	8,  // 5: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
+	9,  // 6: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
+	10, // 7: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
+	11, // 8: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
+	4,  // 9: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
+	1,  // 10: assistant.chat.ChatService.ListModels:input_type -> assistant.chat.ListModelsRequest
+	7,  // 11: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
+	3,  // 12: assistant.chat.ChatService.ListModels:output_type -> assistant.chat.ListModelsResponse
+	11, // [11:13] is the sub-list for method output_type
+	9,  // [9:11] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_assistant_chat_service_proto_init() }
@@ -801,7 +896,7 @@ func file_assistant_chat_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_assistant_chat_service_proto_rawDesc), len(file_assistant_chat_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -30,12 +30,20 @@ message ChatRequest {
   int32 seq = 2;
   string workspace = 3;
   string message = 4;
-  string front_part = 5;
-  string back_part = 6;
-  string filename = 7;
-  repeated assistant.common.v1.Attachment attachments = 8;
-  string provider = 9;
-  string model = 10;
+  repeated assistant.common.v1.Attachment attachments = 5;
+  string provider = 6;
+  string model = 7;
+  EditorContext editor_context = 8;
+}
+
+message EditorContext {
+  repeated PinnedFile pinned_files = 1;
+}
+
+message PinnedFile {
+  string path = 1;
+  string content = 2;
+  string language = 3;
 }
 
 enum ChunkType {
