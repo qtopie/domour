@@ -51,6 +51,10 @@ func NewApp(cfg *config.DomourConfig, opts ...AppOption) (*App, error) {
 		actualCfg = loaded
 	}
 
+	// Register config provider models (deepseek, etc.) into the global model
+	// registry so tag-based mode selection (balanced → flash) can find them.
+	RegisterConfigProviderModels(&actualCfg)
+
 	store := InitStore(&actualCfg)
 
 	app := &App{

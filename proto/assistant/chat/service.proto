@@ -7,6 +7,22 @@ import "assistant/common/media.proto";
 
 service ChatService {
   rpc Chat(ChatRequest) returns (stream ChatResponse);
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+}
+
+message ListModelsRequest {
+}
+
+message ModelInfo {
+  string id = 1;
+  string provider = 2;
+  string model_name = 3;
+  repeated string tags = 4;
+  repeated string user_tags = 5;
+}
+
+message ListModelsResponse {
+  repeated ModelInfo models = 1;
 }
 
 message ChatRequest {

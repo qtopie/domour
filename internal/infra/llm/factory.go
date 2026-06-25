@@ -20,7 +20,7 @@ import (
 )
 
 type Config struct {
-	Provider string // "openai", "ollama", "gemini", "qwen", "gemini-cli", "github-copilot-cli", "qodercli"
+	Provider string // "openai", "ollama", "llamacpp", "gemini", "qwen", "gemini-cli", "github-copilot-cli", "qodercli"
 	APIKey   string
 	BaseURL  string // Optional for providers like OpenAI
 	Model    string // e.g. "gpt-4", "gemini-pro"
@@ -123,6 +123,15 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			return nil, err
 		}
 		return newOpenAICompatibleChatModel(ctx, dsClient, deepseekCfg)
+	case "llamacpp", "llama.cpp", "llama_cpp":
+		llamacppCfg := *cfg
+		if strings.TrimSpace(llamacppCfg.BaseURL) == "" {
+			llamacppCfg.BaseURL = "http://127.0.0.1:8080/v1"
+		}
+		if strings.TrimSpace(llamacppCfg.APIKey) == "" {
+			llamacppCfg.APIKey = "llamacpp"
+		}
+		return newOpenAICompatibleChatModel(ctx, httpClient, llamacppCfg)
 	case "ollama":
 		ollamaCfg := *cfg
 		if strings.TrimSpace(ollamaCfg.BaseURL) == "" {

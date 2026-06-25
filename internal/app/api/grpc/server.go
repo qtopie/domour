@@ -21,6 +21,7 @@ type AssistantService interface {
 	Chat(ctx context.Context, req shared.MotorChatRequest, provider, model string, onEvent func(shared.MotorStreamEvent) error) error
 	Copilot(ctx context.Context, req shared.MotorCopilotRequest, provider, model string, attachments []shared.BrainAttachment, onEvent func(shared.MotorStreamEvent) error) error
 	Autopilot(ctx context.Context, req shared.MotorAutopilotRequest, provider, model string, attachments []shared.BrainAttachment) (shared.MotorAutopilotResponse, error)
+	ListModels(ctx context.Context) ([]*chatpb.ModelInfo, error)
 }
 
 // Server is the minimal built-in agent server behind chat/copilot/autopilot.

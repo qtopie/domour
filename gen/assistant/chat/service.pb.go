@@ -77,6 +77,162 @@ func (ChunkType) EnumDescriptor() ([]byte, []int) {
 	return file_assistant_chat_service_proto_rawDescGZIP(), []int{0}
 }
 
+type ListModelsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListModelsRequest) Reset() {
+	*x = ListModelsRequest{}
+	mi := &file_assistant_chat_service_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListModelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListModelsRequest) ProtoMessage() {}
+
+func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListModelsRequest.ProtoReflect.Descriptor instead.
+func (*ListModelsRequest) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{0}
+}
+
+type ModelInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Provider      string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	ModelName     string                 `protobuf:"bytes,3,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	Tags          []string               `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty"`
+	UserTags      []string               `protobuf:"bytes,5,rep,name=user_tags,json=userTags,proto3" json:"user_tags,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelInfo) Reset() {
+	*x = ModelInfo{}
+	mi := &file_assistant_chat_service_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelInfo) ProtoMessage() {}
+
+func (x *ModelInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelInfo.ProtoReflect.Descriptor instead.
+func (*ModelInfo) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ModelInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ModelInfo) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *ModelInfo) GetModelName() string {
+	if x != nil {
+		return x.ModelName
+	}
+	return ""
+}
+
+func (x *ModelInfo) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *ModelInfo) GetUserTags() []string {
+	if x != nil {
+		return x.UserTags
+	}
+	return nil
+}
+
+type ListModelsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Models        []*ModelInfo           `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListModelsResponse) Reset() {
+	*x = ListModelsResponse{}
+	mi := &file_assistant_chat_service_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListModelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListModelsResponse) ProtoMessage() {}
+
+func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListModelsResponse.ProtoReflect.Descriptor instead.
+func (*ListModelsResponse) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListModelsResponse) GetModels() []*ModelInfo {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
 type ChatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -95,7 +251,7 @@ type ChatRequest struct {
 
 func (x *ChatRequest) Reset() {
 	*x = ChatRequest{}
-	mi := &file_assistant_chat_service_proto_msgTypes[0]
+	mi := &file_assistant_chat_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -107,7 +263,7 @@ func (x *ChatRequest) String() string {
 func (*ChatRequest) ProtoMessage() {}
 
 func (x *ChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[0]
+	mi := &file_assistant_chat_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -120,7 +276,7 @@ func (x *ChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatRequest.ProtoReflect.Descriptor instead.
 func (*ChatRequest) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{0}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ChatRequest) GetSessionId() string {
@@ -211,7 +367,7 @@ type ChatResponse struct {
 
 func (x *ChatResponse) Reset() {
 	*x = ChatResponse{}
-	mi := &file_assistant_chat_service_proto_msgTypes[1]
+	mi := &file_assistant_chat_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -223,7 +379,7 @@ func (x *ChatResponse) String() string {
 func (*ChatResponse) ProtoMessage() {}
 
 func (x *ChatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[1]
+	mi := &file_assistant_chat_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -236,7 +392,7 @@ func (x *ChatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatResponse.ProtoReflect.Descriptor instead.
 func (*ChatResponse) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{1}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ChatResponse) GetSessionId() string {
@@ -313,7 +469,7 @@ type ThinkingDetail struct {
 
 func (x *ThinkingDetail) Reset() {
 	*x = ThinkingDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[2]
+	mi := &file_assistant_chat_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -325,7 +481,7 @@ func (x *ThinkingDetail) String() string {
 func (*ThinkingDetail) ProtoMessage() {}
 
 func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[2]
+	mi := &file_assistant_chat_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -338,7 +494,7 @@ func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThinkingDetail.ProtoReflect.Descriptor instead.
 func (*ThinkingDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{2}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ThinkingDetail) GetEngine() string {
@@ -374,7 +530,7 @@ type CollaborationDetail struct {
 
 func (x *CollaborationDetail) Reset() {
 	*x = CollaborationDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[3]
+	mi := &file_assistant_chat_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +542,7 @@ func (x *CollaborationDetail) String() string {
 func (*CollaborationDetail) ProtoMessage() {}
 
 func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[3]
+	mi := &file_assistant_chat_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +555,7 @@ func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollaborationDetail.ProtoReflect.Descriptor instead.
 func (*CollaborationDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{3}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CollaborationDetail) GetFromNode() string {
@@ -444,7 +600,7 @@ type ToolCallDetail struct {
 
 func (x *ToolCallDetail) Reset() {
 	*x = ToolCallDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	mi := &file_assistant_chat_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -456,7 +612,7 @@ func (x *ToolCallDetail) String() string {
 func (*ToolCallDetail) ProtoMessage() {}
 
 func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[4]
+	mi := &file_assistant_chat_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -469,7 +625,7 @@ func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolCallDetail.ProtoReflect.Descriptor instead.
 func (*ToolCallDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{4}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ToolCallDetail) GetToolName() string {
@@ -518,7 +674,17 @@ var File_assistant_chat_service_proto protoreflect.FileDescriptor
 
 const file_assistant_chat_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1cassistant/chat/service.proto\x12\x0eassistant.chat\x1a\x1cassistant/common/media.proto\"\xc3\x02\n" +
+	"\x1cassistant/chat/service.proto\x12\x0eassistant.chat\x1a\x1cassistant/common/media.proto\"\x13\n" +
+	"\x11ListModelsRequest\"\x87\x01\n" +
+	"\tModelInfo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x1d\n" +
+	"\n" +
+	"model_name\x18\x03 \x01(\tR\tmodelName\x12\x12\n" +
+	"\x04tags\x18\x04 \x03(\tR\x04tags\x12\x1b\n" +
+	"\tuser_tags\x18\x05 \x03(\tR\buserTags\"G\n" +
+	"\x12ListModelsResponse\x121\n" +
+	"\x06models\x18\x01 \x03(\v2\x19.assistant.chat.ModelInfoR\x06models\"\xc3\x02\n" +
 	"\vChatRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -572,9 +738,11 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"CHUNK_TEXT\x10\x01\x12\x12\n" +
 	"\x0eCHUNK_THINKING\x10\x02\x12\x17\n" +
 	"\x13CHUNK_COLLABORATION\x10\x03\x12\x13\n" +
-	"\x0fCHUNK_TOOL_CALL\x10\x042R\n" +
+	"\x0fCHUNK_TOOL_CALL\x10\x042\xa7\x01\n" +
 	"\vChatService\x12C\n" +
-	"\x04Chat\x12\x1b.assistant.chat.ChatRequest\x1a\x1c.assistant.chat.ChatResponse0\x01B-Z+github.com/qtopie/domour/gen/assistant/chatb\x06proto3"
+	"\x04Chat\x12\x1b.assistant.chat.ChatRequest\x1a\x1c.assistant.chat.ChatResponse0\x01\x12S\n" +
+	"\n" +
+	"ListModels\x12!.assistant.chat.ListModelsRequest\x1a\".assistant.chat.ListModelsResponseB-Z+github.com/qtopie/domour/gen/assistant/chatb\x06proto3"
 
 var (
 	file_assistant_chat_service_proto_rawDescOnce sync.Once
@@ -589,31 +757,37 @@ func file_assistant_chat_service_proto_rawDescGZIP() []byte {
 }
 
 var file_assistant_chat_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_assistant_chat_service_proto_goTypes = []any{
 	(ChunkType)(0),              // 0: assistant.chat.ChunkType
-	(*ChatRequest)(nil),         // 1: assistant.chat.ChatRequest
-	(*ChatResponse)(nil),        // 2: assistant.chat.ChatResponse
-	(*ThinkingDetail)(nil),      // 3: assistant.chat.ThinkingDetail
-	(*CollaborationDetail)(nil), // 4: assistant.chat.CollaborationDetail
-	(*ToolCallDetail)(nil),      // 5: assistant.chat.ToolCallDetail
-	nil,                         // 6: assistant.chat.ChatResponse.MetaEntry
-	(*common.Attachment)(nil),   // 7: assistant.common.v1.Attachment
+	(*ListModelsRequest)(nil),   // 1: assistant.chat.ListModelsRequest
+	(*ModelInfo)(nil),           // 2: assistant.chat.ModelInfo
+	(*ListModelsResponse)(nil),  // 3: assistant.chat.ListModelsResponse
+	(*ChatRequest)(nil),         // 4: assistant.chat.ChatRequest
+	(*ChatResponse)(nil),        // 5: assistant.chat.ChatResponse
+	(*ThinkingDetail)(nil),      // 6: assistant.chat.ThinkingDetail
+	(*CollaborationDetail)(nil), // 7: assistant.chat.CollaborationDetail
+	(*ToolCallDetail)(nil),      // 8: assistant.chat.ToolCallDetail
+	nil,                         // 9: assistant.chat.ChatResponse.MetaEntry
+	(*common.Attachment)(nil),   // 10: assistant.common.v1.Attachment
 }
 var file_assistant_chat_service_proto_depIdxs = []int32{
-	7, // 0: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
-	0, // 1: assistant.chat.ChatResponse.type:type_name -> assistant.chat.ChunkType
-	3, // 2: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
-	4, // 3: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
-	5, // 4: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
-	6, // 5: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
-	1, // 6: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
-	2, // 7: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	2,  // 0: assistant.chat.ListModelsResponse.models:type_name -> assistant.chat.ModelInfo
+	10, // 1: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
+	0,  // 2: assistant.chat.ChatResponse.type:type_name -> assistant.chat.ChunkType
+	6,  // 3: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
+	7,  // 4: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
+	8,  // 5: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
+	9,  // 6: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
+	4,  // 7: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
+	1,  // 8: assistant.chat.ChatService.ListModels:input_type -> assistant.chat.ListModelsRequest
+	5,  // 9: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
+	3,  // 10: assistant.chat.ChatService.ListModels:output_type -> assistant.chat.ListModelsResponse
+	9,  // [9:11] is the sub-list for method output_type
+	7,  // [7:9] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_assistant_chat_service_proto_init() }
@@ -627,7 +801,7 @@ func file_assistant_chat_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_assistant_chat_service_proto_rawDesc), len(file_assistant_chat_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

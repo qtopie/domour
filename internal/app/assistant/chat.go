@@ -11,9 +11,11 @@ import (
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
 	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
+	appconfig "github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
+	domourmodel "github.com/qtopie/domour/pkg/model"
 )
 
 func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest, provider, model string, yield func(event shared.MotorStreamEvent) error) error {
@@ -32,13 +34,24 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 	}
 
-	// Resolve Brain LLM Client
-	// Apply System Mode overrides (e.g. stealth mode forces ollama local model for privacy)
+	// Resolve Brain LLM Client via System Mode Model Selection
 	rmeta := providerruntime.RequestMetadataFromContext(ctx)
-	if rmeta.Mode == "stealth" {
-		if provider != "ollama" {
-			provider = "ollama"
-			model = "" // fallback to default local model
+
+	// Mode→Model registration lookup: if provider or model is still empty
+	// (not overridden by caller or session), query the model registry using
+	// the current system mode's tag rules.
+	if provider == "" || model == "" {
+		cfg, cfgErr := appconfig.LoadDomourConfig()
+		if cfgErr == nil {
+			mm := cfg.ModeMapping(rmeta.Mode)
+			if p, m, qErr := domourmodel.DefaultRegistry().QueryBestModel(mm.Require, mm.Prefer, mm.Exclude); qErr == nil && p != "" {
+				if provider == "" {
+					provider = p
+				}
+				if model == "" {
+					model = m
+				}
+			}
 		}
 	}
 
@@ -145,6 +158,53 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 
 		_ = s.AppendHistoryWithMeta(ctx, sessionID, "assistant", renderedContent, providerName, modelName)
+		return nil
+	}
+
+	// Deep Think Mode: pure reasoning without tool calling or workflow
+	if rmeta.Mode == "deep_think" {
+		messages := []*schema.Message{
+			schema.SystemMessage(BuildChatSystemPrompt(userMessage, req.Attachments, nil)),
+		}
+		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
+		userMsg, err := llm.BuildUserInputMessage(
+			BuildChatPrompt(userMessage, req.Workspace, req.Filename, req.FrontPart, req.BackPart),
+			req.Attachments,
+		)
+		if err != nil {
+			return fmt.Errorf("build deep think prompt: %w", err)
+		}
+		messages = append(messages, userMsg)
+
+		resp, err := brainClient.GenerateText(ctx, messages)
+		if err != nil {
+			return fmt.Errorf("deep think generate: %w", err)
+		}
+
+		content := strings.TrimSpace(resp.Content)
+		if content == "" {
+			return fmt.Errorf("deep think: empty response")
+		}
+
+		// Stream content
+		if err := yield(shared.MotorStreamEvent{
+			Stage:   "reply",
+			Content: content,
+			Done:    false,
+			Meta:    map[string]string{"provider": resp.Provider, "model": resp.Model},
+		}); err != nil {
+			return err
+		}
+		if err := yield(shared.MotorStreamEvent{
+			Stage:   "reply",
+			Content: "",
+			Done:    true,
+			Meta:    map[string]string{"provider": resp.Provider, "model": resp.Model},
+		}); err != nil {
+			return err
+		}
+
+		_ = s.AppendHistoryWithMeta(ctx, sessionID, "assistant", content, resp.Provider, resp.Model)
 		return nil
 	}
 

@@ -26,6 +26,8 @@ func DiscoverModels(ctx context.Context, cfg *Config) (DiscoveryResult, error) {
 
 	provider := normalizeDiscoveryProvider(cfg.Provider)
 	switch provider {
+	case "llamacpp":
+		return discoverLlamaCppModels(ctx, *cfg)
 	case "ollama":
 		return discoverOllamaModels(ctx, *cfg)
 	case "openai", "deepseek":
@@ -64,6 +66,24 @@ func discoverOpenAICompatibleModels(ctx context.Context, cfg Config) (DiscoveryR
 
 func discoverOpenAIModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
 	return discoverOpenAICompatibleModels(ctx, cfg)
+}
+
+func discoverLlamaCppModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
+	provider := normalizeDiscoveryProvider(cfg.Provider)
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:8080/v1"
+	}
+	endpoint := ensureModelsEndpoint(baseURL)
+	models, err := fetchOpenAIModels(ctx, endpoint, cfg)
+	if err != nil {
+		return DiscoveryResult{}, err
+	}
+	return DiscoveryResult{
+		Provider: provider,
+		Models:   models,
+		Source:   endpoint,
+	}, nil
 }
 
 func discoverOllamaModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {

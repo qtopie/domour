@@ -33,6 +33,13 @@ type EntryConfig struct {
 	Model    string `json:"model,omitempty"`
 }
 
+// ModeMapping defines tag-based model selection rules for a system mode.
+type ModeMapping struct {
+	Require []string `json:"require,omitempty"` // All tags must be present
+	Prefer  []string `json:"prefer,omitempty"`  // Score by these tags (order = priority chain)
+	Exclude []string `json:"exclude,omitempty"` // Models with these tags are excluded
+}
+
 type ServiceConfig struct {
 	Mode  string `json:"mode,omitempty"`
 	AppID string `json:"app_id,omitempty"`
@@ -58,6 +65,7 @@ type DomourConfig struct {
 	DefaultModel          string                    `json:"default_model,omitempty"`
 	Providers             map[string]ProviderConfig `json:"providers,omitempty"`
 	Entries               map[string]EntryConfig    `json:"entries,omitempty"`
+	ModeMappings          map[string]ModeMapping    `json:"mode_mappings,omitempty"`
 	Services              map[string]ServiceConfig  `json:"services,omitempty"`
 	Dapr                  DaprConfig                `json:"dapr,omitempty"`
 	Telemetry             TelemetryConfig           `json:"telemetry,omitempty"`
@@ -269,6 +277,67 @@ func (c *DomourConfig) SetProviderDiscoveredModels(provider string, models []str
 	cfg := c.Providers[provider]
 	cfg.Models = normalizeAndDeduplicateModelIDs(models)
 	c.Providers[provider] = cfg
+}
+
+// ModeMapping returns the tag rules for a given mode, falling back to defaults.
+func (c DomourConfig) ModeMapping(mode string) ModeMapping {
+	if c.ModeMappings != nil {
+		if m, ok := c.ModeMappings[strings.ToLower(strings.TrimSpace(mode))]; ok {
+			return m
+		}
+	}
+	return defaultModeMapping(mode)
+}
+
+// defaultModeMapping returns the built-in tag rules for each system mode.
+func defaultModeMapping(mode string) ModeMapping {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "deep_think":
+		return ModeMapping{
+			Require: []string{"deep"},
+			Prefer:  []string{"flash", "pro"},
+			Exclude: []string{"billed"},
+		}
+	case "performance":
+		return ModeMapping{
+			Prefer:  []string{"pro", "flash"},
+			Exclude: []string{"billed"},
+		}
+	case "stealth":
+		return ModeMapping{
+			Require: []string{"local", "private"},
+			Prefer:  []string{"free"},
+			Exclude: []string{"billed"},
+		}
+	case "survival":
+		return ModeMapping{
+			Require: []string{"local", "free"},
+			Exclude: []string{"billed", "remote"},
+		}
+	case "balanced":
+		return ModeMapping{
+			Prefer:  []string{"flash"},
+			Exclude: []string{"billed"},
+		}
+	case "casual":
+		return ModeMapping{
+			Prefer:  []string{"lite", "free"},
+			Exclude: []string{"billed"},
+		}
+	case "vigilant":
+		return ModeMapping{
+			Require: []string{"local"},
+			Prefer:  []string{"flash", "lite"},
+		}
+	case "diagnostic":
+		return ModeMapping{}
+	case "hibernate":
+		return ModeMapping{} // No LLM in hibernate
+	default:
+		return ModeMapping{
+			Exclude: []string{"billed"},
+		}
+	}
 }
 
 func (c DomourConfig) ServiceMode(name string) string {
@@ -485,6 +554,22 @@ func normalizeDomourConfig(cfg DomourConfig) DomourConfig {
 		cfg.Services = map[string]ServiceConfig{}
 	}
 
+	normalizedModes := make(map[string]ModeMapping, len(cfg.ModeMappings))
+	for key, mm := range cfg.ModeMappings {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if normalizedKey == "" {
+			continue
+		}
+		mm.Require = normalizeTags(mm.Require)
+		mm.Prefer = normalizeTags(mm.Prefer)
+		mm.Exclude = normalizeTags(mm.Exclude)
+		normalizedModes[normalizedKey] = mm
+	}
+	cfg.ModeMappings = normalizedModes
+	if cfg.ModeMappings == nil {
+		cfg.ModeMappings = map[string]ModeMapping{}
+	}
+
 	return cfg
 }
 
@@ -526,6 +611,8 @@ func normalizeProviderKey(provider string) string {
 		return "agy-cli"
 	case "ollama":
 		return "ollama"
+	case "llamacpp", "llama.cpp", "llama_cpp":
+		return "llamacpp"
 	case "github-copilot-cli", "copilot-cli", "github-copilot":
 		return "github-copilot-cli"
 	case "qodercli", "qoder-cli", "qoder":
@@ -555,6 +642,24 @@ func normalizeAndDeduplicateModelIDs(models []string) []string {
 		}
 		seen[model] = struct{}{}
 		out = append(out, model)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeTags(tags []string) []string {
+	seen := make(map[string]struct{}, len(tags))
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
 	}
 	sort.Strings(out)
 	return out
