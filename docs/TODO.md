@@ -32,6 +32,9 @@
   - [ ] 解析和加载自定义 `skill.md` 文件生成 JSON Schema 工具声明
   - [ ] 集成 MCP (Model Context Protocol) 框架支持
   - [x] 完成本地基础能力的装载 (FileSystem, Shell, RenderD2)
+- [ ] **外部 Agent 委派与拦截 (Claude Code / Gemini CLI / GitHub Copilot CLI)**
+  - [ ] 实现对 GitHub Copilot CLI 的支持与工具调用拦截
+
 
 ## 阶段四：脑干外挂 (Brainstem / Motor / Cosmos-star 接入)
 - [x] **高并发调度模型 (`docs/brain.md`)**

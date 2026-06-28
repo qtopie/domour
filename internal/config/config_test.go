@@ -186,3 +186,29 @@ func TestIsDebug(t *testing.T) {
 		}
 	})
 }
+
+func TestDomourHomeDirOverrides(t *testing.T) {
+	t.Run("DOMOUR_HOME env override", func(t *testing.T) {
+		t.Setenv("DOMOUR_HOME", "/custom/domour/home")
+		if got := DomourHomeDir(); got != "/custom/domour/home" {
+			t.Errorf("DomourHomeDir() = %q, want %q", got, "/custom/domour/home")
+		}
+	})
+
+	t.Run("COSMOS_HOME env override", func(t *testing.T) {
+		t.Setenv("DOMOUR_HOME", "")
+		t.Setenv("COSMOS_HOME", "/custom/cosmos/home")
+		if got := DomourHomeDir(); got != "/custom/cosmos/home" {
+			t.Errorf("DomourHomeDir() = %q, want %q", got, "/custom/cosmos/home")
+		}
+	})
+
+	t.Run("COSMOS_STAR_HOME env override", func(t *testing.T) {
+		t.Setenv("DOMOUR_HOME", "")
+		t.Setenv("COSMOS_HOME", "")
+		t.Setenv("COSMOS_STAR_HOME", "/custom/cosmos-star/home")
+		if got := DomourHomeDir(); got != "/custom/cosmos-star/home" {
+			t.Errorf("DomourHomeDir() = %q, want %q", got, "/custom/cosmos-star/home")
+		}
+	})
+}

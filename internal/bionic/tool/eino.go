@@ -23,16 +23,29 @@ func SanitizeToolName(name string) string {
 func GetEinoToolSchemas(tools []ToolInfo) []*schema.ToolInfo {
 	var schemas []*schema.ToolInfo
 	for _, t := range tools {
-		if s := GetEinoToolSchema(t.Name); s != nil {
-			s.Name = SanitizeToolName(s.Name)
-			schemas = append(schemas, s)
+		var s *schema.ToolInfo
+		if staticSchema := GetEinoToolSchema(t.Name); staticSchema != nil {
+			// Create a copy or rebuild to avoid mutating static schema definition structures
+			s = &schema.ToolInfo{
+				Name:        staticSchema.Name,
+				Desc:        staticSchema.Desc,
+				ParamsOneOf: staticSchema.ParamsOneOf,
+			}
+		} else if t.Params != nil {
+			s = &schema.ToolInfo{
+				Name:        t.Name,
+				Desc:        t.Description,
+				ParamsOneOf: t.Params,
+			}
 		} else {
 			// Fallback schema for custom/unknown tools
-			schemas = append(schemas, &schema.ToolInfo{
-				Name: SanitizeToolName(t.Name),
+			s = &schema.ToolInfo{
+				Name: t.Name,
 				Desc: t.Description,
-			})
+			}
 		}
+		s.Name = SanitizeToolName(s.Name)
+		schemas = append(schemas, s)
 	}
 	return schemas
 }

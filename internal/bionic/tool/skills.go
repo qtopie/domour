@@ -2,8 +2,10 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	skillpkg "github.com/qtopie/domour/internal/bionic/skill"
+	"github.com/qtopie/domour/internal/config"
 )
 
 type SkillInfo struct {
@@ -77,6 +80,17 @@ func (m *Manager) LoadDefaultSkillSources() error {
 			return err
 		}
 	}
+
+	cfg, err := config.LoadDomourConfig()
+	if err == nil {
+		skillsDir := strings.TrimSpace(cfg.SkillsDir)
+		if skillsDir != "" {
+			if err := m.LoadSkillsFromDir(skillsDir); err != nil {
+				slog.Warn("Failed to load skills from configured directory", "dir", skillsDir, "error", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -102,6 +116,22 @@ func (m *Manager) LoadSkillsFromDir(dir string) error {
 			return err
 		}
 	}
+
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			spec := NewJSONFileSkill(path)
+			spec.Name = buildProviderSkillName("domour", path)
+			if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
+				slog.Warn("Failed to register JSON skill", "path", path, "error", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -269,6 +299,32 @@ func NewFileSkill(path string) SkillSpec {
 				loaded.Name = strings.ToLower(baseName)
 			}
 			return loaded, nil
+		},
+	}
+}
+
+func NewJSONFileSkill(path string) SkillSpec {
+	path = strings.TrimSpace(path)
+	baseName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	return SkillSpec{
+		Name:       strings.ToLower(baseName),
+		SourcePath: path,
+		Provider:   "domour",
+		Format:     "skill-json",
+		Load: func(ctx context.Context) (*skillpkg.Skill, error) {
+			_ = ctx
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			var loaded skillpkg.Skill
+			if err := json.Unmarshal(data, &loaded); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(loaded.Name) == "" {
+				loaded.Name = strings.ToLower(baseName)
+			}
+			return &loaded, nil
 		},
 	}
 }

@@ -3,12 +3,15 @@ package tool
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 type ToolKind string
@@ -24,11 +27,12 @@ const (
 )
 
 type ToolInfo struct {
-	Name        string            `json:"name"`
-	Kind        ToolKind          `json:"kind"`
-	Description string            `json:"description,omitempty"`
-	Loaded      bool              `json:"loaded"`
-	Meta        map[string]string `json:"meta,omitempty"`
+	Name        string              `json:"name"`
+	Kind        ToolKind            `json:"kind"`
+	Description string              `json:"description,omitempty"`
+	Loaded      bool                `json:"loaded"`
+	Meta        map[string]string   `json:"meta,omitempty"`
+	Params      *schema.ParamsOneOf `json:"-"`
 }
 
 type ToolRuntime interface {
@@ -44,6 +48,7 @@ type ToolSpec struct {
 	Description string
 	IdleTTL     time.Duration
 	Meta        map[string]string
+	Params      *schema.ParamsOneOf
 	Load        ToolLoader
 }
 
@@ -116,9 +121,16 @@ func NewDefaultManager() (*Manager, error) {
 		manager.Close()
 		return nil, err
 	}
+	if err := manager.Register(NewCopilotDelegateTool()); err != nil {
+		manager.Close()
+		return nil, err
+	}
 	if err := manager.LoadDefaultSkillSources(); err != nil {
 		manager.Close()
 		return nil, err
+	}
+	if err := manager.LoadMCPServers(context.Background()); err != nil {
+		slog.Warn("Failed to load configured MCP servers", "error", err)
 	}
 	return manager, nil
 }
@@ -153,6 +165,7 @@ func (m *Manager) List() []ToolInfo {
 			Description: state.spec.Description,
 			Loaded:      state.runtime != nil,
 			Meta:        cloneMeta(state.spec.Meta),
+			Params:      state.spec.Params,
 		})
 	}
 	return tools
@@ -552,6 +565,12 @@ func NewMCPTool(name, remoteName, description string, factory MCPToolClientFacto
 			}, nil
 		},
 	}
+}
+
+func NewMCPToolWithParams(name, remoteName, description string, params *schema.ParamsOneOf, factory MCPToolClientFactory) ToolSpec {
+	spec := NewMCPTool(name, remoteName, description, factory)
+	spec.Params = params
+	return spec
 }
 
 type mcpToolRuntime struct {

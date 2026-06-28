@@ -154,3 +154,38 @@ func writeTempSkill(t *testing.T) string {
 	}
 	return path
 }
+
+func TestManagerLoadsJSONSkillsFromDir(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "k8s-pod.json")
+	content := `{"id":"k8s-pod","name":"k8s-pod","description":"Manage K8s pods","instructions":"Focus on get and restart","tools":[{"name":"k8s.getPods","description":"Get pods"}]}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write json skill file: %v", err)
+	}
+
+	manager := NewManager(WithCleanupInterval(0))
+	defer manager.Close()
+
+	if err := manager.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("load skills: %v", err)
+	}
+
+	list := manager.ListSkills()
+	if len(list) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(list))
+	}
+	if list[0].Name != "domour:k8s-pod" {
+		t.Fatalf("unexpected skill name: %s", list[0].Name)
+	}
+
+	snapshot, err := manager.ResolveSkill(context.Background(), "domour:k8s-pod")
+	if err != nil {
+		t.Fatalf("resolve skill: %v", err)
+	}
+	if snapshot.Name != "k8s-pod" || snapshot.Description != "Manage K8s pods" || snapshot.Instructions != "Focus on get and restart" {
+		t.Fatalf("unexpected snapshot details: %+v", snapshot)
+	}
+	if len(snapshot.Tools) != 1 || snapshot.Tools[0].Name != "k8s.getPods" {
+		t.Fatalf("unexpected snapshot tools: %+v", snapshot.Tools)
+	}
+}

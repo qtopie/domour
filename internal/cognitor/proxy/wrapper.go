@@ -220,7 +220,16 @@ func StartHeartbeat(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		defer ticker.Stop()
-		// Initial check
+		// Delay the initial check slightly to allow the config file to be
+		// updated by cosmos-assistant (syncToDomour) before we first attempt
+		// to validate API keys. Without this, the heartbeat fires before the
+		// file watcher can propagate the correct API key, causing a spurious
+		// 401 that marks the provider as unhealthy for up to 30 seconds.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
 		CheckAllProviders(ctx)
 		for {
 			select {
@@ -315,6 +324,13 @@ func init() {
 
 	// Start active health polling loop (heartbeat)
 	StartHeartbeat(context.Background(), 30*time.Second)
+
+	// When the config file changes (e.g. cosmos-assistant writes a new API key),
+	// immediately re-check all providers so they are not stuck as unhealthy
+	// until the next 30-second heartbeat tick.
+	appconfig.WatchConfig(func() {
+		go CheckAllProviders(context.Background())
+	})
 }
 
 func defaultLLMFactory(ctx context.Context, cfg Config) (model.ChatModel, error) {

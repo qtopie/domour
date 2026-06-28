@@ -58,19 +58,31 @@ type TelemetryConfig struct {
 	UseStdout      bool    `json:"use_stdout,omitempty"`
 }
 
+type MCPServerConfig struct {
+	Type    string            `json:"type"` // "stdio", "sse", "dapr"
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	AppID   string            `json:"app_id,omitempty"`
+}
+
 type DomourConfig struct {
-	HTTPSProxy            string                    `json:"https_proxy"`
-	LogAsJSON             bool                      `json:"log_as_json,omitempty"`
-	DefaultProvider       string                    `json:"default_provider,omitempty"`
-	DefaultModel          string                    `json:"default_model,omitempty"`
-	Providers             map[string]ProviderConfig `json:"providers,omitempty"`
-	Entries               map[string]EntryConfig    `json:"entries,omitempty"`
-	ModeMappings          map[string]ModeMapping    `json:"mode_mappings,omitempty"`
-	Services              map[string]ServiceConfig  `json:"services,omitempty"`
-	Dapr                  DaprConfig                `json:"dapr,omitempty"`
-	Telemetry             TelemetryConfig           `json:"telemetry,omitempty"`
-	MaxActiveTokens       int                       `json:"max_active_tokens,omitempty"`
-	CompressTriggerTokens int                       `json:"compress_trigger_tokens,omitempty"`
+	HTTPSProxy            string                     `json:"https_proxy"`
+	LogAsJSON             bool                       `json:"log_as_json,omitempty"`
+	DefaultProvider       string                     `json:"default_provider,omitempty"`
+	DefaultModel          string                     `json:"default_model,omitempty"`
+	Providers             map[string]ProviderConfig  `json:"providers,omitempty"`
+	Entries               map[string]EntryConfig     `json:"entries,omitempty"`
+	ModeMappings          map[string]ModeMapping     `json:"mode_mappings,omitempty"`
+	Services              map[string]ServiceConfig   `json:"services,omitempty"`
+	Dapr                  DaprConfig                 `json:"dapr,omitempty"`
+	Telemetry             TelemetryConfig            `json:"telemetry,omitempty"`
+	MCPDir                string                     `json:"mcp_dir,omitempty"`
+	SkillsDir             string                     `json:"skills_dir,omitempty"`
+	MCPServers            map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
+	MaxActiveTokens       int                        `json:"max_active_tokens,omitempty"`
+	CompressTriggerTokens int                        `json:"compress_trigger_tokens,omitempty"`
 }
 
 var (
@@ -141,12 +153,37 @@ func SaveDomourConfigAt(path string, cfg DomourConfig) error {
 	return nil
 }
 
-func DomourConfigPath() (string, error) {
+func DomourHomeDir() string {
+	if val := strings.TrimSpace(os.Getenv("DOMOUR_HOME")); val != "" {
+		return val
+	}
+	if val := strings.TrimSpace(os.Getenv("COSMOS_HOME")); val != "" {
+		return val
+	}
+	if val := strings.TrimSpace(os.Getenv("COSMOS_STAR_HOME")); val != "" {
+		return val
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve user home: %w", err)
+		return ".domour"
 	}
-	return filepath.Join(homeDir, ".domour", "config.json"), nil
+
+	cosmosStarDir := filepath.Join(homeDir, ".cosmos-star")
+	if info, err := os.Stat(cosmosStarDir); err == nil && info.IsDir() {
+		return cosmosStarDir
+	}
+
+	cosmosDir := filepath.Join(homeDir, ".cosmos")
+	if info, err := os.Stat(cosmosDir); err == nil && info.IsDir() {
+		return cosmosDir
+	}
+
+	return filepath.Join(homeDir, ".domour")
+}
+
+func DomourConfigPath() (string, error) {
+	return filepath.Join(DomourHomeDir(), "config.json"), nil
 }
 
 func (c DomourConfig) ProxyForProvider(provider string) string {
@@ -489,6 +526,7 @@ func writeDomourConfig(path string, cfg DomourConfig) error {
 }
 
 func defaultDomourConfig() DomourConfig {
+	home := DomourHomeDir()
 	return DomourConfig{
 		HTTPSProxy:      DefaultHTTPSProxy,
 		DefaultProvider: "github-copilot-cli",
@@ -506,6 +544,9 @@ func defaultDomourConfig() DomourConfig {
 			GRPCAddress: "127.0.0.1:50001",
 			HTTPAddress: "127.0.0.1:3500",
 		},
+		MCPDir:     filepath.Join(home, "mcp"),
+		SkillsDir:  filepath.Join(home, "skills"),
+		MCPServers: map[string]MCPServerConfig{},
 	}
 }
 
@@ -516,6 +557,22 @@ func normalizeDomourConfig(cfg DomourConfig) DomourConfig {
 	}
 	cfg.DefaultProvider = normalizeProviderKey(cfg.DefaultProvider)
 	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
+
+	home := DomourHomeDir()
+	homeDir, _ := os.UserHomeDir()
+	cfg.MCPDir = strings.TrimSpace(cfg.MCPDir)
+	if cfg.MCPDir == "" {
+		cfg.MCPDir = filepath.Join(home, "mcp")
+	} else if strings.HasPrefix(cfg.MCPDir, "~") && homeDir != "" {
+		cfg.MCPDir = filepath.Join(homeDir, cfg.MCPDir[1:])
+	}
+
+	cfg.SkillsDir = strings.TrimSpace(cfg.SkillsDir)
+	if cfg.SkillsDir == "" {
+		cfg.SkillsDir = filepath.Join(home, "skills")
+	} else if strings.HasPrefix(cfg.SkillsDir, "~") && homeDir != "" {
+		cfg.SkillsDir = filepath.Join(homeDir, cfg.SkillsDir[1:])
+	}
 
 	normalizedProviders := make(map[string]ProviderConfig, len(cfg.Providers))
 	for key, providerCfg := range cfg.Providers {
@@ -568,6 +625,20 @@ func normalizeDomourConfig(cfg DomourConfig) DomourConfig {
 	cfg.ModeMappings = normalizedModes
 	if cfg.ModeMappings == nil {
 		cfg.ModeMappings = map[string]ModeMapping{}
+	}
+
+	if cfg.MCPServers == nil {
+		cfg.MCPServers = map[string]MCPServerConfig{}
+	} else {
+		normalizedMCPServers := make(map[string]MCPServerConfig, len(cfg.MCPServers))
+		for key, mcpCfg := range cfg.MCPServers {
+			mcpCfg.Type = strings.ToLower(strings.TrimSpace(mcpCfg.Type))
+			mcpCfg.Command = strings.TrimSpace(mcpCfg.Command)
+			mcpCfg.URL = strings.TrimSpace(mcpCfg.URL)
+			mcpCfg.AppID = strings.TrimSpace(mcpCfg.AppID)
+			normalizedMCPServers[strings.TrimSpace(key)] = mcpCfg
+		}
+		cfg.MCPServers = normalizedMCPServers
 	}
 
 	return cfg
