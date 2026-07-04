@@ -68,6 +68,7 @@ type MCPServerConfig struct {
 }
 
 type DomourConfig struct {
+	DataDir               string                     `json:"dataDir,omitempty"`
 	HTTPSProxy            string                     `json:"https_proxy"`
 	LogAsJSON             bool                       `json:"log_as_json,omitempty"`
 	DefaultProvider       string                     `json:"default_provider,omitempty"`

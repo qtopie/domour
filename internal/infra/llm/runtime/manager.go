@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/qtopie/domour/internal/config"
 )
 
 type contextKey string
@@ -138,6 +140,12 @@ func (m *Manager) MarkResume(runtime *SessionRuntime) {
 }
 
 func defaultRootDir() string {
+	// If the config specifies a dataDir, use it as the parent for provider runtime.
+	cfg, err := config.LoadDomourConfig()
+	if err == nil && strings.TrimSpace(cfg.DataDir) != "" {
+		return filepath.Join(strings.TrimSpace(cfg.DataDir), "provider-runtime")
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(homeDir) == "" {
 		return filepath.Join(os.TempDir(), "domour-provider-runtime")
