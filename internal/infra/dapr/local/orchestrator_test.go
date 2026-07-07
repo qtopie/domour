@@ -59,6 +59,10 @@ func (m *mockExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, er
 	return nil, nil
 }
 
+func (m *mockExecutorClient) ToolManager() *tool.Manager {
+	return nil
+}
+
 type mockEngine struct {
 	cognitor *mockCognitorClient
 	executor *mockExecutorClient

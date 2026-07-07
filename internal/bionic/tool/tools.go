@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+	publictool "github.com/qtopie/domour/pkg/bionic/tool"
 )
 
 type ToolKind string
@@ -124,6 +125,24 @@ func NewDefaultManager() (*Manager, error) {
 	if err := manager.Register(NewCopilotDelegateTool()); err != nil {
 		manager.Close()
 		return nil, err
+	}
+	// Load registered public tools
+	for _, t := range publictool.List() {
+		actFunc := t.Act
+		spec := NewInternalTool(t.Name, t.Description, func(ctx context.Context, cmd Command) (Result, error) {
+			obs, err := actFunc(ctx, cmd.Input)
+			if err != nil {
+				return Result{}, err
+			}
+			return Result{
+				Observation: obs,
+				Done:        true,
+			}, nil
+		})
+		if err := manager.Register(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
+			manager.Close()
+			return nil, err
+		}
 	}
 	if err := manager.LoadDefaultSkillSources(); err != nil {
 		manager.Close()

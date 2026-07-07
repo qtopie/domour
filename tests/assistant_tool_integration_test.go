@@ -116,6 +116,10 @@ func (m *mockAssistantExecutorClient) ListTools(ctx context.Context) ([]tool.Too
 	return m.manager.List(), nil
 }
 
+func (m *mockAssistantExecutorClient) ToolManager() *tool.Manager {
+	return m.manager
+}
+
 type mockAssistantEngine struct {
 	cognitor engine.CognitorClient
 	executor engine.ExecutorClient

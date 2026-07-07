@@ -28,6 +28,10 @@ func (m *mockExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, er
 	return nil, nil
 }
 
+func (m *mockExecutorClient) ToolManager() *tool.Manager {
+	return nil
+}
+
 func TestRuntimeBiomorphicPathways(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

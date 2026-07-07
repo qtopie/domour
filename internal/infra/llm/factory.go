@@ -1,11 +1,8 @@
 package llm
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -118,11 +115,7 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 		if strings.TrimSpace(deepseekCfg.BaseURL) == "" {
 			deepseekCfg.BaseURL = "https://api.deepseek.com"
 		}
-		dsClient, err := newDeepSeekHTTPClient(cfg.ProxyURL)
-		if err != nil {
-			return nil, err
-		}
-		return newOpenAICompatibleChatModel(ctx, dsClient, deepseekCfg)
+		return newOpenAICompatibleChatModel(ctx, httpClient, deepseekCfg)
 	case "llamacpp", "llama.cpp", "llama_cpp":
 		llamacppCfg := *cfg
 		if strings.TrimSpace(llamacppCfg.BaseURL) == "" {
@@ -229,82 +222,3 @@ func parseProxyURL(proxyURLRaw string) (*url.URL, error) {
 	}
 }
 
-func newDeepSeekHTTPClient(proxyURLRaw string) (*http.Client, error) {
-	baseClient, err := newHTTPClientWithProxy(proxyURLRaw)
-	if err != nil {
-		return nil, err
-	}
-	if baseClient == nil {
-		baseClient = &http.Client{}
-	}
-	transport := baseClient.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	baseClient.Transport = &deepseekInterceptorRoundTripper{underlay: transport}
-	return baseClient, nil
-}
-
-type deepseekInterceptorRoundTripper struct {
-	underlay http.RoundTripper
-}
-
-func (rt *deepseekInterceptorRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := rt.underlay.RoundTrip(req)
-	if err != nil {
-		return nil, err
-	}
-	if strings.Contains(req.URL.Path, "/chat/completions") && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		resp.Body = &sseInterceptorReader{
-			underlay: resp.Body,
-			reader:   bufio.NewReader(resp.Body),
-		}
-	}
-	return resp, nil
-}
-
-type sseInterceptorReader struct {
-	underlay   io.ReadCloser
-	reader     *bufio.Reader
-	buf        bytes.Buffer
-	isThinking bool
-}
-
-func (r *sseInterceptorReader) Read(p []byte) (n int, err error) {
-	if r.buf.Len() > 0 {
-		return r.buf.Read(p)
-	}
-
-	line, err := r.reader.ReadString('\n')
-	if err != nil && len(line) == 0 {
-		return 0, err
-	}
-
-	rewritten := rewriteDeepSeekSSELine(line, &r.isThinking)
-	r.buf.WriteString(rewritten)
-	return r.buf.Read(p)
-}
-
-func (r *sseInterceptorReader) Close() error {
-	return r.underlay.Close()
-}
-
-func rewriteDeepSeekSSELine(line string, isThinking *bool) string {
-	if !strings.HasPrefix(line, "data: ") {
-		return line
-	}
-	if idx := strings.Index(line, "\"reasoning_content\":\""); idx != -1 {
-		if !*isThinking {
-			*isThinking = true
-			line = strings.Replace(line, "\"reasoning_content\":\"", "\"content\":\"<think>", 1)
-		} else {
-			line = strings.Replace(line, "\"reasoning_content\":\"", "\"content\":\"", 1)
-		}
-	} else if strings.Contains(line, "\"content\":\"") {
-		if *isThinking {
-			*isThinking = false
-			line = strings.Replace(line, "\"content\":\"", "\"content\":\"</think>", 1)
-		}
-	}
-	return line
-}

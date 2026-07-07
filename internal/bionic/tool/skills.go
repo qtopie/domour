@@ -15,6 +15,7 @@ import (
 
 	skillpkg "github.com/qtopie/domour/internal/bionic/skill"
 	"github.com/qtopie/domour/internal/config"
+	publicskill "github.com/qtopie/domour/pkg/bionic/skill"
 )
 
 type SkillInfo struct {
@@ -81,6 +82,28 @@ func (m *Manager) LoadDefaultSkillSources() error {
 		}
 	}
 
+	// Load registered public skills
+	for _, s := range publicskill.List() {
+		spec := SkillSpec{
+			Name:        s.Name,
+			Description: s.Description,
+			Provider:    "internal",
+			Format:      "skill-struct",
+			Load: func(ctx context.Context) (*skillpkg.Skill, error) {
+				return &skillpkg.Skill{
+					ID:           s.Name,
+					Name:         s.Name,
+					Description:  s.Description,
+					Instructions: s.Instructions,
+					IntentTags:   s.IntentTags,
+				}, nil
+			},
+		}
+		if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
+			return err
+		}
+	}
+
 	cfg, err := config.LoadDomourConfig()
 	if err == nil {
 		skillsDir := strings.TrimSpace(cfg.SkillsDir)
@@ -111,28 +134,36 @@ func (m *Manager) LoadSkillsFromDir(dir string) error {
 		return fmt.Errorf("skills path %s is not a directory", dir)
 	}
 
-	for _, source := range discoverMarkdownFiles(dir, "domour", "skill-md", "", false) {
-		if err := m.RegisterSkill(source); err != nil && !strings.Contains(err.Error(), "already registered") {
-			return err
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
-	}
+		if d.IsDir() {
+			return nil
+		}
 
-	entries, err := os.ReadDir(dir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
-				continue
+		baseName := strings.ToLower(d.Name())
+		if baseName == "readme.md" {
+			return nil
+		}
+
+		if strings.HasSuffix(baseName, ".md") {
+			spec := NewFileSkill(path)
+			spec.Name = buildProviderSkillName("domour", path)
+			if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
+				slog.Warn("Failed to register Markdown skill", "path", path, "error", err)
 			}
-			path := filepath.Join(dir, entry.Name())
+		} else if strings.HasSuffix(baseName, ".json") {
 			spec := NewJSONFileSkill(path)
 			spec.Name = buildProviderSkillName("domour", path)
 			if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
 				slog.Warn("Failed to register JSON skill", "path", path, "error", err)
 			}
 		}
-	}
+		return nil
+	})
 
-	return nil
+	return err
 }
 
 func (m *Manager) ListSkills() []SkillInfo {
@@ -154,6 +185,11 @@ func (m *Manager) ListSkills() []SkillInfo {
 		}
 		skills = append(skills, info)
 	}
+
+	sort.Slice(skills, func(i, j int) bool {
+		return skills[i].Name < skills[j].Name
+	})
+
 	return skills
 }
 
@@ -281,9 +317,20 @@ func normalizeSkillSpec(spec SkillSpec) SkillSpec {
 	return spec
 }
 
+func getSkillBaseName(path string) string {
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if strings.ToLower(base) == "skill" {
+		parent := filepath.Dir(path)
+		if parent != "." && parent != "/" {
+			return filepath.Base(parent)
+		}
+	}
+	return base
+}
+
 func NewFileSkill(path string) SkillSpec {
 	path = strings.TrimSpace(path)
-	baseName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	baseName := getSkillBaseName(path)
 	return SkillSpec{
 		Name:       strings.ToLower(baseName),
 		SourcePath: path,
@@ -305,7 +352,7 @@ func NewFileSkill(path string) SkillSpec {
 
 func NewJSONFileSkill(path string) SkillSpec {
 	path = strings.TrimSpace(path)
-	baseName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	baseName := getSkillBaseName(path)
 	return SkillSpec{
 		Name:       strings.ToLower(baseName),
 		SourcePath: path,
@@ -377,7 +424,7 @@ func discoverDefaultSkillSources() []SkillSpec {
 	home, _ := os.UserHomeDir()
 
 	var specs []SkillSpec
-	specs = append(specs, discoverMarkdownFiles(defaultSkillsDir(), "domour", "skill-md", "", false)...)
+	specs = append(specs, discoverMarkdownFiles(defaultSkillsDir(), "domour", "skill-md", "", true)...)
 
 	if cwd != "" {
 		specs = append(specs, discoverMarkdownFiles(cwd, "gemini", "instruction-md", "GEMINI.md", false)...)
@@ -474,6 +521,10 @@ func buildSkillSpecsFromMatches(matches []string, provider, format string) []Ski
 	var specs []SkillSpec
 	seen := make(map[string]struct{})
 	for _, match := range matches {
+		base := filepath.Base(match)
+		if strings.ToLower(base) == "readme.md" {
+			continue
+		}
 		info, err := os.Stat(match)
 		if err != nil || info.IsDir() {
 			continue
@@ -517,7 +568,7 @@ func dedupeSkillSpecs(specs []SkillSpec) []SkillSpec {
 }
 
 func buildProviderSkillName(provider, path string) string {
-	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	base := getSkillBaseName(path)
 	return strings.Join([]string{normalizeNamePart(provider), normalizeNamePart(base)}, ":")
 }
 
@@ -538,4 +589,113 @@ func humanizeSkillName(value string) string {
 		parts[i] = strings.Title(strings.ReplaceAll(part, "-", " "))
 	}
 	return strings.Join(parts, " / ")
+}
+
+// BuildAvailableSkillsPrompt builds a sorted, deterministic prompt of available skills for injection.
+func (m *Manager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error) {
+	skills := m.ListSkills()
+	if len(skills) == 0 {
+		return "", nil
+	}
+	var builder strings.Builder
+	builder.WriteString("# Available Agent Skills\n\n")
+	builder.WriteString("You have access to the following specialized skills. To activate a skill, call the activate_skill tool with the skill's name.\n\n")
+	builder.WriteString("<available_skills>\n")
+	for _, skill := range skills {
+		if strings.HasSuffix(skill.Name, ":diagnostic") || skill.Name == "cosmos-star:diagnostic" {
+			continue
+		}
+		builder.WriteString("  <skill>\n")
+		builder.WriteString("    <name>" + skill.Name + "</name>\n")
+		if skill.Description != "" {
+			builder.WriteString("    <description>" + skill.Description + "</description>\n")
+		}
+		builder.WriteString("  </skill>\n")
+	}
+	builder.WriteString("</available_skills>")
+	return builder.String(), nil
+}
+
+// BuildActiveSkillPrompt resolves an active skill and formats it as standard Markdown frontmatter wrapped in active_skill tags.
+func (m *Manager) BuildActiveSkillPrompt(ctx context.Context, name string) (string, error) {
+	snapshot, err := m.ResolveSkill(ctx, name)
+	if err != nil {
+		return "", err
+	}
+
+	var builder strings.Builder
+	builder.WriteString("<active_skill>\n")
+	builder.WriteString("---\n")
+	builder.WriteString("id: " + name + "\n")
+	builder.WriteString("name: " + snapshot.Name + "\n")
+	if snapshot.Description != "" {
+		builder.WriteString("description: " + snapshot.Description + "\n")
+	}
+	if snapshot.Provider != "" {
+		builder.WriteString("provider: " + snapshot.Provider + "\n")
+	}
+	if len(snapshot.Tools) > 0 {
+		builder.WriteString("tools:\n")
+		for _, tool := range snapshot.Tools {
+			builder.WriteString("  - name: " + tool.Name + "\n")
+			if tool.Description != "" {
+				builder.WriteString("    description: " + tool.Description + "\n")
+			}
+		}
+	}
+	builder.WriteString("---\n\n")
+	if snapshot.Instructions != "" {
+		builder.WriteString(snapshot.Instructions + "\n")
+	}
+	builder.WriteString("</active_skill>")
+	return builder.String(), nil
+}
+
+// DetectActiveSkill matches the user query against registered skills' intent tags and name.
+// Returns the matched skill name, or empty string if no match is found.
+func (m *Manager) DetectActiveSkill(ctx context.Context, query string) string {
+	m.mu.Lock()
+	names := make([]string, 0, len(m.skills))
+	for name := range m.skills {
+		names = append(names, name)
+	}
+	m.mu.Unlock()
+
+	sort.Strings(names)
+
+	queryLower := strings.ToLower(query)
+	for _, name := range names {
+		if strings.HasSuffix(name, ":diagnostic") || name == "cosmos-star:diagnostic" {
+			continue
+		}
+		// Resolve it to ensure it is parsed and loaded into state.loaded
+		_, err := m.ResolveSkill(ctx, name)
+		if err != nil {
+			continue
+		}
+
+		m.mu.Lock()
+		state := m.skills[name]
+		loaded := state.loaded
+		m.mu.Unlock()
+
+		if loaded == nil {
+			continue
+		}
+
+		// Check name
+		nameLower := strings.ToLower(loaded.Name)
+		if nameLower != "" && strings.Contains(queryLower, nameLower) {
+			return name
+		}
+
+		// Check intent tags
+		for _, tag := range loaded.IntentTags {
+			tagLower := strings.ToLower(tag)
+			if tagLower != "" && strings.Contains(queryLower, tagLower) {
+				return name
+			}
+		}
+	}
+	return ""
 }

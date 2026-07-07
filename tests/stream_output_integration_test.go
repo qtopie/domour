@@ -91,6 +91,10 @@ func (m *streamTestExecutorClient) ListTools(ctx context.Context) ([]tool.ToolIn
 	return m.manager.List(), nil
 }
 
+func (m *streamTestExecutorClient) ToolManager() *tool.Manager {
+	return m.manager
+}
+
 type streamTestEngine struct {
 	cognitor engine.CognitorClient
 	executor engine.ExecutorClient

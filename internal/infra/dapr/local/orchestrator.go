@@ -148,7 +148,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 		var chunks []*schema.Message
 		isToolCall := false
-		thinkParser := NewThinkTagParser()
 
 		for {
 			chunk, recvErr := sr.Recv()
@@ -166,13 +165,33 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 				isToolCall = true
 			}
 
-			if input.StreamFinal && !isToolCall && chunk.Content != "" {
-				_ = thinkParser.Feed(chunk.Content, input.Stage, brainClient, yield)
+			if input.StreamFinal && !isToolCall {
+				meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
+				if chunk.ReasoningContent != "" {
+					if err := yield(shared.MotorStreamEvent{
+						Stage:   input.Stage,
+						Type:    2, // CHUNK_THINKING
+						Content: chunk.ReasoningContent,
+						Thinking: &shared.ThinkingDetail{
+							Engine: brainClient.Provider(),
+							Stage:  "thought",
+						},
+						Meta: meta,
+					}); err != nil {
+						return nil, err
+					}
+				}
+				if chunk.Content != "" {
+					if err := yield(shared.MotorStreamEvent{
+						Stage:   input.Stage,
+						Type:    1, // CHUNK_TEXT
+						Content: chunk.Content,
+						Meta:    meta,
+					}); err != nil {
+						return nil, err
+					}
+				}
 			}
-		}
-		// Flush any remaining buffered partial-tag content after the stream ends
-		if input.StreamFinal && !isToolCall {
-			_ = thinkParser.Flush(input.Stage, brainClient, yield)
 		}
 		sr.Close()
 
@@ -261,8 +280,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 	return nil, fmt.Errorf("max tool execution loops reached")
 }
-
-// yieldParsedStream is retained for reference but superseded by ThinkTagParser.
 
 func modelSupportsTools(provider, model string) bool {
 	provider = strings.ToLower(strings.TrimSpace(provider))

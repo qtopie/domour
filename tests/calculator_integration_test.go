@@ -93,6 +93,10 @@ func (m *testExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, er
 	return m.manager.List(), nil
 }
 
+func (m *testExecutorClient) ToolManager() *tool.Manager {
+	return m.manager
+}
+
 func TestCalculatorReasoningLoop(t *testing.T) {
 	ctx := context.Background()
 

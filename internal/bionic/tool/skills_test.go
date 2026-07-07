@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -189,3 +190,154 @@ func TestManagerLoadsJSONSkillsFromDir(t *testing.T) {
 		t.Fatalf("unexpected snapshot tools: %+v", snapshot.Tools)
 	}
 }
+
+func TestManagerLoadsStandardAgentSkills(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "k8s-pod-manager")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+
+	content := `---
+id: devops.k8s.pod-manager
+name: K8s Pod Manager
+description: 查看、重启和排查 Pod 状态
+intent_tags: ["k8s", "pod", "ops"]
+inputs:
+  required: ["cluster"]
+  optional: ["namespace", "pod_name"]
+tools:
+  - name: k8s.getPods
+    description: Get pods in cluster
+    parameters:
+      type: object
+      properties:
+        cluster:
+          type: string
+---
+Focus on get and restart in cluster execution.`
+
+	path := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write standard SKILL.md file: %v", err)
+	}
+
+	// Also write a README.md to ensure it is ignored
+	readmePath := filepath.Join(skillDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# README\nSome docs here"), 0o600); err != nil {
+		t.Fatalf("write README.md file: %v", err)
+	}
+
+	manager := NewManager(WithCleanupInterval(0))
+	defer manager.Close()
+
+	if err := manager.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("load skills: %v", err)
+	}
+
+	list := manager.ListSkills()
+	if len(list) != 1 {
+		t.Fatalf("expected 1 skill (README.md should be ignored), got %d", len(list))
+	}
+	if list[0].Name != "domour:k8s-pod-manager" {
+		t.Fatalf("unexpected skill name: %s", list[0].Name)
+	}
+
+	snapshot, err := manager.ResolveSkill(context.Background(), "domour:k8s-pod-manager")
+	if err != nil {
+		t.Fatalf("resolve skill: %v", err)
+	}
+
+	if snapshot.Name != "K8s Pod Manager" {
+		t.Fatalf("expected name 'K8s Pod Manager', got '%s'", snapshot.Name)
+	}
+	if snapshot.Description != "查看、重启和排查 Pod 状态" {
+		t.Fatalf("unexpected description: %s", snapshot.Description)
+	}
+	if snapshot.Instructions != "Focus on get and restart in cluster execution." {
+		t.Fatalf("unexpected instructions: %s", snapshot.Instructions)
+	}
+	if len(snapshot.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(snapshot.Tools))
+	}
+	if snapshot.Tools[0].Name != "k8s.getPods" {
+		t.Fatalf("expected tool 'k8s.getPods', got '%s'", snapshot.Tools[0].Name)
+	}
+	// Verify that parameters are parsed into valid json RawMessage
+	if len(snapshot.Tools[0].Parameters) == 0 {
+		t.Fatalf("expected parameters to be populated, got empty")
+	}
+}
+
+func TestSkillsPromptBuildingAndAutoDetection(t *testing.T) {
+	root := t.TempDir()
+	
+	// Create skill 1: z-pod-manager
+	skill1Dir := filepath.Join(root, "z-pod-manager")
+	os.MkdirAll(skill1Dir, 0755)
+	os.WriteFile(filepath.Join(skill1Dir, "SKILL.md"), []byte(`---
+name: Z Pod Manager
+description: Manage pods
+intent_tags: ["k8s", "pod"]
+---
+Instructions for Z`), 0o600)
+
+	// Create skill 2: a-database-helper
+	skill2Dir := filepath.Join(root, "a-database-helper")
+	os.MkdirAll(skill2Dir, 0755)
+	os.WriteFile(filepath.Join(skill2Dir, "SKILL.md"), []byte(`---
+name: A Database Helper
+description: SQL optimization
+intent_tags: ["sql", "database"]
+---
+Instructions for A`), 0o600)
+
+	manager := NewManager(WithCleanupInterval(0))
+	defer manager.Close()
+
+	if err := manager.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// 1. Verify sorting of available skills list
+	avail, err := manager.BuildAvailableSkillsPrompt(context.Background())
+	if err != nil {
+		t.Fatalf("available prompt: %v", err)
+	}
+	if !strings.Contains(avail, "a-database-helper") || !strings.Contains(avail, "z-pod-manager") {
+		t.Fatalf("unexpected avail prompt: %s", avail)
+	}
+	// Check order: a-database-helper should come before z-pod-manager because it's sorted by Name alphabetically!
+	aIdx := strings.Index(avail, "a-database-helper")
+	zIdx := strings.Index(avail, "z-pod-manager")
+	if aIdx > zIdx {
+		t.Fatalf("expected alphabetical sorting for available skills prompt, got incorrect order")
+	}
+
+	// 2. Verify auto-detection of active skill by name
+	matchedName := manager.DetectActiveSkill(context.Background(), "I want to run a-database-helper commands")
+	if matchedName != "domour:a-database-helper" {
+		t.Fatalf("expected match 'domour:a-database-helper', got '%s'", matchedName)
+	}
+
+	// 3. Verify auto-detection of active skill by intent tags
+	matchedTag := manager.DetectActiveSkill(context.Background(), "How do I optimize my sql query?")
+	if matchedTag != "domour:a-database-helper" {
+		t.Fatalf("expected match 'domour:a-database-helper' by tag 'sql', got '%s'", matchedTag)
+	}
+
+	matchedTag2 := manager.DetectActiveSkill(context.Background(), "restart that k8s pod please")
+	if matchedTag2 != "domour:z-pod-manager" {
+		t.Fatalf("expected match 'domour:z-pod-manager' by tag 'k8s/pod', got '%s'", matchedTag2)
+	}
+
+	// 4. Verify Active Skill Prompt building format
+	activePrompt, err := manager.BuildActiveSkillPrompt(context.Background(), "domour:z-pod-manager")
+	if err != nil {
+		t.Fatalf("active prompt: %v", err)
+	}
+	if !strings.Contains(activePrompt, "<active_skill>") || !strings.Contains(activePrompt, "Instructions for Z") || !strings.Contains(activePrompt, "id: domour:z-pod-manager") {
+		t.Fatalf("unexpected active prompt content: %s", activePrompt)
+	}
+}
+

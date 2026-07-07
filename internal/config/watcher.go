@@ -3,9 +3,12 @@ package config
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
+
+const debounceInterval = 500 * time.Millisecond
 
 var (
 	watchOnce sync.Once
@@ -34,16 +37,38 @@ func WatchConfig(callback func()) {
 
 		go func() {
 			defer watcher.Close()
+
+			var (
+				debounce     *time.Timer
+				debounceMu   sync.Mutex
+			)
+
+			triggerReload := func(name string) {
+				debounceMu.Lock()
+				if debounce != nil {
+					debounce.Stop()
+				}
+				debounce = time.AfterFunc(debounceInterval, func() {
+					log.Printf("[Config] Config file changed: %s, reloading...", name)
+					ReloadDomourConfig()
+					notifySubs()
+				})
+				debounceMu.Unlock()
+			}
+
 			for {
 				select {
 				case event, ok := <-watcher.Events:
 					if !ok {
+						debounceMu.Lock()
+						if debounce != nil {
+							debounce.Stop()
+						}
+						debounceMu.Unlock()
 						return
 					}
 					if event.Op&fsnotify.Write == fsnotify.Write {
-						log.Printf("[Config] Config file changed: %s, reloading...", event.Name)
-						ReloadDomourConfig()
-						notifySubs()
+						triggerReload(event.Name)
 					}
 				case err, ok := <-watcher.Errors:
 					if !ok {

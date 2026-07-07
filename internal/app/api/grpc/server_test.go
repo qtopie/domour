@@ -88,6 +88,9 @@ func (m *mockExecutorClient) Veto(ctx context.Context, action string) bool {
 func (m *mockExecutorClient) ListTools(ctx context.Context) ([]tool.ToolInfo, error) {
 	return nil, nil
 }
+func (m *mockExecutorClient) ToolManager() *tool.Manager {
+	return nil
+}
 
 type mockServerStreamingServer struct {
 	grpc.ServerStreamingServer[chatpb.ChatResponse]

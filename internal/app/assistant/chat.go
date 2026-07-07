@@ -78,6 +78,11 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	bgCtx := context.WithoutCancel(ctx)
 	go trySendChatInterception(bgCtx, s.interceptor, req)
 
+	var toolMgr *tool.Manager
+	if s.engine != nil && s.engine.Executor() != nil {
+		toolMgr = s.engine.Executor().ToolManager()
+	}
+
 	// Build chat prompt with optional editor context (pinned files)
 	chatPrompt := BuildChatPrompt(userMessage, req.Workspace, "", "", "")
 	if ec := BuildEditorContextPrompt(req.EditorContext); ec != "" {
@@ -170,7 +175,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	// Deep Think Mode: pure reasoning without tool calling or workflow
 	if rmeta.Mode == "deep_think" {
 		messages := []*schema.Message{
-			schema.SystemMessage(BuildChatSystemPrompt(userMessage, req.Attachments, nil)),
+			schema.SystemMessage(BuildChatSystemPrompt(ctx, toolMgr, userMessage, req.Attachments, nil)),
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
@@ -221,7 +226,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	for attempt := 0; attempt < bioniccontext.MaxChatContextRefreshRounds; attempt++ {
 		snapshot := bioniccontext.LatestChatInterception(sessionID, req.Seq, nil)
 		messages := []*schema.Message{
-			schema.SystemMessage(BuildChatSystemPrompt(userMessage, req.Attachments, snapshot.Interception)),
+			schema.SystemMessage(BuildChatSystemPrompt(ctx, toolMgr, userMessage, req.Attachments, snapshot.Interception)),
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
@@ -447,3 +452,4 @@ func inferDiagramTitle(message string) string {
 	}
 	return title
 }
+

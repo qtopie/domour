@@ -1,13 +1,16 @@
 package assistant
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/internal/infra/llm"
+	"github.com/qtopie/domour/internal/bionic/tool"
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
 	appconfig "github.com/qtopie/domour/internal/config"
+	"github.com/qtopie/domour/internal/infra/llm"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 )
 
 func BuildChatPrompt(userMessage, workspace, filename, frontPart, backPart string) string {
@@ -96,7 +99,7 @@ func guessLanguage(path string) string {
 	}
 }
 
-func BuildChatSystemPrompt(message string, attachments []shared.BrainAttachment, interception *shared.ChatInterception) string {
+func BuildChatSystemPrompt(ctx context.Context, toolMgr *tool.Manager, message string, attachments []shared.BrainAttachment, interception *shared.ChatInterception) string {
 	prompt := "You are Domour Chat. Reply clearly and directly to the user. Use the provided workspace context when useful."
 	if HasImageAttachments(attachments) {
 		prompt += " When image attachments are present and the user asks for OCR, text extraction, transcription, or document reading, extract the visible text faithfully and preserve the original structure when possible."
@@ -105,6 +108,27 @@ func BuildChatSystemPrompt(message string, attachments []shared.BrainAttachment,
 	if shared.WantsOCRTask(message) {
 		prompt += " This request is OCR-focused: prioritize accurate text extraction over summary, keep reading order, and mark uncertain characters as [unclear]."
 	}
+
+	if toolMgr != nil {
+		if matched := toolMgr.DetectActiveSkill(ctx, message); matched != "" {
+			if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, matched); err == nil && activePrompt != "" {
+				prompt += "\n\n" + activePrompt
+			}
+		} else {
+			if availablePrompt, err := toolMgr.BuildAvailableSkillsPrompt(ctx); err == nil && availablePrompt != "" {
+				prompt += "\n\n" + availablePrompt
+			}
+		}
+	}
+
+	// Active when in diagnostic mode, placed at the very end.
+	rmeta := providerruntime.RequestMetadataFromContext(ctx)
+	if rmeta.Mode == "diagnostic" && toolMgr != nil {
+		if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, "cosmos-star:diagnostic"); err == nil && activePrompt != "" {
+			prompt += "\n\n" + activePrompt
+		}
+	}
+
 	return prompt
 }
 
