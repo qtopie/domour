@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -168,7 +167,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			if input.StreamFinal && !isToolCall {
 				meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
 				if chunk.ReasoningContent != "" {
-					log.Printf("[LocalOrchestrator] YIELD THINKING: %q", truncateStr(chunk.ReasoningContent, 80))
 					if err := yield(shared.MotorStreamEvent{
 						Stage:   input.Stage,
 						Type:    2, // CHUNK_THINKING
@@ -183,7 +181,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 					}
 				}
 				if chunk.Content != "" {
-					log.Printf("[LocalOrchestrator] YIELD TEXT: %q", truncateStr(chunk.Content, 80))
 					if err := yield(shared.MotorStreamEvent{
 						Stage:   input.Stage,
 						Type:    1, // CHUNK_TEXT
@@ -193,9 +190,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 						return nil, err
 					}
 				}
-				if chunk.ReasoningContent == "" && chunk.Content == "" {
-					log.Printf("[LocalOrchestrator] EMPTY CHUNK: ToolCalls=%d, role=%q", len(chunk.ToolCalls), chunk.Role)
-				}
 			}
 		}
 		sr.Close()
@@ -204,8 +198,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 		if err != nil {
 			return nil, fmt.Errorf("concat message chunks: %w", err)
 		}
-
-		log.Printf("[LocalOrchestrator] Loop %d: model returned %d tool calls, content: %q", loop, len(respMsg.ToolCalls), respMsg.Content)
 
 		if len(respMsg.ToolCalls) == 0 {
 			return respMsg, nil
@@ -218,8 +210,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			if mappedName, ok := toolMapping[tc.Function.Name]; ok {
 				originalName = mappedName
 			}
-
-			log.Printf("[LocalOrchestrator] Executing tool %s (%s) -> ID: %q, Args: %s", originalName, tc.Function.Name, tc.ID, tc.Function.Arguments)
 
 			_ = yield(shared.MotorStreamEvent{
 				Stage:   "motor",
@@ -256,8 +246,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			}
 			duration := time.Since(startTime).Milliseconds()
 
-			log.Printf("[LocalOrchestrator] Tool %s observation: %q", originalName, observation)
-
 			_ = yield(shared.MotorStreamEvent{
 				Stage:   "motor",
 				Type:    4, // CHUNK_TOOL_CALL
@@ -284,13 +272,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 	}
 
 	return nil, fmt.Errorf("max tool execution loops reached")
-}
-
-func truncateStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
 
 func modelSupportsTools(provider, model string) bool {
