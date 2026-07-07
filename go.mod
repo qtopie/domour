@@ -3,7 +3,7 @@ module github.com/qtopie/domour
 go 1.25.0
 
 require (
-	github.com/cloudwego/eino v0.9.2
+	github.com/cloudwego/eino v0.9.12
 	github.com/cloudwego/eino-ext/components/model/gemini v0.1.10
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.8
 	github.com/cloudwego/eino-ext/components/model/qwen v0.1.5
@@ -34,6 +34,7 @@ require (
 	google.golang.org/genai v1.24.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/yaml.v3 v3.0.1
 	oss.terrastruct.com/d2 v0.7.1
 	oss.terrastruct.com/util-go v0.0.0-20250213174338-243d8661088a
 )
@@ -144,7 +145,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/qtopie/antigravity-sdk-go => /home/qtopierw/workspace/projects/antigravity-sdk-go
