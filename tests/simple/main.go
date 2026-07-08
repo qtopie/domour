@@ -125,8 +125,9 @@ func main() {
 
 	fmt.Println("[Client] Receiving stream responses:")
 	if firstResp != nil {
-		fmt.Printf(">> [Received] Done: %t, Stage: %s, Content: %q\n",
-			firstResp.GetDone(),
+		fmt.Printf(">> [Received] chunkSeq=%d maxChecksum=%d, Stage: %s, Content: %q\n",
+			firstResp.GetChunkSeq(),
+			firstResp.GetMaxSeqChecksum(),
 			firstResp.GetMeta()["stage"],
 			firstResp.GetContent(),
 		)
@@ -140,8 +141,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("[Client] Error receiving from stream: %v", err)
 		}
-		fmt.Printf(">> [Received] Done: %t, Stage: %s, Content: %q\n",
-			resp.GetDone(),
+		fmt.Printf(">> [Received] chunkSeq=%d maxChecksum=%d, Stage: %s, Content: %q\n",
+			resp.GetChunkSeq(),
+			resp.GetMaxSeqChecksum(),
 			resp.GetMeta()["stage"],
 			resp.GetContent(),
 		)

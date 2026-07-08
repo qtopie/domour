@@ -161,16 +161,27 @@ type MotorAutopilotResponse struct {
 
 type MotorStreamEvent struct {
 	Stage         string
-	Type          int32 // maps to ChunkType (e.g. 1 for text, 2 for thinking, etc.)
+	Type          int32 // maps to ChunkType (0=TEXT, 1=THINKING, 2=TOOL_CALL, 3=NODE_HOP, 4=MEDIA)
 	Content       string
-	Done          bool
+	Done          bool // internal: signals stream completion (not mapped to proto)
 	Meta          map[string]string
 	Err           error
+	ChunkSeq       int32 // 消息内 chunk 递增序号
+	MaxSeqChecksum int32 // 后端已产生的最大 chunk_seq
 
 	// Structured details
 	Thinking      *ThinkingDetail
 	Collaboration *CollaborationDetail
 	ToolCall      *ToolCallDetail
+	Media         *MediaDetail
+}
+
+// MediaDetail carries metadata for CHUNK_MEDIA events (image/video/audio).
+type MediaDetail struct {
+	URL       string
+	MimeType  string
+	AltText   string
+	SizeBytes int64
 }
 
 func (e MotorStreamEvent) MarshalJSON() ([]byte, error) {

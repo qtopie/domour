@@ -169,7 +169,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 				if chunk.ReasoningContent != "" {
 					if err := yield(shared.MotorStreamEvent{
 						Stage:   input.Stage,
-						Type:    2, // CHUNK_THINKING
+						Type:    1, // CHUNK_THINKING
 						Content: chunk.ReasoningContent,
 						Thinking: &shared.ThinkingDetail{
 							Engine: brainClient.Provider(),
@@ -183,9 +183,9 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 				if chunk.Content != "" {
 					if err := yield(shared.MotorStreamEvent{
 						Stage:   input.Stage,
-						Type:    1, // CHUNK_TEXT
 						Content: chunk.Content,
 						Meta:    meta,
+						// Type 0 = CHUNK_TEXT (proto3 default)
 					}); err != nil {
 						return nil, err
 					}
@@ -213,7 +213,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 			_ = yield(shared.MotorStreamEvent{
 				Stage:   "motor",
-				Type:    4, // CHUNK_TOOL_CALL
+				Type:    2, // CHUNK_TOOL_CALL
 				Content: fmt.Sprintf("Calling tool %q with args: %s\n", originalName, tc.Function.Arguments),
 				Done:    false,
 				Meta:    map[string]string{"tool": originalName},
@@ -248,7 +248,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 			_ = yield(shared.MotorStreamEvent{
 				Stage:   "motor",
-				Type:    4, // CHUNK_TOOL_CALL
+				Type:    2, // CHUNK_TOOL_CALL
 				Content: fmt.Sprintf("Tool %q observation:\n%s\n", originalName, observation),
 				Done:    false,
 				Meta:    map[string]string{"tool": originalName},

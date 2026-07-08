@@ -25,28 +25,28 @@ const (
 type ChunkType int32
 
 const (
-	ChunkType_CHUNK_UNKNOWN       ChunkType = 0
-	ChunkType_CHUNK_TEXT          ChunkType = 1 // Standard content stream chunk
-	ChunkType_CHUNK_THINKING      ChunkType = 2 // Reasoning / thoughts (e.g., DeepSeek <think> or CoT)
-	ChunkType_CHUNK_COLLABORATION ChunkType = 3 // Inter-node message transfer (agent collaboration)
-	ChunkType_CHUNK_TOOL_CALL     ChunkType = 4 // Tool execution event
+	ChunkType_CHUNK_TEXT      ChunkType = 0 // 正文（proto3 零值/默认类型）
+	ChunkType_CHUNK_THINKING  ChunkType = 1 // 推理过程
+	ChunkType_CHUNK_TOOL_CALL ChunkType = 2 // 工具调用
+	ChunkType_CHUNK_NODE_HOP  ChunkType = 3 // Agent 节点跳转（原名 COLLABORATION）
+	ChunkType_CHUNK_MEDIA     ChunkType = 4 // 媒体（图片/视频/音频）
 )
 
 // Enum value maps for ChunkType.
 var (
 	ChunkType_name = map[int32]string{
-		0: "CHUNK_UNKNOWN",
-		1: "CHUNK_TEXT",
-		2: "CHUNK_THINKING",
-		3: "CHUNK_COLLABORATION",
-		4: "CHUNK_TOOL_CALL",
+		0: "CHUNK_TEXT",
+		1: "CHUNK_THINKING",
+		2: "CHUNK_TOOL_CALL",
+		3: "CHUNK_NODE_HOP",
+		4: "CHUNK_MEDIA",
 	}
 	ChunkType_value = map[string]int32{
-		"CHUNK_UNKNOWN":       0,
-		"CHUNK_TEXT":          1,
-		"CHUNK_THINKING":      2,
-		"CHUNK_COLLABORATION": 3,
-		"CHUNK_TOOL_CALL":     4,
+		"CHUNK_TEXT":      0,
+		"CHUNK_THINKING":  1,
+		"CHUNK_TOOL_CALL": 2,
+		"CHUNK_NODE_HOP":  3,
+		"CHUNK_MEDIA":     4,
 	}
 )
 
@@ -440,17 +440,20 @@ func (x *PinnedFile) GetLanguage() string {
 type ChatResponse struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Seq       int32                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	MessageId int32                  `protobuf:"varint,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"` // 对话轮次标识（原名 seq）
 	Type      ChunkType              `protobuf:"varint,3,opt,name=type,proto3,enum=assistant.chat.ChunkType" json:"type,omitempty"`
-	Content   string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"` // Text data associated with the chunk
+	Content   string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	// Structured payloads
 	Thinking      *ThinkingDetail      `protobuf:"bytes,5,opt,name=thinking,proto3" json:"thinking,omitempty"`
 	Collaboration *CollaborationDetail `protobuf:"bytes,6,opt,name=collaboration,proto3" json:"collaboration,omitempty"`
 	ToolCall      *ToolCallDetail      `protobuf:"bytes,7,opt,name=tool_call,json=toolCall,proto3" json:"tool_call,omitempty"`
-	Done          bool                 `protobuf:"varint,8,opt,name=done,proto3" json:"done,omitempty"`
-	Meta          map[string]string    `protobuf:"bytes,9,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// bool done = 8;         // 移除 — 由 max_seq_checksum 水位线替代
+	Meta           map[string]string `protobuf:"bytes,9,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ChunkSeq       int32             `protobuf:"varint,10,opt,name=chunk_seq,json=chunkSeq,proto3" json:"chunk_seq,omitempty"`                     // 消息内 chunk 递增序号
+	MaxSeqChecksum int32             `protobuf:"varint,11,opt,name=max_seq_checksum,json=maxSeqChecksum,proto3" json:"max_seq_checksum,omitempty"` // 后端已产生的最大 chunk_seq
+	Media          *MediaDetail      `protobuf:"bytes,12,opt,name=media,proto3" json:"media,omitempty"`                                            // type=CHUNK_MEDIA 时有效
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ChatResponse) Reset() {
@@ -490,9 +493,9 @@ func (x *ChatResponse) GetSessionId() string {
 	return ""
 }
 
-func (x *ChatResponse) GetSeq() int32 {
+func (x *ChatResponse) GetMessageId() int32 {
 	if x != nil {
-		return x.Seq
+		return x.MessageId
 	}
 	return 0
 }
@@ -501,7 +504,7 @@ func (x *ChatResponse) GetType() ChunkType {
 	if x != nil {
 		return x.Type
 	}
-	return ChunkType_CHUNK_UNKNOWN
+	return ChunkType_CHUNK_TEXT
 }
 
 func (x *ChatResponse) GetContent() string {
@@ -532,18 +535,100 @@ func (x *ChatResponse) GetToolCall() *ToolCallDetail {
 	return nil
 }
 
-func (x *ChatResponse) GetDone() bool {
-	if x != nil {
-		return x.Done
-	}
-	return false
-}
-
 func (x *ChatResponse) GetMeta() map[string]string {
 	if x != nil {
 		return x.Meta
 	}
 	return nil
+}
+
+func (x *ChatResponse) GetChunkSeq() int32 {
+	if x != nil {
+		return x.ChunkSeq
+	}
+	return 0
+}
+
+func (x *ChatResponse) GetMaxSeqChecksum() int32 {
+	if x != nil {
+		return x.MaxSeqChecksum
+	}
+	return 0
+}
+
+func (x *ChatResponse) GetMedia() *MediaDetail {
+	if x != nil {
+		return x.Media
+	}
+	return nil
+}
+
+type MediaDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`                               // 媒体 URL 或 base64 data URI
+	MimeType      string                 `protobuf:"bytes,2,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`     // "image/png", "video/mp4", "audio/wav"
+	AltText       string                 `protobuf:"bytes,3,opt,name=alt_text,json=altText,proto3" json:"alt_text,omitempty"`        // 可访问性描述
+	SizeBytes     int64                  `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"` // 文件大小
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MediaDetail) Reset() {
+	*x = MediaDetail{}
+	mi := &file_assistant_chat_service_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MediaDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MediaDetail) ProtoMessage() {}
+
+func (x *MediaDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_assistant_chat_service_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MediaDetail.ProtoReflect.Descriptor instead.
+func (*MediaDetail) Descriptor() ([]byte, []int) {
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MediaDetail) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *MediaDetail) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *MediaDetail) GetAltText() string {
+	if x != nil {
+		return x.AltText
+	}
+	return ""
+}
+
+func (x *MediaDetail) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
 }
 
 type ThinkingDetail struct {
@@ -557,7 +642,7 @@ type ThinkingDetail struct {
 
 func (x *ThinkingDetail) Reset() {
 	*x = ThinkingDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[7]
+	mi := &file_assistant_chat_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -569,7 +654,7 @@ func (x *ThinkingDetail) String() string {
 func (*ThinkingDetail) ProtoMessage() {}
 
 func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[7]
+	mi := &file_assistant_chat_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -582,7 +667,7 @@ func (x *ThinkingDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThinkingDetail.ProtoReflect.Descriptor instead.
 func (*ThinkingDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{7}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ThinkingDetail) GetEngine() string {
@@ -618,7 +703,7 @@ type CollaborationDetail struct {
 
 func (x *CollaborationDetail) Reset() {
 	*x = CollaborationDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[8]
+	mi := &file_assistant_chat_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +715,7 @@ func (x *CollaborationDetail) String() string {
 func (*CollaborationDetail) ProtoMessage() {}
 
 func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[8]
+	mi := &file_assistant_chat_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +728,7 @@ func (x *CollaborationDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollaborationDetail.ProtoReflect.Descriptor instead.
 func (*CollaborationDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{8}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CollaborationDetail) GetFromNode() string {
@@ -688,7 +773,7 @@ type ToolCallDetail struct {
 
 func (x *ToolCallDetail) Reset() {
 	*x = ToolCallDetail{}
-	mi := &file_assistant_chat_service_proto_msgTypes[9]
+	mi := &file_assistant_chat_service_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +785,7 @@ func (x *ToolCallDetail) String() string {
 func (*ToolCallDetail) ProtoMessage() {}
 
 func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_assistant_chat_service_proto_msgTypes[9]
+	mi := &file_assistant_chat_service_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +798,7 @@ func (x *ToolCallDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolCallDetail.ProtoReflect.Descriptor instead.
 func (*ToolCallDetail) Descriptor() ([]byte, []int) {
-	return file_assistant_chat_service_proto_rawDescGZIP(), []int{9}
+	return file_assistant_chat_service_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ToolCallDetail) GetToolName() string {
@@ -789,21 +874,31 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"PinnedFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12\x1a\n" +
-	"\blanguage\x18\x03 \x01(\tR\blanguage\"\xd5\x03\n" +
+	"\blanguage\x18\x03 \x01(\tR\blanguage\"\xc8\x04\n" +
 	"\fChatResponse\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
-	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12-\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x02 \x01(\x05R\tmessageId\x12-\n" +
 	"\x04type\x18\x03 \x01(\x0e2\x19.assistant.chat.ChunkTypeR\x04type\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12:\n" +
 	"\bthinking\x18\x05 \x01(\v2\x1e.assistant.chat.ThinkingDetailR\bthinking\x12I\n" +
 	"\rcollaboration\x18\x06 \x01(\v2#.assistant.chat.CollaborationDetailR\rcollaboration\x12;\n" +
-	"\ttool_call\x18\a \x01(\v2\x1e.assistant.chat.ToolCallDetailR\btoolCall\x12\x12\n" +
-	"\x04done\x18\b \x01(\bR\x04done\x12:\n" +
-	"\x04meta\x18\t \x03(\v2&.assistant.chat.ChatResponse.MetaEntryR\x04meta\x1a7\n" +
+	"\ttool_call\x18\a \x01(\v2\x1e.assistant.chat.ToolCallDetailR\btoolCall\x12:\n" +
+	"\x04meta\x18\t \x03(\v2&.assistant.chat.ChatResponse.MetaEntryR\x04meta\x12\x1b\n" +
+	"\tchunk_seq\x18\n" +
+	" \x01(\x05R\bchunkSeq\x12(\n" +
+	"\x10max_seq_checksum\x18\v \x01(\x05R\x0emaxSeqChecksum\x121\n" +
+	"\x05media\x18\f \x01(\v2\x1b.assistant.chat.MediaDetailR\x05media\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"]\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"v\n" +
+	"\vMediaDetail\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1b\n" +
+	"\tmime_type\x18\x02 \x01(\tR\bmimeType\x12\x19\n" +
+	"\balt_text\x18\x03 \x01(\tR\aaltText\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x04 \x01(\x03R\tsizeBytes\"]\n" +
 	"\x0eThinkingDetail\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x14\n" +
 	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x1d\n" +
@@ -822,14 +917,14 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"\targuments\x18\x04 \x01(\tR\targuments\x12 \n" +
 	"\vobservation\x18\x05 \x01(\tR\vobservation\x12\x1f\n" +
 	"\vduration_ms\x18\x06 \x01(\x03R\n" +
-	"durationMs*p\n" +
-	"\tChunkType\x12\x11\n" +
-	"\rCHUNK_UNKNOWN\x10\x00\x12\x0e\n" +
+	"durationMs*i\n" +
+	"\tChunkType\x12\x0e\n" +
 	"\n" +
-	"CHUNK_TEXT\x10\x01\x12\x12\n" +
-	"\x0eCHUNK_THINKING\x10\x02\x12\x17\n" +
-	"\x13CHUNK_COLLABORATION\x10\x03\x12\x13\n" +
-	"\x0fCHUNK_TOOL_CALL\x10\x042\xa7\x01\n" +
+	"CHUNK_TEXT\x10\x00\x12\x12\n" +
+	"\x0eCHUNK_THINKING\x10\x01\x12\x13\n" +
+	"\x0fCHUNK_TOOL_CALL\x10\x02\x12\x12\n" +
+	"\x0eCHUNK_NODE_HOP\x10\x03\x12\x0f\n" +
+	"\vCHUNK_MEDIA\x10\x042\xa7\x01\n" +
 	"\vChatService\x12C\n" +
 	"\x04Chat\x12\x1b.assistant.chat.ChatRequest\x1a\x1c.assistant.chat.ChatResponse0\x01\x12S\n" +
 	"\n" +
@@ -848,7 +943,7 @@ func file_assistant_chat_service_proto_rawDescGZIP() []byte {
 }
 
 var file_assistant_chat_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_assistant_chat_service_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_assistant_chat_service_proto_goTypes = []any{
 	(ChunkType)(0),              // 0: assistant.chat.ChunkType
 	(*ListModelsRequest)(nil),   // 1: assistant.chat.ListModelsRequest
@@ -858,31 +953,33 @@ var file_assistant_chat_service_proto_goTypes = []any{
 	(*EditorContext)(nil),       // 5: assistant.chat.EditorContext
 	(*PinnedFile)(nil),          // 6: assistant.chat.PinnedFile
 	(*ChatResponse)(nil),        // 7: assistant.chat.ChatResponse
-	(*ThinkingDetail)(nil),      // 8: assistant.chat.ThinkingDetail
-	(*CollaborationDetail)(nil), // 9: assistant.chat.CollaborationDetail
-	(*ToolCallDetail)(nil),      // 10: assistant.chat.ToolCallDetail
-	nil,                         // 11: assistant.chat.ChatResponse.MetaEntry
-	(*common.Attachment)(nil),   // 12: assistant.common.v1.Attachment
+	(*MediaDetail)(nil),         // 8: assistant.chat.MediaDetail
+	(*ThinkingDetail)(nil),      // 9: assistant.chat.ThinkingDetail
+	(*CollaborationDetail)(nil), // 10: assistant.chat.CollaborationDetail
+	(*ToolCallDetail)(nil),      // 11: assistant.chat.ToolCallDetail
+	nil,                         // 12: assistant.chat.ChatResponse.MetaEntry
+	(*common.Attachment)(nil),   // 13: assistant.common.v1.Attachment
 }
 var file_assistant_chat_service_proto_depIdxs = []int32{
 	2,  // 0: assistant.chat.ListModelsResponse.models:type_name -> assistant.chat.ModelInfo
-	12, // 1: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
+	13, // 1: assistant.chat.ChatRequest.attachments:type_name -> assistant.common.v1.Attachment
 	5,  // 2: assistant.chat.ChatRequest.editor_context:type_name -> assistant.chat.EditorContext
 	6,  // 3: assistant.chat.EditorContext.pinned_files:type_name -> assistant.chat.PinnedFile
 	0,  // 4: assistant.chat.ChatResponse.type:type_name -> assistant.chat.ChunkType
-	8,  // 5: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
-	9,  // 6: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
-	10, // 7: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
-	11, // 8: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
-	4,  // 9: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
-	1,  // 10: assistant.chat.ChatService.ListModels:input_type -> assistant.chat.ListModelsRequest
-	7,  // 11: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
-	3,  // 12: assistant.chat.ChatService.ListModels:output_type -> assistant.chat.ListModelsResponse
-	11, // [11:13] is the sub-list for method output_type
-	9,  // [9:11] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	9,  // 5: assistant.chat.ChatResponse.thinking:type_name -> assistant.chat.ThinkingDetail
+	10, // 6: assistant.chat.ChatResponse.collaboration:type_name -> assistant.chat.CollaborationDetail
+	11, // 7: assistant.chat.ChatResponse.tool_call:type_name -> assistant.chat.ToolCallDetail
+	12, // 8: assistant.chat.ChatResponse.meta:type_name -> assistant.chat.ChatResponse.MetaEntry
+	8,  // 9: assistant.chat.ChatResponse.media:type_name -> assistant.chat.MediaDetail
+	4,  // 10: assistant.chat.ChatService.Chat:input_type -> assistant.chat.ChatRequest
+	1,  // 11: assistant.chat.ChatService.ListModels:input_type -> assistant.chat.ListModelsRequest
+	7,  // 12: assistant.chat.ChatService.Chat:output_type -> assistant.chat.ChatResponse
+	3,  // 13: assistant.chat.ChatService.ListModels:output_type -> assistant.chat.ListModelsResponse
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_assistant_chat_service_proto_init() }
@@ -896,7 +993,7 @@ func file_assistant_chat_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_assistant_chat_service_proto_rawDesc), len(file_assistant_chat_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

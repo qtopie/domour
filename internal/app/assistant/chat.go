@@ -20,6 +20,13 @@ import (
 
 func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest, provider, model string, yield func(event shared.MotorStreamEvent) error) error {
 	sessionID := req.SessionID
+	var chunkSeq int32
+	yieldWithSeq := func(event shared.MotorStreamEvent) error {
+		chunkSeq++
+		event.ChunkSeq = chunkSeq
+		event.MaxSeqChecksum = chunkSeq
+		return yield(event)
+	}
 
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
@@ -135,7 +142,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 
 		// Send summary to client
 		summaryContent := BuildChatSummaryMessage(userMessage, req.Workspace, "", len(sess.History), summary)
-		if err := yield(shared.MotorStreamEvent{
+		if err := yieldWithSeq(shared.MotorStreamEvent{
 			Stage:   "brain",
 			Content: summaryContent,
 			Done:    false,
@@ -159,7 +166,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 
 		renderedContent := BuildRenderedReply(diagram, result.Observation)
-		if err := yield(shared.MotorStreamEvent{
+		if err := yieldWithSeq(shared.MotorStreamEvent{
 			Stage:   "motor",
 			Content: renderedContent,
 			Done:    true,
@@ -198,7 +205,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}
 
 		// Stream content
-		if err := yield(shared.MotorStreamEvent{
+		if err := yieldWithSeq(shared.MotorStreamEvent{
 			Stage:   "reply",
 			Content: content,
 			Done:    false,
@@ -206,7 +213,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		}); err != nil {
 			return err
 		}
-		if err := yield(shared.MotorStreamEvent{
+		if err := yieldWithSeq(shared.MotorStreamEvent{
 			Stage:   "reply",
 			Content: "",
 			Done:    true,
@@ -248,7 +255,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 			if err := json.Unmarshal(data, &event); err != nil {
 				return
 			}
-			_ = yield(event)
+			_ = yieldWithSeq(event)
 			if event.Done {
 				if event.Err != nil {
 					finalErr = event.Err
@@ -310,7 +317,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	}
 
 	// Stream final done message
-	if err := yield(shared.MotorStreamEvent{
+	if err := yieldWithSeq(shared.MotorStreamEvent{
 		Stage:   "reply",
 		Content: "",
 		Done:    true,

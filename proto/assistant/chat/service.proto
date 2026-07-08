@@ -47,26 +47,36 @@ message PinnedFile {
 }
 
 enum ChunkType {
-  CHUNK_UNKNOWN = 0;
-  CHUNK_TEXT = 1;          // Standard content stream chunk
-  CHUNK_THINKING = 2;      // Reasoning / thoughts (e.g., DeepSeek <think> or CoT)
-  CHUNK_COLLABORATION = 3; // Inter-node message transfer (agent collaboration)
-  CHUNK_TOOL_CALL = 4;     // Tool execution event
+  CHUNK_TEXT      = 0;  // 正文（proto3 零值/默认类型）
+  CHUNK_THINKING  = 1;  // 推理过程
+  CHUNK_TOOL_CALL = 2;  // 工具调用
+  CHUNK_NODE_HOP  = 3;  // Agent 节点跳转（原名 COLLABORATION）
+  CHUNK_MEDIA     = 4;  // 媒体（图片/视频/音频）
 }
 
 message ChatResponse {
   string session_id = 1;
-  int32 seq = 2;
+  int32 message_id = 2;      // 对话轮次标识（原名 seq）
   ChunkType type = 3;
-  string content = 4; // Text data associated with the chunk
+  string content = 4;
 
   // Structured payloads
   ThinkingDetail thinking = 5;
   CollaborationDetail collaboration = 6;
   ToolCallDetail tool_call = 7;
 
-  bool done = 8;
+  // bool done = 8;         // 移除 — 由 max_seq_checksum 水位线替代
   map<string, string> meta = 9;
+  int32 chunk_seq = 10;      // 消息内 chunk 递增序号
+  int32 max_seq_checksum = 11; // 后端已产生的最大 chunk_seq
+  MediaDetail media = 12;    // type=CHUNK_MEDIA 时有效
+}
+
+message MediaDetail {
+  string url       = 1;  // 媒体 URL 或 base64 data URI
+  string mime_type = 2;  // "image/png", "video/mp4", "audio/wav"
+  string alt_text  = 3;  // 可访问性描述
+  int64  size_bytes = 4; // 文件大小
 }
 
 message ThinkingDetail {

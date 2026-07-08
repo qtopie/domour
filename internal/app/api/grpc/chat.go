@@ -37,12 +37,13 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 			typ = chatpb.ChunkType(event.Type)
 		}
 		resp := &chatpb.ChatResponse{
-			SessionId: sessionID,
-			Seq:       req.GetSeq(),
-			Type:      typ,
-			Content:   event.Content,
-			Done:      event.Done,
-			Meta:      mergeChatMeta(stream.Context(), sessionID, event.Meta, event.Stage),
+			SessionId:      sessionID,
+			MessageId:      req.GetSeq(),
+			Type:           typ,
+			Content:        event.Content,
+			Meta:           mergeChatMeta(stream.Context(), sessionID, event.Meta, event.Stage),
+			ChunkSeq:       event.ChunkSeq,
+			MaxSeqChecksum: event.MaxSeqChecksum,
 		}
 		if event.Thinking != nil {
 			resp.Thinking = &chatpb.ThinkingDetail{
@@ -67,6 +68,14 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 				Arguments:   event.ToolCall.Arguments,
 				Observation: event.ToolCall.Observation,
 				DurationMs:  event.ToolCall.DurationMs,
+			}
+		}
+		if event.Media != nil {
+			resp.Media = &chatpb.MediaDetail{
+				Url:       event.Media.URL,
+				MimeType:  event.Media.MimeType,
+				AltText:   event.Media.AltText,
+				SizeBytes: event.Media.SizeBytes,
 			}
 		}
 		return stream.Send(resp)

@@ -58,14 +58,14 @@ func main() {
 			log.Fatalf("read chat stream: %v", err)
 		}
 
-		fmt.Printf("stage=%s format=%s provider=%s done=%v\n", resp.GetMeta()["stage"], resp.GetMeta()["format"], resp.GetMeta()["provider"], resp.GetDone())
+		fmt.Printf("stage=%s format=%s provider=%s chunkSeq=%d maxChecksum=%d\n",
+			resp.GetMeta()["stage"], resp.GetMeta()["format"], resp.GetMeta()["provider"],
+			resp.GetChunkSeq(), resp.GetMaxSeqChecksum())
 		fmt.Println(trimForDisplay(resp.GetContent(), 240))
 		fmt.Println("---")
 
-		if resp.GetDone() {
-			finalContent = resp.GetContent()
-			finalMeta = resp.GetMeta()
-		}
+		finalContent = resp.GetContent()
+		finalMeta = resp.GetMeta()
 	}
 
 	if strings.TrimSpace(finalContent) == "" {
