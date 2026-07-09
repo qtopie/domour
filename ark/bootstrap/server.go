@@ -6,10 +6,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/qtopie/domour/ark/telemetry"
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/config"
+	domourskill "github.com/qtopie/domour/pkg/bionic/skill"
+	domourtool "github.com/qtopie/domour/pkg/bionic/tool"
 	"github.com/qtopie/domour/pkg/bionic/session"
 	"google.golang.org/grpc"
 )
@@ -21,6 +25,38 @@ func Run(ctx context.Context, opts ...Option) error {
 	cfg, err := config.LoadDomourConfig()
 	if err != nil {
 		// Let NewApp handle the error or use defaults if cfg is nil
+	}
+
+	// Load skills from configured skills directories.
+	// Multiple directories can be separated by commas.
+	if cfg.SkillsDir != "" {
+		dirs := strings.Split(cfg.SkillsDir, ",")
+		for i, d := range dirs {
+			trimmed := strings.TrimSpace(d)
+			dirs[i] = trimmed
+			_ = os.MkdirAll(trimmed, 0755)
+		}
+		if loaded, err := domourskill.LoadFromDirs(dirs...); err != nil {
+			log.Printf("Warning: failed to load skills: %v\n", err)
+		} else if len(loaded) > 0 {
+			log.Printf("Loaded %d skill(s) from %d dir(s)\n", len(loaded), len(dirs))
+		}
+	}
+
+	// Load MCP tools from configured MCP directories.
+	// Multiple directories can be separated by commas.
+	if cfg.MCPDir != "" {
+		dirs := strings.Split(cfg.MCPDir, ",")
+		for i, d := range dirs {
+			trimmed := strings.TrimSpace(d)
+			dirs[i] = trimmed
+			_ = os.MkdirAll(trimmed, 0755)
+		}
+		if loaded, err := domourtool.LoadFromDirs(dirs...); err != nil {
+			log.Printf("Warning: failed to load tools: %v\n", err)
+		} else if len(loaded) > 0 {
+			log.Printf("Loaded %d tool(s) from %d dir(s)\n", len(loaded), len(dirs))
+		}
 	}
 
 	// Initialize Telemetry

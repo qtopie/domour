@@ -269,6 +269,143 @@ Focus on get and restart in cluster execution.`
 	}
 }
 
+func TestManagerReloadSkills(t *testing.T) {
+	root := t.TempDir()
+	// Create skill 1
+	skill1Path := filepath.Join(root, "reload-test.md")
+	os.WriteFile(skill1Path, []byte("# Reload Test Skill\n\n## Description\nSkill for reload test\n\n## Instructions\nTest reload\n"), 0o600)
+
+	manager := NewManager(WithCleanupInterval(0))
+	defer manager.Close()
+
+	// Load initial skill
+	if err := manager.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("initial load: %v", err)
+	}
+
+	list := manager.ListSkills()
+	if len(list) != 1 {
+		t.Fatalf("expected 1 skill before reload, got %d", len(list))
+	}
+
+	// Resolve to get it loaded into cache
+	_, err := manager.ResolveSkill(context.Background(), "domour:reload-test")
+	if err != nil {
+		t.Fatalf("resolve before reload: %v", err)
+	}
+
+	// Verify it's loaded
+	list = manager.ListSkills()
+	if !list[0].Loaded {
+		t.Fatalf("expected skill to be loaded before reload")
+	}
+
+	// Reload clears skills and reloads from all default sources + configured dir
+	manager.ReloadSkills()
+
+	list = manager.ListSkills()
+	// After ReloadSkills, we should have at least 0 skills (test env has no provider files)
+	// Verify the reloaded skills don't include our temp file anymore since we cleared
+	hasReloadTest := false
+	for _, s := range list {
+		if s.Name == "domour:reload-test" {
+			hasReloadTest = true
+			break
+		}
+	}
+	if hasReloadTest {
+		t.Fatalf("reloaded skills should not contain domour:reload-test since it was cleared")
+	}
+
+	// Now load from dir again to verify reload + load works
+	if err := manager.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("load after reload: %v", err)
+	}
+
+	list = manager.ListSkills()
+	testSkillFound := false
+	for _, s := range list {
+		if s.Name == "domour:reload-test" {
+			testSkillFound = true
+			break
+		}
+	}
+	if !testSkillFound {
+		t.Fatalf("expected domour:reload-test in skills after reload+load, got %+v", list)
+	}
+
+	// Verify the skill is freshly resolved
+	snapshot, err := manager.ResolveSkill(context.Background(), "domour:reload-test")
+	if err != nil {
+		t.Fatalf("resolve after reload: %v", err)
+	}
+	if snapshot.Description != "Skill for reload test" {
+		t.Fatalf("unexpected description after reload: %s", snapshot.Description)
+	}
+}
+
+func TestActivateSkillTool(t *testing.T) {
+	root := t.TempDir()
+	// Create a skill
+	skillDir := filepath.Join(root, "test-helper")
+	os.MkdirAll(skillDir, 0755)
+	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: Test Helper
+description: A test helper skill
+tools:
+  - name: helper.run
+    description: Run helper
+---
+Do test helper things.`), 0o600)
+
+	manager := NewManager(WithCleanupInterval(0))
+	defer manager.Close()
+
+	// Load the skill
+	if err := manager.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("load skill: %v", err)
+	}
+
+	// Register the activate_skill tool
+	if err := manager.Register(manager.NewActivateSkillTool()); err != nil {
+		t.Fatalf("register activate_skill: %v", err)
+	}
+
+	// Activate the skill via the tool
+	result, err := manager.Execute(context.Background(), Command{
+		Action: "activate_skill",
+		Input: map[string]interface{}{
+			"skill_name": "domour:test-helper",
+		},
+	})
+	if err != nil {
+		t.Fatalf("activate skill: %v", err)
+	}
+	if !strings.Contains(result.Observation, "activated") {
+		t.Fatalf("expected observation to indicate activation, got: %s", result.Observation)
+	}
+
+	// The full instructions should be stored in the Manager, not in the observation
+	if prompt := manager.ActiveSkillPrompt(); prompt == "" {
+		t.Fatal("expected active skill prompt to be stored")
+	} else if !strings.Contains(prompt, "Test Helper") {
+		t.Fatalf("expected active skill prompt to contain skill name, got: %s", prompt)
+	} else if !strings.Contains(prompt, "Do test helper things") {
+		t.Fatalf("expected active skill prompt to contain instructions, got: %s", prompt)
+	} else if !strings.Contains(prompt, "helper.run") {
+		t.Fatalf("expected active skill prompt to include tool name, got: %s", prompt)
+	}
+
+	// Verify error when skill_name is missing
+	_, err = manager.Execute(context.Background(), Command{
+		Action: "activate_skill",
+		Input:  map[string]interface{}{},
+	})
+	if err == nil {
+		t.Fatalf("expected error when skill_name is missing")
+	}
+}
+
 func TestSkillsPromptBuildingAndAutoDetection(t *testing.T) {
 	root := t.TempDir()
 	

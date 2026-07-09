@@ -76,6 +76,15 @@ func (m *Manager) RegisterSkill(spec SkillSpec) error {
 }
 
 func (m *Manager) LoadDefaultSkillSources() error {
+	if err := m.loadDefaultSources(); err != nil {
+		return err
+	}
+	return m.loadConfiguredDir()
+}
+
+// loadDefaultSources loads provider-specific skill files and registered public skills.
+// This is the first phase of skill loading, shared by initial load and reload.
+func (m *Manager) loadDefaultSources() error {
 	for _, source := range discoverDefaultSkillSources() {
 		if err := m.RegisterSkill(source); err != nil && !strings.Contains(err.Error(), "already registered") {
 			return err
@@ -103,18 +112,37 @@ func (m *Manager) LoadDefaultSkillSources() error {
 			return err
 		}
 	}
+	return nil
+}
 
+// loadConfiguredDir loads skills from the configured SkillsDir.
+// This is the second phase of skill loading, shared by initial load and reload.
+func (m *Manager) loadConfiguredDir() error {
 	cfg, err := config.LoadDomourConfig()
-	if err == nil {
-		skillsDir := strings.TrimSpace(cfg.SkillsDir)
-		if skillsDir != "" {
-			if err := m.LoadSkillsFromDir(skillsDir); err != nil {
-				slog.Warn("Failed to load skills from configured directory", "dir", skillsDir, "error", err)
-			}
+	if err != nil {
+		return nil
+	}
+	skillsDir := strings.TrimSpace(cfg.SkillsDir)
+	if skillsDir != "" {
+		if err := m.LoadSkillsFromDir(skillsDir); err != nil {
+			slog.Warn("Failed to load skills from configured directory", "dir", skillsDir, "error", err)
 		}
 	}
-
 	return nil
+}
+
+// ReloadSkills clears all registered skills and reloads them from all sources.
+// This is called by the /skills reload command or automatically after a skill install.
+func (m *Manager) ReloadSkills() error {
+	m.mu.Lock()
+	// Clear the skills map entirely before reloading
+	m.skills = make(map[string]*skillState)
+	m.mu.Unlock()
+
+	if err := m.loadDefaultSources(); err != nil {
+		return err
+	}
+	return m.loadConfiguredDir()
 }
 
 func (m *Manager) LoadSkillsFromDir(dir string) error {
@@ -591,6 +619,36 @@ func humanizeSkillName(value string) string {
 	return strings.Join(parts, " / ")
 }
 
+// SetActiveSkillPrompt stores the active skill instructions produced by a manual
+// activate_skill tool call. The orchestrator will inject this into the system prompt
+// before the next LLM call. It replaces any previously stored prompt.
+func (m *Manager) SetActiveSkillPrompt(prompt string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeSkillPrompt = prompt
+	select {
+	case <-m.activeSkillPromptSet:
+		// already closed
+	default:
+		close(m.activeSkillPromptSet)
+	}
+}
+
+// ActiveSkillPrompt returns the currently active skill instructions, or empty string
+// if no skill has been manually activated.
+func (m *Manager) ActiveSkillPrompt() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activeSkillPrompt
+}
+
+// ClearActiveSkillPrompt clears any stored active skill prompt.
+func (m *Manager) ClearActiveSkillPrompt() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeSkillPrompt = ""
+}
+
 // BuildAvailableSkillsPrompt builds a sorted, deterministic prompt of available skills for injection.
 func (m *Manager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error) {
 	skills := m.ListSkills()
@@ -599,7 +657,8 @@ func (m *Manager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error
 	}
 	var builder strings.Builder
 	builder.WriteString("# Available Agent Skills\n\n")
-	builder.WriteString("You have access to the following specialized skills. To activate a skill, call the activate_skill tool with the skill's name.\n\n")
+	builder.WriteString("You have access to the following specialized skills. To activate a skill, call the activate_skill tool with skill_name set to the skill's name.\n")
+	builder.WriteString("IMPORTANT: After calling activate_skill, do NOT describe or repeat the skill's capabilities yourself. The skill details are returned as the tool result and will be shown automatically. Simply acknowledge the activation and ask the user what they'd like to do.\n\n")
 	builder.WriteString("<available_skills>\n")
 	for _, skill := range skills {
 		if strings.HasSuffix(skill.Name, ":diagnostic") || skill.Name == "cosmos-star:diagnostic" {
@@ -614,6 +673,32 @@ func (m *Manager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error
 	}
 	builder.WriteString("</available_skills>")
 	return builder.String(), nil
+}
+
+// NewActivateSkillTool creates a tool that lets the AI activate a skill by name.
+// The tool resolves the skill as a side effect and stores the instructions in the
+// Manager for the orchestrator to inject into the system prompt. The tool returns
+// only a minimal confirmation — the full instructions are NOT returned as the tool
+// observation to avoid duplication in the conversation history.
+func (m *Manager) NewActivateSkillTool() ToolSpec {
+	return NewInternalTool("activate_skill", "Activate a registered skill by name. The skill's instructions and tools will be made available after activation.", func(ctx context.Context, command Command) (Result, error) {
+		name, _ := command.Input["skill_name"].(string)
+		if name == "" {
+			return Result{}, fmt.Errorf("skill_name is required")
+		}
+		instructions, err := m.BuildActiveSkillPrompt(ctx, name)
+		if err != nil {
+			return Result{}, err
+		}
+		m.SetActiveSkillPrompt(instructions)
+		return Result{
+			Observation: "✓ Skill activated. Its tools and instructions are now available.",
+			Done:        true,
+			Meta: map[string]string{
+				"skill": name,
+			},
+		}, nil
+	})
 }
 
 // BuildActiveSkillPrompt resolves an active skill and formats it as standard Markdown frontmatter wrapped in active_skill tags.

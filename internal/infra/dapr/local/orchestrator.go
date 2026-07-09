@@ -137,6 +137,21 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 	}
 
 	for loop := 0; loop < 10; loop++ {
+		// Inject active skill instructions into system prompt if a skill was
+		// manually activated via the activate_skill tool. Injected once only,
+		// then cleared from the Manager to avoid repeated injection.
+		if toolMgr := o.eng.Executor().ToolManager(); toolMgr != nil {
+			if activePrompt := toolMgr.ActiveSkillPrompt(); activePrompt != "" {
+				for i, msg := range messages {
+					if msg.Role == schema.System {
+						messages[i] = schema.SystemMessage(msg.Content + "\n\n" + activePrompt)
+						break
+					}
+				}
+				toolMgr.ClearActiveSkillPrompt()
+			}
+		}
+
 		sr, err := brainClient.Chat.Stream(ctx, messages)
 		if err != nil {
 			return nil, err

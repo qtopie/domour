@@ -63,11 +63,13 @@ type toolState struct {
 }
 
 type Manager struct {
-	mu              sync.Mutex
-	tools           map[string]*toolState
-	skills          map[string]*skillState
-	cleanupInterval time.Duration
-	cancel          context.CancelFunc
+	mu                   sync.Mutex
+	tools                map[string]*toolState
+	skills               map[string]*skillState
+	activeSkillPrompt    string // stored by activate_skill tool, injected into system prompt by orchestrator
+	activeSkillPromptSet chan struct{} // closed when activeSkillPrompt is set for the first time
+	cleanupInterval      time.Duration
+	cancel               context.CancelFunc
 }
 
 type ManagerOption func(*Manager)
@@ -80,9 +82,10 @@ func WithCleanupInterval(interval time.Duration) ManagerOption {
 
 func NewManager(opts ...ManagerOption) *Manager {
 	manager := &Manager{
-		tools:           make(map[string]*toolState),
-		skills:          make(map[string]*skillState),
-		cleanupInterval: defaultCleanupPeriod,
+		tools:                make(map[string]*toolState),
+		skills:               make(map[string]*skillState),
+		cleanupInterval:      defaultCleanupPeriod,
+		activeSkillPromptSet: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(manager)
@@ -123,6 +126,10 @@ func NewDefaultManager() (*Manager, error) {
 		return nil, err
 	}
 	if err := manager.Register(NewCopilotDelegateTool()); err != nil {
+		manager.Close()
+		return nil, err
+	}
+	if err := manager.Register(manager.NewActivateSkillTool()); err != nil {
 		manager.Close()
 		return nil, err
 	}

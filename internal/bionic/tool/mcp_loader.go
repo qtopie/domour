@@ -107,20 +107,69 @@ func ConvertJSONSchemaToEinoParams(inputSchema map[string]interface{}) *schema.P
 
 // LoadMCPServers reads config and registers all MCP tools in the Manager
 func (m *Manager) LoadMCPServers(ctx context.Context) error {
+	return m.loadMCPServers(ctx)
+}
+
+// ReloadMCPServers unregisters all existing MCP tools and re-loads them from config.
+func (m *Manager) ReloadMCPServers(ctx context.Context) error {
+	m.mu.Lock()
+	// Unregister all MCP tools
+	for name, state := range m.tools {
+		if state.spec.Kind == ToolKindMCP {
+			if state.runtime != nil {
+				_ = state.runtime.Close(ctx)
+			}
+			delete(m.tools, name)
+		}
+	}
+	m.mu.Unlock()
+	return m.loadMCPServers(ctx)
+}
+
+// loadMCPServers is the internal implementation shared by LoadMCPServers and ReloadMCPServers.
+func (m *Manager) loadMCPServers(ctx context.Context) error {
 	cfg, err := config.LoadDomourConfig()
 	if err != nil {
 		return fmt.Errorf("load config for mcp servers: %w", err)
 	}
 
-	// 1. Load modular MCP configs from the mcp_dir if it exists
+	if cfg.MCPServers == nil {
+		cfg.MCPServers = make(map[string]config.MCPServerConfig)
+	}
+
+	// 1. Load from mcp.json in the DomourHomeDir if it exists
+	mcpJsonPath := filepath.Join(config.DomourHomeDir(), "mcp.json")
+	if data, err := os.ReadFile(mcpJsonPath); err == nil {
+		var mcpWrap struct {
+			MCPServers map[string]config.MCPServerConfig `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(data, &mcpWrap); err == nil && len(mcpWrap.MCPServers) > 0 {
+			for name, sCfg := range mcpWrap.MCPServers {
+				if sCfg.Type == "" {
+					sCfg.Type = "stdio"
+				}
+				cfg.MCPServers[name] = sCfg
+			}
+		} else {
+			// fallback: parse as direct map
+			var directMap map[string]config.MCPServerConfig
+			if err := json.Unmarshal(data, &directMap); err == nil {
+				for name, sCfg := range directMap {
+					if sCfg.Type == "" {
+						sCfg.Type = "stdio"
+					}
+					cfg.MCPServers[name] = sCfg
+				}
+			}
+		}
+	}
+
+	// 2. Load modular MCP configs from the mcp_dir if it exists
 	mcpDir := strings.TrimSpace(cfg.MCPDir)
 	if mcpDir != "" {
 		if info, err := os.Stat(mcpDir); err == nil && info.IsDir() {
 			entries, err := os.ReadDir(mcpDir)
 			if err == nil {
-				if cfg.MCPServers == nil {
-					cfg.MCPServers = make(map[string]config.MCPServerConfig)
-				}
 				for _, entry := range entries {
 					if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
 						continue
@@ -137,7 +186,7 @@ func (m *Manager) LoadMCPServers(ctx context.Context) error {
 						continue
 					}
 					serverName := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-					// Only register if not overridden in inline config
+					// Only register if not overridden in inline config / mcp.json
 					if _, exists := cfg.MCPServers[serverName]; !exists {
 						cfg.MCPServers[serverName] = serverCfg
 					}
