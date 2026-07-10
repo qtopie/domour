@@ -129,6 +129,10 @@ func NewDefaultManager() (*Manager, error) {
 		manager.Close()
 		return nil, err
 	}
+	if err := manager.Register(NewAgenticCLITool()); err != nil {
+		manager.Close()
+		return nil, err
+	}
 	if err := manager.Register(manager.NewActivateSkillTool()); err != nil {
 		manager.Close()
 		return nil, err
