@@ -136,7 +136,8 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 		}
 	}
 
-	for loop := 0; loop < 10; loop++ {
+	const maxLoops = 25
+	for loop := 0; loop < maxLoops; loop++ {
 		// Inject active skill instructions into system prompt if a skill was
 		// manually activated via the activate_skill tool. Injected once only,
 		// then cleared from the Manager to avoid repeated injection.
@@ -286,7 +287,9 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 		}
 	}
 
-	return nil, fmt.Errorf("max tool execution loops reached")
+	return nil, fmt.Errorf("__brain_review__: max tool execution loops (%d) reached in session %s. "+
+		"The workflow exceeded the maximum number of tool call iterations. "+
+		"Please review the approach and re-plan with a different strategy.", maxLoops, input.SessionID)
 }
 
 func modelSupportsTools(provider, model string) bool {

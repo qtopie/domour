@@ -81,6 +81,8 @@ type Module interface {
 type SensorySignal struct {
 	Ctx       context.Context
 	SessionID string
+	TopicID   string // Topic-scoped conversation ID, tracked by TopicDetector (e.g. "sess_abc:1")
+	Topic     string // Human-readable topic label (top-3 terms)
 	Source    string
 	Data      interface{}
 	Timestamp time.Time

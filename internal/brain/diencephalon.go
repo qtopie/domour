@@ -50,13 +50,57 @@ type DiencephalonNode struct {
 	ResponseIn  chan MotorFeedback
 	ResponseOut chan MotorFeedback
 
+	// Topic detection for conversation awareness
+	topicDetector        *TopicDetector
+	topicShiftThreshold  float64 // default 0.12 — lower = stricter splitting
+	topicShiftCheckEvery int     // check topic every N turns; 0 = every turn
+
+	// Rate limiter for LLM API calls (e.g., 15 RPM for DeepSeek free tier)
+	rateLimiter *RateLimiter
+
 	sessions          map[string]*State
 	responseListeners map[string]chan<- MotorFeedback
 	mu                sync.Mutex
 }
 
-func NewDiencephalonNode() *DiencephalonNode {
-	return &DiencephalonNode{
+// TopicShiftOption configures topic detection behaviour.
+type TopicShiftOption func(*DiencephalonNode)
+
+// WithTopicShiftThreshold sets the sensitivity for topic shift detection.
+// Lower values split more aggressively. Default 0.12.
+func WithTopicShiftThreshold(threshold float64) TopicShiftOption {
+	return func(d *DiencephalonNode) {
+		d.topicShiftThreshold = threshold
+	}
+}
+
+// WithTopicShiftCheckInterval sets how many turns between topic checks.
+// 0 = check every turn. Useful to amortize cost in high-throughput scenarios.
+func WithTopicShiftCheckInterval(n int) TopicShiftOption {
+	return func(d *DiencephalonNode) {
+		d.topicShiftCheckEvery = n
+	}
+}
+
+// DisableTopicDetection turns off automatic topic tracking.
+func DisableTopicDetection() TopicShiftOption {
+	return func(d *DiencephalonNode) {
+		d.topicDetector = nil
+	}
+}
+
+// WithRateLimit sets the LLM API rate limit in requests per minute.
+// If set to 0 or negative, rate limiting is disabled (default).
+func WithRateLimit(rpm int) TopicShiftOption {
+	return func(d *DiencephalonNode) {
+		if rpm > 0 {
+			d.rateLimiter = NewRateLimiter(rpm)
+		}
+	}
+}
+
+func NewDiencephalonNode(opts ...TopicShiftOption) *DiencephalonNode {
+	d := &DiencephalonNode{
 		RawSensoryIn:  make(chan SensorySignal, 100),
 		SensoryRelay:  make(chan SensorySignal, 100),
 		SemanticOut:   make(chan SensorySignal, 20),
@@ -69,7 +113,14 @@ func NewDiencephalonNode() *DiencephalonNode {
 		ResponseOut:   make(chan MotorFeedback, 20),
 		sessions:          make(map[string]*State),
 		responseListeners: make(map[string]chan<- MotorFeedback),
+
+		topicDetector:       NewTopicDetector(),
+		topicShiftThreshold: 0.12,
 	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 func (d *DiencephalonNode) RegisterListener(sessionID string, ch chan<- MotorFeedback) {
@@ -139,12 +190,21 @@ func (d *DiencephalonNode) startRoutingLoop(ctx context.Context) {
 				case <-time.After(5 * time.Second):
 				}
 			} else {
-				// Convert to global query Event and drive the coordinator
 				sessionID := signal.SessionID
 				if sessionID == "" {
 					sessionID = fmt.Sprintf("G%d", signal.Timestamp.UnixNano())
 				}
 				state := d.getOrCreateState(sessionID)
+
+				// --- Topic Detection (skip for reflex/sensor paths) ---
+				if d.topicDetector != nil {
+					if queryStr, ok := asString(signal.Data); ok {
+						d.detectTopicShift(state, queryStr)
+					}
+				}
+				// Attach current topic to signal for downstream propagation
+				signal.TopicID = state.TopicID
+				signal.Topic = state.CurrentTopic
 
 				queryStr := fmt.Sprintf("%v", signal.Data)
 				if strings.Contains(strings.ToLower(queryStr), "nested") {
@@ -164,6 +224,45 @@ func (d *DiencephalonNode) startRoutingLoop(ctx context.Context) {
 				go d.drive(reqCtx, state, ev)
 			}
 		}
+	}
+}
+
+// detectTopicShift compares the current input against previous turns and
+// updates state.TopicID / state.CurrentTopic if a change is detected.
+// Bypass scenario: when topicDetector is nil (DisableTopicDetection), TopicID
+// stays as-is — the caller is responsible for setting it.
+func (d *DiencephalonNode) detectTopicShift(state *State, input string) {
+	fp := d.topicDetector.ExtractFingerprint(input)
+	label := d.topicDetector.SuggestTopicLabel(fp)
+
+	// Guard: skip check on first turn (no previous fingerprint)
+	if state.previousTopicFP == nil {
+		state.CurrentTopic = label
+		state.previousTopicFP = &fp
+		// First TopicID initialization — only if not already set by caller
+		if state.TopicID == "" {
+			state.TopicID = fmt.Sprintf("%s:%d", state.SessionID, state.topicSeq)
+		}
+		return
+	}
+
+	shifted := d.topicDetector.DetectShift(*state.previousTopicFP, fp, d.topicShiftThreshold)
+	if shifted {
+		state.topicSeq++
+		state.TopicID = fmt.Sprintf("%s:%d", state.SessionID, state.topicSeq)
+		state.CurrentTopic = label
+	}
+	// Always update the baseline for next comparison
+	state.previousTopicFP = &fp
+}
+
+// asString attempts to extract a string from interface{}.
+func asString(v interface{}) (string, bool) {
+	switch s := v.(type) {
+	case string:
+		return s, true
+	default:
+		return "", false
 	}
 }
 
@@ -265,6 +364,13 @@ func (d *DiencephalonNode) drive(ctx context.Context, state *State, ev Event) {
 
 	switch next.Action {
 	case ActionCallLLM:
+		// Rate limit: block until a token is available
+		if d.rateLimiter != nil {
+			if !d.rateLimiter.Allow() {
+				log.Printf("[Thalamus-RateLimit] LLM rate limit exceeded for session %s, waiting...", state.SessionID)
+				d.rateLimiter.Wait()
+			}
+		}
 		sig := SensorySignal{
 			Ctx:       ctx,
 			SessionID: state.SessionID,
@@ -293,10 +399,43 @@ func (d *DiencephalonNode) drive(ctx context.Context, state *State, ev Event) {
 		}
 
 	case ActionFinish:
+		payload := next.Payload.(string)
+		if strings.HasPrefix(payload, "__brain_review__:") {
+			// ReAct loop exceeded max tool calls — re-route to Cerebrum for review.
+			// Don't delete state; the Cerebrum needs the full context to re-plan.
+			log.Printf("[Thalamus-Correction] Loop limit exceeded for session %s, sending to Cerebrum for review", state.SessionID)
+
+			// Keep state alive for re-execution, but reset the counter to prevent infinite re-plans
+			state.ToolCallCount = 0
+
+			// Signal to Cerebrum: include original goal + loop error
+			reviewPayload := fmt.Sprintf(
+				"[Brain Review Required]\n%s\n\n"+
+					"Your previous approach exceeded the maximum number of tool calls.\n"+
+					"Please analyze the problem, try a different strategy, and respond with a new plan.\n"+
+					"History so far:\n%s",
+				payload, state.ReasonerState["history_prompt"])
+
+			sig := SensorySignal{
+				Ctx:       ctx,
+				SessionID: state.SessionID,
+				Source:    "thalamus",
+				Data:      reviewPayload,
+				Timestamp: time.Now(),
+			}
+			select {
+			case d.SemanticOut <- sig:
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+				log.Printf("[Thalamus-Warning] SemanticOut blocked during brain review.")
+			}
+			return
+		}
+
 		fb := MotorFeedback{
 			ActionID: state.SessionID,
 			Success:  true,
-			Output:   next.Payload.(string),
+			Output:   payload,
 		}
 		select {
 		case d.ResponseIn <- fb:

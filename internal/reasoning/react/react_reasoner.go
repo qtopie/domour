@@ -80,6 +80,23 @@ func (r *CerebrumReActReasoner) Decide(ctx context.Context, state *brain.State, 
 		// Step 3: Tool observation returned from Cerebellum.
 		obsText := event.Payload.(string)
 
+		// ReAct loop guard: increment counter, check against max
+		state.ToolCallCount++
+		maxTools := state.MaxToolCalls
+		if maxTools == 0 {
+			maxTools = 20 // default
+		}
+		if state.ToolCallCount >= maxTools {
+			errMsg := fmt.Sprintf("__brain_review__: ReAct loop exceeded %d tool calls in session %s. "+
+				"Original goal: %s. Last tool: %s. "+
+				"Please review the approach and re-plan if necessary.",
+				maxTools, state.SessionID, state.GlobalGoal, obsText)
+			return brain.NextStep{
+				Action:  brain.ActionFinish,
+				Payload: errMsg,
+			}, nil
+		}
+
 		// Append observation to history and trigger next thinking step in Cerebrum
 		history := state.ReasonerState["history_prompt"].(string) + "\nObservation: " + obsText
 		state.ReasonerState["history_prompt"] = history

@@ -21,17 +21,27 @@ type TaskStep struct {
 
 // State represents the global context dashboard of the brain
 type State struct {
-	SessionID     string
-	GlobalGoal    string
-	Complexity    int // Score from 1-10
-	Steps         []*TaskStep
-	CurrentStepID string
-	UserFeedback  string     // Stores new instructions from the user during execution
-	Mode          SystemMode // Current system operating mode
+	SessionID    string
+	TopicID      string // Topic-scoped conversation ID, set by TopicDetector (e.g. "sess_abc:1")
+	CurrentTopic string // Human-readable topic label (top-3 weighted terms)
+	GlobalGoal   string
+	Complexity   int // Score from 1-10
+	Steps        []*TaskStep
+	CurrentStepID  string
+	UserFeedback   string     // Stores new instructions from the user during execution
+	Mode           SystemMode // Current system operating mode
 
 	ReasonerState map[string]interface{}
 	History       []Event
 	ActiveEngine  string
+
+	// Topic tracking — Diencephalon uses this to detect shifts across turns.
+	previousTopicFP *TopicFingerprint
+	topicSeq        int
+
+	// ReAct loop guard
+	ToolCallCount int // Incremented each time a tool is dispatched
+	MaxToolCalls  int // 0 = unlimited (default). When exceeded, Cerebrum reviews.
 }
 
 const (
