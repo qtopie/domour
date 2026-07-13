@@ -86,46 +86,46 @@ func TestResolveConfigFallsBackToProviderProxy(t *testing.T) {
 	}
 }
 
-func TestResolveConfigSupportsOllamaProvider(t *testing.T) {
-	t.Setenv("DOMOUR_CHAT_PROVIDER", "ollama")
+func TestResolveConfigSupportsLocalModelProvider(t *testing.T) {
+	t.Setenv("DOMOUR_CHAT_PROVIDER", "llamacpp")
 	t.Setenv("DOMOUR_CHAT_MODEL", "phi4-mini")
 
 	cfg := ResolveConfig("chat", appconfig.DomourConfig{
 		Providers: map[string]appconfig.ProviderConfig{
-			"ollama": {
-				BaseURL: "http://127.0.0.1:11434/v1",
+			"llamacpp": {
+				BaseURL: "http://127.0.0.1:8080/v1",
 			},
 		},
 	})
-	if cfg.Provider != "ollama" {
-		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "ollama")
+	if cfg.Provider != "llamacpp" {
+		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "llamacpp")
 	}
 	if cfg.Model != "phi4-mini" {
 		t.Fatalf("ResolveConfig().Model = %q, want %q", cfg.Model, "phi4-mini")
 	}
-	if cfg.BaseURL != "http://127.0.0.1:11434/v1" {
-		t.Fatalf("ResolveConfig().BaseURL = %q, want %q", cfg.BaseURL, "http://127.0.0.1:11434/v1")
+	if cfg.BaseURL != "http://127.0.0.1:8080/v1" {
+		t.Fatalf("ResolveConfig().BaseURL = %q, want %q", cfg.BaseURL, "http://127.0.0.1:8080/v1")
 	}
 }
 
 func TestResolveConfigUsesPersistedDefaults(t *testing.T) {
 	cfg := ResolveConfig("chat", appconfig.DomourConfig{
-		DefaultProvider: "ollama",
+		DefaultProvider: "llamacpp",
 		DefaultModel:    "phi4-mini",
 		Providers: map[string]appconfig.ProviderConfig{
-			"ollama": {
-				BaseURL: "http://127.0.0.1:11434/v1",
+			"llamacpp": {
+				BaseURL: "http://127.0.0.1:8080/v1",
 			},
 		},
 	})
-	if cfg.Provider != "ollama" {
-		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "ollama")
+	if cfg.Provider != "llamacpp" {
+		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "llamacpp")
 	}
 	if cfg.Model != "phi4-mini" {
 		t.Fatalf("ResolveConfig().Model = %q, want %q", cfg.Model, "phi4-mini")
 	}
-	if cfg.BaseURL != "http://127.0.0.1:11434/v1" {
-		t.Fatalf("ResolveConfig().BaseURL = %q, want %q", cfg.BaseURL, "http://127.0.0.1:11434/v1")
+	if cfg.BaseURL != "http://127.0.0.1:8080/v1" {
+		t.Fatalf("ResolveConfig().BaseURL = %q, want %q", cfg.BaseURL, "http://127.0.0.1:8080/v1")
 	}
 }
 
@@ -135,18 +135,18 @@ func TestResolveConfigUsesEntryConfigModel(t *testing.T) {
 		DefaultModel:    "gpt-4.1",
 		Entries: map[string]appconfig.EntryConfig{
 			"copilot": {
-				Provider: "ollama",
+				Provider: "llamacpp",
 				Model:    "qwen2.5-coder",
 			},
 		},
 		Providers: map[string]appconfig.ProviderConfig{
-			"ollama": {
-				BaseURL: "http://127.0.0.1:11434/v1",
+			"llamacpp": {
+				BaseURL: "http://127.0.0.1:8080/v1",
 			},
 		},
 	})
-	if cfg.Provider != "ollama" {
-		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "ollama")
+	if cfg.Provider != "llamacpp" {
+		t.Fatalf("ResolveConfig().Provider = %q, want %q", cfg.Provider, "llamacpp")
 	}
 	if cfg.Model != "qwen2.5-coder" {
 		t.Fatalf("ResolveConfig().Model = %q, want %q", cfg.Model, "qwen2.5-coder")
@@ -177,7 +177,7 @@ func TestChatClientType(t *testing.T) {
 		{"claude", "cli"},
 		{"gemini", "api"},
 		{"openai", "api"},
-		{"ollama", "api"},
+		{"llamacpp", "api"},
 	}
 
 	for _, tt := range tests {
@@ -215,14 +215,14 @@ func TestProviderRegistryAndDynamicRegistration(t *testing.T) {
 
 	// 1. Verify built-in model registration
 	registryMu.RLock()
-	ollamaEntry, ollamaExists := registry["ollama"]
+	llamacppEntry, llamacppExists := registry["llamacpp"]
 	registryMu.RUnlock()
 
-	if !ollamaExists {
-		t.Fatalf("Expected ollama provider to be pre-registered")
+	if !llamacppExists {
+		t.Fatalf("Expected llamacpp provider to be pre-registered")
 	}
-	if ollamaEntry.Metadata.Trust != TrustComplete {
-		t.Errorf("Expected ollama trust level to be TrustComplete, got: %v", ollamaEntry.Metadata.Trust)
+	if llamacppEntry.Metadata.Trust != TrustComplete {
+		t.Errorf("Expected llamacpp trust level to be TrustComplete, got: %v", llamacppEntry.Metadata.Trust)
 	}
 
 	// 2. Test dynamic registration

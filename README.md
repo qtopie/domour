@@ -36,11 +36,11 @@ go run ./cmd/domour
 - **大脑 (Brain)**: 认知中枢。负责语义理解、任务拆解、生成计划。它被视为“非确定性”层。
 - **小脑 (Motor)**: 执行中枢。负责工具调用、安全审查、最终输出。它是系统的“确定性”控制层，确保 Brain 的想法安全落地。
 - **脑干 (Brainstem)**: 基础设施层。负责节点通信、事件总线、存储调度。基于 Dapr 实现集群节点的发现与状态同步。
-- **间脑 (Diencephalon)**: 模型路由层。统一调度 Gemini, Claude, Ollama 以及各类本地 CLI 模型。
+- **间脑 (Diencephalon)**: 模型路由层。统一调度 Gemini, Claude, Llama.cpp 以及各类本地 CLI 模型。
 
 ## 功能特性
 
-- **跨环境适配**: 无论是笔记本上的本地 LLM (Ollama)，还是云端的高性能 API，亦或是边缘设备的简单规则，都能在同一套 Runtime 下运行。
+- **跨环境适配**: 无论是笔记本上的本地 LLM (Llama.cpp)，还是云端的高性能 API，亦或是边缘设备的简单规则，都能在同一套 Runtime 下运行。
 - **零信任安全**: 认知与执行物理隔离，Brain 无法直接操作敏感资源，必须经过 Motor 的二次校验。
 - **统一记忆系统**: 自动归并并持久化会话历史，支持延迟加载本地 CLI 日志，实现 Agent 记忆的无缝平移。
 - **多模态原生**: 内置多模态消息处理与轻量化 OCR 拦截，支持附件通道。
@@ -51,7 +51,7 @@ go run ./cmd/domour
 
 ```bash
 go run ./cmd/domour models list
-go run ./cmd/domour models set -entry chat -provider ollama -model qwen2.5-coder
+go run ./cmd/domour models set -entry chat -provider llamacpp -model qwen2.5-coder
 ```
 
 ## License

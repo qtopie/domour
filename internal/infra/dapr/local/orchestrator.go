@@ -164,6 +164,8 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 		var chunks []*schema.Message
 		isToolCall := false
 
+		thinkParser := NewThinkTagParser()
+
 		for {
 			chunk, recvErr := sr.Recv()
 			if recvErr == io.EOF {
@@ -181,8 +183,8 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			}
 
 			if input.StreamFinal && !isToolCall {
-				meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
 				if chunk.ReasoningContent != "" {
+					meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
 					if err := yield(shared.MotorStreamEvent{
 						Stage:   input.Stage,
 						Type:    1, // CHUNK_THINKING
@@ -197,15 +199,15 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 					}
 				}
 				if chunk.Content != "" {
-					if err := yield(shared.MotorStreamEvent{
-						Stage:   input.Stage,
-						Content: chunk.Content,
-						Meta:    meta,
-						// Type 0 = CHUNK_TEXT (proto3 default)
-					}); err != nil {
+					if err := thinkParser.Feed(chunk.Content, input.Stage, brainClient, yield); err != nil {
 						return nil, err
 					}
 				}
+			}
+		}
+		if input.StreamFinal && !isToolCall {
+			if err := thinkParser.Flush(input.Stage, brainClient, yield); err != nil {
+				return nil, err
 			}
 		}
 		sr.Close()
@@ -295,7 +297,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 func modelSupportsTools(provider, model string) bool {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	model = strings.ToLower(strings.TrimSpace(model))
-	if provider == "ollama" {
+	if provider == "llamacpp" || provider == "ollama" {
 		if strings.Contains(model, "smollm") ||
 			strings.Contains(model, "tinyllama") ||
 			strings.Contains(model, "phi-2") ||

@@ -28,6 +28,16 @@ func NewCache[V any](path string) (*Cache[V], error) {
 	opts := badger.DefaultOptions(path)
 	opts.Logger = nil
 
+	// Use smaller value log files (128MB instead of 1GB) to reduce mmap region size,
+	// minimizing the risk of SIGBUS from truncated/corrupted files.
+	opts = opts.WithValueLogFileSize(128 << 20)
+
+	// Sync writes to disk before returning, reducing the corruption window on crash.
+	opts = opts.WithSyncWrites(true)
+
+	// Keep only the latest version of each key.
+	opts = opts.WithNumVersionsToKeep(1)
+
 	db, err := safeBadgerOpen(opts)
 	if err != nil {
 		fmt.Printf("[L2Cache] Badger DB corrupted or failed to open: %v. Recreating...\n", err)

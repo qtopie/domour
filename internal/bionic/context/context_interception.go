@@ -280,25 +280,29 @@ func resolveOCRInterceptionConfig() (proxy.Config, bool, error) {
 	}
 
 	chatCfg := proxy.ResolveConfig("chat", cfg)
-	if strings.EqualFold(strings.TrimSpace(chatCfg.Provider), "ollama") && supportsImageInterceptionProvider(chatCfg.Provider) {
+	if (strings.EqualFold(strings.TrimSpace(chatCfg.Provider), "ollama") || strings.EqualFold(strings.TrimSpace(chatCfg.Provider), "llamacpp")) && supportsImageInterceptionProvider(chatCfg.Provider) {
 		chatCfg.APIKey = pickFirstNonEmpty(chatCfg.APIKey, "ollama")
 		chatCfg.BaseURL = pickFirstNonEmpty(chatCfg.BaseURL, "http://127.0.0.1:11434/v1")
 		return chatCfg, true, nil
 	}
 
-	if hasConfiguredProvider(cfg, "ollama") {
+	if hasConfiguredProvider(cfg, "ollama") || hasConfiguredProvider(cfg, "llamacpp") {
+		ocProvider := "ollama"
+		if hasConfiguredProvider(cfg, "llamacpp") {
+			ocProvider = "llamacpp"
+		}
 		return proxy.Config{
-			Provider: "ollama",
-			APIKey:   pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_API_KEY")), cfg.APIKeyForProvider("ollama"), "ollama"),
-			BaseURL:  pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_BASE_URL")), cfg.BaseURLForProvider("ollama"), "http://127.0.0.1:11434/v1"),
+			Provider: ocProvider,
+			APIKey:   pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_API_KEY")), cfg.APIKeyForProvider(ocProvider), "ollama"),
+			BaseURL:  pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_BASE_URL")), cfg.BaseURLForProvider(ocProvider), "http://127.0.0.1:11434/v1"),
 			Model: pickFirstNonEmpty(
 				strings.TrimSpace(os.Getenv("DOMOUR_OCR_MODEL")),
 				cfg.EntryModel("ocr"),
-				cfg.ProviderModel("ollama"),
+				cfg.ProviderModel(ocProvider),
 				chatCfg.Model,
 				cfg.DefaultModelName(),
 			),
-			ProxyURL: pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_HTTPS_PROXY")), cfg.ProxyForProvider("ollama")),
+			ProxyURL: pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_HTTPS_PROXY")), cfg.ProxyForProvider(ocProvider)),
 		}, true, nil
 	}
 
@@ -329,9 +333,15 @@ func resolveExplicitOCRConfig(cfg appconfig.DomourConfig) (proxy.Config, bool) {
 	if resolved.Provider == "" {
 		return proxy.Config{}, false
 	}
-	if strings.EqualFold(resolved.Provider, "ollama") {
-		resolved.APIKey = pickFirstNonEmpty(resolved.APIKey, "ollama")
-		resolved.BaseURL = pickFirstNonEmpty(resolved.BaseURL, "http://127.0.0.1:11434/v1")
+	if strings.EqualFold(resolved.Provider, "ollama") || strings.EqualFold(resolved.Provider, "llamacpp") {
+		ocAPIKey := "ollama"
+		ocBaseURL := "http://127.0.0.1:11434/v1"
+		if strings.EqualFold(resolved.Provider, "llamacpp") {
+			ocAPIKey = "llamacpp"
+			ocBaseURL = "http://127.0.0.1:8080/v1"
+		}
+		resolved.APIKey = pickFirstNonEmpty(resolved.APIKey, ocAPIKey)
+		resolved.BaseURL = pickFirstNonEmpty(resolved.BaseURL, ocBaseURL)
 	}
 	return resolved, true
 }
@@ -342,7 +352,7 @@ func hasConfiguredProvider(cfg appconfig.DomourConfig, provider string) bool {
 
 func supportsImageInterceptionProvider(provider string) bool {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai", "ollama", "gemini", "qwen", "deepseek":
+	case "openai", "ollama", "llamacpp", "gemini", "qwen", "deepseek":
 		return true
 	default:
 		return false

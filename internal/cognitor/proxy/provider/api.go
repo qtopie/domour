@@ -9,7 +9,7 @@ import (
 
 // APIConfig holds the configuration for an API-based LLM connection.
 type APIConfig struct {
-	Provider string // e.g. "openai", "gemini", "deepseek", "ollama"
+	Provider string // e.g. "openai", "gemini", "deepseek", "llamacpp"
 	APIKey   string
 	BaseURL  string
 	Model    string

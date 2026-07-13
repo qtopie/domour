@@ -54,23 +54,23 @@ func TestDiscoverModelsDeepSeek(t *testing.T) {
 	}
 }
 
-func TestDiscoverModelsOllama(t *testing.T) {
+func TestDiscoverModelsLlamaCpp(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/tags" {
-			t.Fatalf("path = %q, want /api/tags", r.URL.Path)
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("path = %q, want /v1/models", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"models":[{"name":"phi4-mini"},{"name":"llama3.2"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"phi4-mini"},{"id":"llama3.2"}]}`))
 	}))
 	defer server.Close()
 
-	result, err := DiscoverModels(context.Background(), &Config{Provider: "ollama", BaseURL: server.URL + "/v1"})
+	result, err := DiscoverModels(context.Background(), &Config{Provider: "llamacpp", BaseURL: server.URL + "/v1"})
 	if err != nil {
 		t.Fatalf("DiscoverModels() error = %v", err)
 	}
 	if len(result.Models) != 2 || result.Models[0] != "llama3.2" || result.Models[1] != "phi4-mini" {
-		t.Fatalf("Models = %#v, want sorted ollama models", result.Models)
+		t.Fatalf("Models = %#v, want sorted llamacpp models", result.Models)
 	}
 }
 

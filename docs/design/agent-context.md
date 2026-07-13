@@ -7,6 +7,8 @@
 
 ## 一、背景与问题
 
+> **上下文工程**是 Agent 开发中的核心基础设施。以下章节总结其作用与当前架构的实现状态。
+
 ### 上下文工程的作用
 
 在 Agent 开发中，上下文工程是决定 Agent 行为边界和协作效率的基础设施，其核心作用包括：
@@ -20,16 +22,21 @@
 
 **一句话总结**：上下文工程 = 视野控制 + 通信协议 + Token 经济 + 持久化方案，是 Agent 正确性、效率和可扩展性的基石。
 
-### 当前架构的问题
+### 实现状态概览
 
-| 问题 | 描述 |
-|------|------|
-| **扁平 State** | `State` 是 `map[string]interface{}` + `[]Event`，无结构化上下文表示 |
-| **无持久化** | `MemoryStore` 仅在进程内内存中，进程重启丢失 |
-| **无上下文隔离** | 子 Agent（Cerebellum 本地循环）与父 Agent 共享同一 State，无私有工作区 |
-| **无 Token 管理** | 无压缩、无截断、无摘要策略，大上下文导致 LLM Token 溢出 |
-| **无跨进程共享** | 同一 DomourHost 的多个进程不能访问同一上下文 |
-| **Brain.Memorize/Recall** | 接口已定义但未实现 |
+| 系统 | 实现状态 | 说明 |
+|------|---------|------|
+| **MemoryContextManager (Tier 1~3)** | ✅ 已实现 | 全局记忆(~/.domour/*.md)、项目记忆(.domour/*.md)、JIT 文件发现，带 L1 缓存 |
+| **ContextManager (Per-Agent)** | ✅ 已实现 | Pristine Graph、STM 环状缓冲区、Pipeline 压缩链、4种渲染方法 |
+| **ContextBridge (跨 Agent 通信)** | ✅ 已实现 | 基于 Channel 的 Pub/Sub 模型，Scope 隔离，定向投递 |
+| **Pipeline 处理器链** | ✅ 已实现 | ToolMasking → BlobDegradation → NodeDistillation → NodeTruncation |
+| **L1 共享缓存 (ContextCache)** | ✅ 已实现 | 双 TTL 层级（30min 长缓存 / 5min 短缓存），覆盖 Tier 1~3、Session、Topic、Agent |
+| **模式自适应 (Mode-Aware)** | ✅ 已实现 | deep_think/performance/survival/balanced 四模式动态调整 STM 参数和 Pipeline 开关 |
+| **Session 持久化 (SurrealDB)** | ✅ 已实现 | 三层缓存（L1→L2→DB），跨进程重启数据不丢失，SurrealDB 3.x 兼容 |
+| **静态提示词前缀缓存** | ✅ 已实现 | System message = 纯静态 (Tier1 + Tier2)，JIT/History/Input 放在 User message 中，保证 KV cache 命中 |
+| **跨 Agent 上下文剥离** | ✅ 已实现 | Cerebellum → 仅意图+工具 schema，Diencephalon → 仅渲染消息，Brainstem → 零上下文 |
+| **LTM (Memorize/Recall)** | ⏳ 待实现 | 接口已定义，暂无向量存储/语义检索后端 |
+| **Dapr State Store 集成** | 🔄 可选 | 现有 SurrealDB 直接连接模式已可用；Dapr sidecar 方案作为备选 |
 
 ### 总体目标
 
@@ -101,66 +108,88 @@ Domour 有 9 种运行模式，对上下文的需求截然不同：
 
 ---
 
-## 二、三层上下文模型
+## 二、两层架构 + 三层作用域
+
+### 2.1 两层存储架构
 
 ```
-┌───────────────────────────────────────────────────┐
-│  GlobalContext                                     │
-│  作用域: 同一 DomourHost 内所有 Agent               │
-│  生命周期: 持久化，Host 启动时加载                   │
-│  内容:                                              │
-│  ├── 系统指令 (System Instruction)                  │
-│  ├── ~/.domour/*.md 全局记忆文件                    │
-│  └── 用户项目记忆 (.domour/*.md)                   │
-├───────────────────────────────────────────────────┤
-│  LocalContext                                      │
-│  作用域: 同一 Session / AgentGroup                  │
-│  生命周期: Session 生命周期                          │
-│  内容:                                              │
-│  ├── 当前会话的对话历史轮次                          │
-│  ├── 任务链的中间状态（TaskStep 状态）               │
-│  ├── 父 Agent 传递给子 Agent 的任务描述              │
-│  └── 当前 AgentGroup 共享的工作上下文                │
-├───────────────────────────────────────────────────┤
-│  IsolatedContext                                   │
-│  作用域: 单个 Agent 实例                             │
-│  生命周期: Agent 实例生命周期                         │
-│  内容:                                              │
-│  ├── 子 Agent 私有的对话轮次和推理过程               │
-│  ├── 子 Agent 的工具调用历史                         │
-│  ├── 子 Agent 的反思/规划记录                        │
-│  └── 不泄露给父 Agent 的内部状态                    │
-└───────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  ① MemoryContextManager（全局共享层 — 跨所有 Agent 共享同一个实例）    │
+│                                                                       │
+│  Tier 1: System Instruction (System Prompt)                          │
+│    ├── 全局规则 ~/.domour/*.md           [L1 缓存: 30min TTL]        │
+│    └── Skills/工具元数据                  [按需动态注入]               │
+│                                                                       │
+│  Tier 2: Project Memory (Project Context)                            │
+│    └── 项目缓存 <.project>/.domour/*.md  [L1 缓存: 30min TTL]        │
+│                                                                       │
+│  Tier 3: JIT File Discovery (按需发现)                               │
+│    └── discoverContext(accessedPath)     [L1 缓存: 5min TTL]         │
+└──────────────────────────────────────────┬───────────────────────────┘
+                                           │ 共享 (Config, L1 Cache)
+┌──────────────────────────────────────────▼───────────────────────────┐
+│  ② ContextManager（每 Agent 实例独有 — 隔离的会话上下文）              │
+│                                                                       │
+│  Pristine Graph（不可变备份）                                         │
+│  ┌──────────────────────────────────────────────────────────┐        │
+│  │  Nodes: map[string]*ConcreteNode                        │        │
+│  │  Edges: map[string][]string                             │        │
+│  │  用途: "真实发生了什么" 的原始记录，用于对比/回退         │        │
+│  └──────────────────────────────────────────────────────────┘        │
+│                                                                       │
+│  STM 环状缓冲区（工作区 — 可操作/可压缩）                             │
+│  ┌──────────────────────────────────────────────────────────┐        │
+│  │  保护区域: 最近 N 轮（跳过 Pipeline 处理）                │        │
+│  │  可压缩区域: 更旧轮次（按需蒸馏/截断/摘要）                │        │
+│  └──────────────────────────────────────────────────────────┘        │
+│                                                                       │
+│  Pipeline 处理器链（压缩/掩码/蒸馏 — mode 感知）                     │
+│  ┌──────────────────────────────────────────────────────────┐        │
+│  │  ToolMasking → BlobDegradation → NodeDistillation →     │        │
+│  │  NodeTruncation                                          │        │
+│  └──────────────────────────────────────────────────────────┘        │
+│                                                                       │
+│  ContextBridge（跨 Agent 通信 — 用 Channel Pub/Sub 隔离）            │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### 作用域隔离规则
+### 2.2 三层作用域与访问控制
+
+| 作用域 | 对应组件 | 可见性 | 持久化 |
+|--------|---------|--------|--------|
+| **Global** (Tier 1~3) | MemoryContextManager | 所有 Agent 共享（只读） | 文件系统 ~/.domour/ + L1 缓存 |
+| **Local** (Session/Topic) | ContextManager + ContextBridge | 同 Session 内所有 Agent（读写，通过 Channel） | SurrealDB Session Manager |
+| **Isolated** (单 Agent) | ContextManager Pristine+STM | 仅所属 Agent（完全隔离） | 进程内（重启丢失） |
+
+### 2.3 作用域隔离规则
 
 | 操作 | Global | Local | Isolated |
 |------|--------|-------|----------|
-| 父 Agent 可读 | ✓ | ✓ | ✗ |
-| 父 Agent 可写 | ✗ | ✓ | ✗ |
-| 子 Agent 可读 | ✓ | ✓（按注入策略） | ✓ |
-| 子 Agent 写回父 | ✗ | ✓（通过 InjectContext） | ✗ |
+| Agent A 可读 | ✓ | ✓（通过 Bridge Channel） | ✗ |
+| Agent A 可写 | ✗ | ✓（通过 Bridge.Publish） | ✓（仅自己） |
+| Agent B 可读 | ✓ | ✓（需订阅 Channel） | ✗ |
+| 跨 Agent 同步 | 天然共享 | Bridge.Publish/Subscribe | PublishDirect（定向投递） |
 
 ---
 
 ## 三、核心数据结构
 
-### 3.1 ContextNode
-
-最小上下文单元，基于内容哈希实现稳定标识：
+### 3.1 Node — 实际代码 `ConcreteNode`
 
 ```go
-type ContextNodeType string
+type NodeType string
 
 const (
-    NodeUserPrompt    ContextNodeType = "user_prompt"
-    NodeAgentThought  ContextNodeType = "agent_thought"
-    NodeToolCall      ContextNodeType = "tool_call"
-    NodeToolResult    ContextNodeType = "tool_result"
-    NodeSystemEvent   ContextNodeType = "system_event"
-    NodeSnapshot      ContextNodeType = "snapshot"       // 摘要合成节点
-    NodeRollingSummary ContextNodeType = "rolling_summary" // 滚动摘要节点
+    NodeUnknown        NodeType = "unknown"
+    NodeInstruction    NodeType = "instruction"
+    NodeConversation   NodeType = "conversation"
+    NodeObservation    NodeType = "observation"
+    NodeAction         NodeType = "action"
+    NodePlan           NodeType = "plan"
+    NodeReflection     NodeType = "reflection"
+    NodeSummary        NodeType = "summary"
+    NodeSnapshot       NodeType = "snapshot"       // 摘要合成节点
+    NodeToolResult     NodeType = "tool_result"
 )
 
 type ContextScope string
@@ -171,411 +200,529 @@ const (
     ScopeIsolated ContextScope = "isolated"
 )
 
-type ContextNode struct {
-    ID           string            // 稳定哈希 ID（基于 Content + Type + Scope）
-    Type         ContextNodeType
-    Scope        ContextScope
-    Timestamp    time.Time
-    Role         string            // "user" | "assistant" | "tool" | "system"
-    Content      string            // 文本内容
-    Metadata     map[string]string // 来源、Token数、优先级等
-    TurnID       string            // 所属轮次 ID
-    ReplacesID   string            // 1:1 替换链（如 masking）
-    AbstractsIDs []string          // N:1 摘要链（被哪些摘要节点替代）
-    TokenCount   int               // 预估 Token 数
-    Version      int64             // 乐观锁版本号
+// ConcreteNode 是 ContextGraph 中实际使用的节点
+type ConcreteNode struct {
+    ID        string            `msgpack:"id"`
+    Type      NodeType          `msgpack:"type"`
+    AgentID   string            `msgpack:"agent_id"`
+    SessionID string            `msgpack:"session_id"`
+    Scope     ContextScope      `msgpack:"scope"`
+    Turn      int               `msgpack:"turn"`
+    Priority  int               `msgpack:"priority"`    // 0~100
+    TokenSize int               `msgpack:"token_size"`
+    Content   string            `msgpack:"content"`
+    Metadata  map[string]string `msgpack:"metadata"`
+    Tags      []string          `msgpack:"tags"`
+    CreatedAt int64             `msgpack:"created_at"`
+    children  []*ConcreteNode   // Graph 内部使用，不序列化
 }
 ```
 
-### 3.2 ContextGraph
-
-上下文的有向无环图（DAG）表示：
+### 3.2 Graph — 实际代码 `ContextGraph`
 
 ```go
 type ContextGraph struct {
-    Nodes      map[string]*ContextNode  // nodeID → Node
-    Edges      map[string][]string      // parentID → childIDs
-    RootIDs    []string                 // 根节点（源头）
-    Scope      ContextScope
-    SessionID  string
-    HostID     string
-    Version    int64                    // 单调递增版本号
-    UpdatedAt  time.Time
+    mu    sync.RWMutex
+    Nodes map[string]*ConcreteNode
+    Edges map[string][]string   // NodeID → 子 NodeID 列表
+    Roots []string              // 无入边的节点（入口点）
 }
 ```
 
-### 3.3 图操作 API
+图操作直接在 `ContextGraph` 上，无需 `GraphBuilder`：
 
 ```go
-type GraphBuilder interface {
-    // AppendHistory 将新对话轮次追加到图中
-    AppendHistory(ctx context.Context, graph *ContextGraph, turn *Turn) error
+func (g *ContextGraph) AddNode(node *ConcreteNode) error
+func (g *ContextGraph) RemoveNode(nodeID string) 
+func (g *ContextGraph) AddEdge(parentID, childID string) error
+```
 
-    // RemoveNode 移除指定节点（沿 edges 级联更新）
-    RemoveNode(ctx context.Context, graph *ContextGraph, nodeID string) error
+### 3.3 STM 配置 — 实际代码 `STMConfig`
 
-    // ReplaceNode 用新节点替换旧节点（维护 replacesId 链）
-    ReplaceNode(ctx context.Context, graph *ContextGraph, oldID, newNode *ContextNode) error
-
-    // AbstractNodes 将 N 个节点摘要为一个摘要节点
-    AbstractNodes(ctx context.Context, graph *ContextGraph, nodeIDs []string, summary *ContextNode) error
-
-    // Render 将图渲染为 LLM 可用的 Message 数组
-    Render(graph *ContextGraph, sinceTurnID string) []*Message
+```go
+type STMConfig struct {
+    Capacity         int // 环状缓冲区总容量（默认 1024）
+    ProtectedTurns   int // 保护区域轮次，跳过 Pipeline（默认 2）
+    TokenBudget      int // 渲染后最大 Token 预算（默认 4096）
+    SummaryInterval  int // 每隔 N 轮触发一次主动摘要
+    CompressionLevel int // 压缩力度 1~10（默认 5）
 }
+```
+
+### 3.4 共享缓存 — 实际代码 `ContextCache`
+
+```go
+// 双 TTL L1 缓存（Otter 库实现）
+type ContextCache struct {
+    longCache  *otter.Cache[string, any]  // 30min — Tier 1/2 固定内容
+    shortCache *otter.Cache[string, any]  // 5min  — Tier 3 JIT / Session / Topic
+}
+
+// 缓存键层级:
+//   global:project:config            → 项目级静态配置
+//   memory:tier1:global              → Tier 1 系统指令
+//   memory:tier2:project:{name}      → Tier 2 项目记忆
+//   memory:tier3:{session}:{path}    → Tier 3 JIT 文件发现
+//   session:{id}:conversation        → 会话对话历史
+//   session:{id}:agent:{aid}         → Agent 私有上下文
+//   session:{id}:topic:{tid}         → Topic 级共享上下文
+//   agent:{id}:state                 → Agent 运行状态
 ```
 
 ---
 
-## 四、ContextManager
+## 四、ContextManager（已实现）
 
 ### 4.1 职责
 
-- 管理 ContextGraph 的生命周期（构建 → 工作缓冲区 → 管道处理 → 渲染）
-- 协调 Scope 路由（按作用域分发和隔离）
-- 对接 Dapr State Store 做持久化
+- 维护每个 Agent 实例独立的 Pristine Graph（不可变原始记录）
+- 管理 STM 环状缓冲区（保护区域 + 可压缩区域）
+- 运行 Pipeline 处理器链（mode 感知）
+- 通过 ContextBridge 实现跨 Agent 上下文共享
+- 使用 4 种渲染方法适配不同 Agent 层的阅读权限
 
-### 4.2 接口
+### 4.2 结构 (代码)
 
 ```go
 type ContextManager struct {
-    diencephalon    *DiencephalonNode
-    daprClient      *dapr.Client
-    storeName       string          // Dapr state store 名称
+    sessionID    string             // 所属会话
+    topicID      string             // 所属话题
+    agentID      string             // 所属 Agent
+    bridge       *ContextBridge     // 跨 Agent 通信桥
 
-    buffer          *ContextWorkingBuffer  // 工作缓冲区
-    orchestrator    *PipelineOrchestrator  // 管道调度器
+    pristine     *ContextGraph      // 不可变原始图备份
+    stmBuffer    []*ConcreteNode    // 环状工作缓冲区
+    stmHead      int                // 当前写入位置
+    stmProtected int                // 保护边界索引
+    pipeline     *PipelineOrchestrator // 压缩/掩码/蒸馏链
+    config       STMConfig          // Token 预算/模式等配置
+    mu           sync.RWMutex
 }
-
-// GetGraph 加载指定作用域的上下文图
-func (m *ContextManager) GetGraph(ctx context.Context, sessionID string, scope ContextScope) (*ContextGraph, error)
-
-// SaveGraph 持久化上下文图到 Dapr State Store
-func (m *ContextManager) SaveGraph(ctx context.Context, graph *ContextGraph) error
-
-// InjectContext 从 sourceScopes 注入上下文到 targetScope
-// 用于父 Agent 创建子 Agent 时传递上下文
-func (m *ContextManager) InjectContext(
-    ctx context.Context,
-    sourceSessions []string,
-    sourceScopes []ContextScope,
-    targetSession string,
-    targetScope ContextScope,
-    policy ContextPassingPolicy,
-) error
-
-// RenderHistory 将图渲染为 LLM 可用的消息数组
-func (m *ContextManager) RenderHistory(
-    ctx context.Context,
-    sessionID string,
-    scope ContextScope,
-    lastNTurns int,
-) ([]*Message, error)
 ```
 
-### 4.3 Dapr 存储 Key 规则
+### 4.3 核心流程
 
 ```
-context:{hostID}:global                              # Global 图
-context:{hostID}:session:{sessionID}:local            # Local 图
-context:{hostID}:session:{sessionID}:agent:{agentID}:isolated  # Isolated 图
-memory:{sessionID}:{nodeID}                          # LTM 记忆节点
+初始化
+  └→ NewContextManager(sessionID, topicID, agentID)
+       ├── ContextBridge (共享引用)
+       ├── Pristine Graph (空)
+       ├── STM 环状缓冲区 (1024 cap)
+       └── PipelineOrchestrator (模式感知)
+
+每次新消息
+  └→ Assemble(ctx, tier1, tier2, tier3, userInput)
+       ├── 加载系统提示 (Tier 1 + Tier 2 → system message)
+       ├── 加载 JIT 上下文 (Tier 3)
+       ├── 写入 STM 缓冲区 (用户输入 + 前次回复)
+       ├── 执行 Pipeline 处理器链 (仅处理可压缩区域)
+       ├── 写入 Pristine Graph (完整副本)
+       └── 返回 AssembledContext
+
+渲染
+  └→ RenderFor*(ctx, assembled)
+       ├── RenderForAPI       → 结构化 []Message (+ 模型信息)
+       ├── RenderForCLI       → 纯文本
+       ├── RenderForCerebellum → 意图 + 工具 schema + 当前步骤
+       └── RenderForDiencephalon → 精简 []Message + provider 信息
+```
+
+### 4.4 模式感知配置
+
+```go
+func (m *ContextManager) applyModeConfig(mode Mode) {
+    switch mode {
+    case ModeDeepThink:
+        m.config.ProtectedTurns = 5    // 保护更多轮次
+        m.config.TokenBudget = 32000   // 大 Token 预算
+    case ModePerformance:
+        m.config.ProtectedTurns = 1    // 仅保护最近 1 轮
+        m.config.TokenBudget = 4000    // 严格控制预算
+        m.pipeline.SetProcessors([]string{"masking", "truncation"}) // 只做掩码+截断
+    case ModeSurvival:
+        m.config.TokenBudget = 2048    // 极小预算
+        m.config.CompressionLevel = 10 // 最大压缩
+    case ModeBalanced:
+        m.config.ProtectedTurns = 2    // 默认保护 2 轮
+        m.config.TokenBudget = 8192    // 适中预算
+    }
+}
+```
+
+### 4.5 提示词前缀缓存策略（关键）
+
+```
+[system]  ← Tier 1 (global rules + skills) + Tier 2 (project .domour)
+            └── 纯静态内容，跨所有 Agent 和调用一致
+                → LLM KV Cache 命中，大幅降低首 Token 延迟
+
+[user]    ← Tier 3 (JIT file discovery)
+            └── 按需动态加载（accessedPath 触发）
+                → L1 缓存 5min TTL
+
+[user]    ← STM buffer (对话历史)
+            └── 随每次调用变化
+
+[user]    ← 当前用户输入
 ```
 
 ---
 
-## 五、上下文管道处理器
+## 五、Pipeline 处理器链（已实现）
 
 ### 5.1 处理器接口
 
 ```go
 type PipelineProcessor interface {
     Name() string
-    Process(ctx context.Context, buffer *ContextWorkingBuffer) error
+    Process(ctx context.Context, buffer *PipelineBuffer) error
 }
 ```
 
-### 5.2 处理器列表
+### 5.2 默认处理器链
 
-| 处理器 | 触发条件 | 功能 | 配置项 |
-|--------|----------|------|--------|
-| **ToolMasking** | 每次新消息 | 对超长工具输出（>8000 tokens）做 masking，用摘要代替原始内容 | maxTokenThreshold |
-| **BlobDegradation** | 每次新消息 | 降级大二进制数据（图片 base64 等），替换为占位描述 | maxBlobKb |
-| **NodeDistillation** | Token 超限 | 蒸馏 >15000 tokens 的大节点，提取关键信息 | distillationThreshold |
-| **NodeTruncation** | Token 超限 | 截断 >4000 tokens 的节点，保留前后文 | truncationThreshold |
-| **StateSnapshot** | 紧急 GC | 对最旧的内容做 LLM 摘要，替换为 Snapshot 节点 | snapshotWindow |
+| 序号 | 处理器 | 触发条件 | 功能 | 代码位置 |
+|------|--------|----------|------|----------|
+| 1 | **ToolMasking** | 每次新消息 | 超长工具输出（>8000 tokens）→ 摘要代替原内容 | `pipeline.go:155` |
+| 2 | **BlobDegradation** | 每次新消息 | 大二进制数据（图片 base64）→ 占位描述 | `pipeline.go:206` |
+| 3 | **NodeDistillation** | Token 超限 | >15000 tokens 的大节点 → 提取关键信息 | `pipeline.go:257` |
+| 4 | **NodeTruncation** | Token 超限 | >4000 tokens 的节点 → 保留首尾 | `pipeline.go:308` |
 
-### 5.3 触发机制
+### 5.3 处理区域
 
 ```
-每次新消息加入
-    │
-    ├──→ evaluateTriggers(buffer, config)
-    │        │
-    │        ├── currentTokens > retainedTokens
-    │        │     ├── 标记保护节点（最近 N 轮 + 活跃任务）
-    │        │     ├── 计算 targetDeficit
-    │        │     └── deficit 超过 coalescingThreshold
-    │        │           → emitConsolidationNeeded()
-    │        │
-    │        └── PipelineOrchestrator 执行相关管道
-    │
-    └──→ 渲染前最终处理
+STM 环状缓冲区
+┌───────────────────────────────────────┐
+│  保护区域 (protected turns)            │  ← Pipeline 跳过
+│  [Turn-1] [Turn-2]                    │
+├───────────────────────────────────────┤
+│  可压缩区域                            │  ← Pipeline 处理
+│  [Turn-3] [Turn-4] ... [Turn-N]       │
+└───────────────────────────────────────┘
 ```
 
-**保护策略**：
+处理器仅对 **可压缩区域** 执行，保护区域（最近 N 轮对话 + 活跃任务）始终保持完整。
 
-| 保护类型 | 范围 | 原因 |
-|----------|------|------|
-| `recent_turn` | 最后完整一轮所有节点 | 保留最近交互上下文 |
-| `active_task` | 正执行的工具调用节点 | 避免截断进行中的任务 |
-| `system_instruction` | 系统指令节点 | 核心指令不被压缩 |
+### 5.4 保护策略
+
+| 保护类型 | 识别方式 | 原因 |
+|----------|----------|------|
+| `recent_turn` | Turn <= protectedTurns | 保留最近交互上下文 |
+| `active_task` | Node.Priority >= 80 | 避免截断进行中的任务 |
+| `system_instruction` | NodeType == instruction | 核心指令不被压缩 |
 
 ---
 
-## 六、MemoryManager
+## 六、MemoryContextManager（已实现）
 
-### 6.1 接口
+> 注意：这是**全局共享的记忆层**（MemoryContextManager），非每 Agent 实例化。
+> ContextManager 在 `Assemble()` 时引用它的 `LoadSystemPrompt()` 和 `DiscoverContext()` 输出。
+
+### 6.1 结构
 
 ```go
-type MemoryManager struct {
-    stm *ShortTermMemory   // 短期记忆（ContextGraph 工作缓冲区）
-    ltm *LongTermMemory    // 长期记忆（Dapr State Store 持久化）
+type MemoryContextManager struct {
+    cache         *ContextCache     // 双 TTL L1 缓存
+    store         *session.Manager  // session 持久化管理器（可选）
+    tier1         MemoryTier        // 全局规则 ~/.domour/*.md
+    tier2         MemoryTier        // 项目记忆 .domour/*.md
+    tier3         MemoryTier        // JIT 文件发现
+    ltm           *LTMMemory        // 长期记忆（暂为 stub）
 }
 
-// Memorize 将 ContextNode 存入长期记忆
-func (m *MemoryManager) Memorize(ctx context.Context, nodes []*ContextNode) error
+type MemoryTier struct {
+    id       string
+    basePath string
+    files    map[string]*FileMeta
+}
 
-// Recall 从长期记忆中检索上下文
-func (m *MemoryManager) Recall(ctx context.Context, query string, opts RecallOptions) ([]*ContextNode, error)
-
-// Forget 删除指定记忆节点
-func (m *MemoryManager) Forget(ctx context.Context, nodeIDs []string) error
-
-// EvictFromContext 将过期的 STM 节点压缩后转入 LTM
-func (m *MemoryManager) EvictToLTM(ctx context.Context, graph *ContextGraph, evictedIDs []string) error
+type LTMMemory struct {
+    // Recall/Memorize — 接口已定义，尚未实现向量存储后端
+}
 ```
 
-### 6.2 STM：短期记忆窗口
+### 6.2 三层加载策略
 
-```
-┌─── 工作缓冲区 (ContextWorkingBuffer) ───┐
-│  [Node-1] [Node-2] ... [Node-N]         │  ← 环状缓冲区
-│                                         │
-│  保护区域 (最近 N 轮, 不压缩)              │
-│  ┌──────────────────────────────┐       │
-│  │ Turn-K  │ Turn-(K+1) │ ...  │       │  ← 跳过管道处理
-│  └──────────────────────────────┘       │
-│                                         │
-│  可压缩区域                              │
-│  ┌──────────────────────────────┐       │
-│  │ Turn-1 │ Turn-2 │ ... │ N   │       │  ← 按需蒸馏/截断/摘要
-│  └──────────────────────────────┘       │
-└─────────────────────────────────────────┘
-```
+| 层级 | 内容 | 加载时机 | 缓存 |
+|------|------|----------|------|
+| **Tier 1** | 全局规则：`~/.domour/*.md` | Agent 启动时加载 | L1 30min 长缓存 |
+| **Tier 1** | Skills 元数据 (Tools schema) | 按需动态注入 | — |
+| **Tier 2** | 项目记忆：`.domour/*.md` | Agent 启动时加载 | L1 30min 长缓存 |
+| **Tier 3** | JIT 文件发现 | `discoverContext(accessedPath)` 触发 | L1 5min 短缓存 |
 
-### 6.3 LTM：长期记忆
+### 6.3 LoadSystemPrompt — 静态前缀生成
 
-LTM 通过 Dapr State Store 持久化，可选通过 Dapr Vector Store 做语义检索：
-
-```yaml
-# components/vectorstore.yaml (可选)
-apiVersion: dapr.io/v1alpha1
-kind: Component
-metadata:
-  name: memorystore
-spec:
-  type: vectorstores.chroma
-  version: v1
-  metadata:
-  - name: serverAddress
-    value: localhost:8000
+```go
+func (m *MemoryContextManager) LoadSystemPrompt(ctx context.Context, sessionID string) string {
+    // 输出 = identity + skills_section + interception_note
+    // 纯文本，不包含任何动态内容（会话历史、用户输入等）
+}
 ```
 
-**LTM 摘要策略**：
+这是 LLM 请求中 `messages[0]`（system role）的内容。设计目标：
+- **完全静态**：同一个 session 内的所有调用产生 byte-identical 输出
+- **跨 Agent 共享**：Cerebrum/Cerebellum/Diencephalon 使用同一份
+- **最大化 KV cache 命中**：不随对话长度变化
+
+### 6.5 计划中的 LTM 存储策略
+
+未来 LTM 将依赖向量存储做语义检索（可选 Dapr Vector Store 或直接向量数据库）：
 
 | 策略 | 描述 | 适用场景 |
 |------|------|----------|
-| **RollingSummary** | LLM 生成滚动摘要，每次新摘要基于前一次摘要 + 新内容 | 长对话持久化 |
+| **RollingSummary** | LLM 生成滚动摘要，每次新摘要基于前一次 + 新内容 | 长对话持久化 |
 | **SimpleTruncation** | 保留首尾中间截断，标注 `[truncated N tokens]` | 低资源场景 |
-| **SemanticChunk** | 按语义边界切分 + 向量化 → Dapr Vector Store | 需要检索的场景 |
+| **SemanticChunk** | 按语义边界切分 + 向量化 → 向量存储 | 语义检索场景 |
 
 ---
 
-## 七、子 Agent 上下文透传
+## 七、ContextBridge — 跨 Agent 上下文透传（已实现）
 
-### 7.1 传递机制
+> 跨 Agent 通信不是通过注入 ContextGraph（注入策略旧方案已废弃），而是通过 **ContextBridge** 的 Channel Pub/Sub 模型 + **RenderFor\*** 方法实现的阅读权限隔离。
+
+### 7.1 ContextBridge 架构
 
 ```
-父 Agent (Cerebrum 或 Cerebellum)
+Cerebrum Agent (Brain)
   │
-  ├── 1. 决定创建子 Agent
+  ├── ContextManager
+  │    ├── Pristine Graph (完整信息: 推理 + 计划 + 观察)
+  │    ├── STM Buffer
+  │    └── RenderForCerebellum → 意图 + 工具 + 当前步骤 (剥离推理细节)
   │
-  ├── 2. ContextManager.InjectContext()
-  │     ├── Scope: Global   → 子 Agent 可直接引用
-  │     ├── Scope: Local    → 按 policy 过滤后注入
-  │     └── Scope: Isolated → 不注入（子 Agent 自建）
+  ├── ContextBridge ── Publishes → Channel: "session:{id}:cerebellum"
+  │       │
+  │       ▼ 订阅
   │
-  ├── 3. 创建子 Agent
-  │     ├── 新 SessionID / AgentID
-  │     ├── 新的 Isolated 图（空）
-  │     ├── 引用 Global 图（只读）
-  │     └── 注入的 Local 图片段（写入后同步回父）
+Cerebellum Agent
   │
-  └── 4. 子 Agent 执行完毕
-        └── Local 图变更同步回父 Agent 的 Local 图
+  ├── ContextManager
+  │    ├── Pristine Graph
+  │    ├── STM Buffer
+  │    └── RenderForBrainstem → 仅指令 (剥离详情)
+  │
+  ├── ContextBridge ── Publishes → Channel: "session:{id}:diencephalon"
+  │       │
+  │       ▼ 订阅
+  │
+Diencephalon Agent
+  │
+  ├── ContextBridge ── Subscribes → 必要上下文 (不含当前详情)
+  │
+  └── Brainstem (Motor) — 不共享上下文，仅接收指令
 ```
 
-### 7.2 注入策略
+### 7.2 ContextBridge 接口
 
 ```go
-type ContextPassingPolicy struct {
-    IncludeGlobal   bool      // 是否注入全局上下文
-    IncludeLocal    bool      // 是否注入局部上下文
-    MaxTokens       int       // 注入上下文最大 Token 数（0=不限）
-    ExcludeNodeTypes []ContextNodeType // 排除的节点类型
-    IncludeTags     []string  // 只包含特定标签的节点
-    Summarize       bool      // 是否先摘要再传递
-    SummaryProvider string    // 摘要用模型 Provider ID
+type ContextBridge struct {
+    mu       sync.RWMutex
+    channels map[string]map[string]chan *BridgeMessage  // topicID → {agentID → chan}
+    acl      map[string]*ChannelACL                      // topicID → ACL
 }
 
-// 预定义策略
-var (
-    FullContext      = ContextPassingPolicy{IncludeGlobal: true, IncludeLocal: true}
-    SummaryOnly      = ContextPassingPolicy{IncludeGlobal: true, IncludeLocal: true, MaxTokens: 2000, Summarize: true}
-    GlobalOnly       = ContextPassingPolicy{IncludeGlobal: true, IncludeLocal: false}
-    TaskDescription  = ContextPassingPolicy{IncludeGlobal: false, IncludeLocal: true, MaxTokens: 1000}
-)
+func NewContextBridge() *ContextBridge
+
+// Publish 将消息发布到指定 topic（所有订阅者收到）
+func (b *ContextBridge) Publish(topicID string, msg *BridgeMessage)
+
+// Subscribe 订阅一个 topic（返回接收 channel）
+func (b *ContextBridge) Subscribe(agentID, topicID string) <-chan *BridgeMessage
+
+// PublishDirect 定向发送给特定 Agent
+func (b *ContextBridge) PublishDirect(targetAgentID string, msg *BridgeMessage)
+
+// AddScopeACL 设置 topic 的 Scope 访问控制
+func (b *ContextBridge) AddScopeACL(topicID string, acl *ChannelACL) error
 ```
+
+### 7.3 各 Agent 的上下文可见性矩阵
+
+| Agent | 看到的内容 | 实现方式 | 设计理由 |
+|-------|-----------|----------|----------|
+| **Brain (Cerebrum)** | 完整：会话历史、推理链、计划、观察、反思 | `ContextManager.RenderForAPI()` 全量渲染 | 大脑需要完整上下文做规划和反思 |
+| **Cerebellum** | 意图 + 工具 schema + 当前执行步骤 | `ContextManager.RenderForCerebellum()` 剥离推理细节 | 小脑执行战术，不需知道为何做，只需知道做什么 |
+| **Diencephalon** | 精简消息 + provider 信息 | `RenderForDiencephalon()` 仅返回必要消息 | 间脑是中继，不参与推理 (原文: "间脑知道必要上下文就好了") |
+| **Brainstem (Motor)** | 零上下文 — 仅接收指令 | 不调用任何 Render 方法 | 脑干只执行安全拦截和系统调用 (原文: "脑干不共享当前详情") |
+
+### 7.4 渲染方法对比
+
+```go
+// RenderForAPI — 完整上下文给 LLM Provider (Cerebrum)
+// messages[0]: system (Tier 1 + Tier 2) → 纯静态 → KV Cache 命中
+// messages[1..N]: conversation history → 完整会话
+// messages[N+1]: user input
+func (m *ContextManager) RenderForAPI(ctx context.Context, ac *AssembledContext) ([]Message, ProviderInfo)
+
+// RenderForCerebellum — 仅执行所需的最小上下文
+// 输出: intent + tool schemas + current step
+func (m *ContextManager) RenderForCerebellum(ctx context.Context, ac *AssembledContext) *CerebellumContext
+
+// RenderForDiencephalon — 间脑中继用
+// 输出: 精简 []Message + provider info (无推理过程)
+func (m *ContextManager) RenderForDiencephalon(ctx context.Context, ac *AssembledContext) *DiencephalonContext
+
+// RenderForCLI — CLI 交互用纯文本
+func (m *ContextManager) RenderForCLI(ctx context.Context, ac *AssembledContext) string
+```
+
+### 7.5 隔离保证
+
+| 保证 | 机制 |
+|------|------|
+| **Cerebellum 看不到推理链** | `RenderForCerebellum` 仅提取 intent + tool schema |
+| **Brainstem 看不到上下文** | Brainstem 不持有 ContextManager 引用 |
+| **跨 Agent 不同步 Pristine** | 每个 Agent 有独立 Pristine Graph + STM |
+| **Bridge 需要显式订阅** | 无隐式广播，Agent 必须 `Subscribe` 才能接收 |
+| **ACL 控制 Channel 访问** | `AddScopeACL` 设置每个 topic 的读写权限 |
 
 ---
 
-## 八、集成到现有 Domour 架构
+## 八、Session 持久化 — SurrealDB（已实现）
 
-### 8.1 组件定位
-
-```
-Existing Domour Components          Context Components
-─────────────────────               ──────────────────
-Diencephalon (感官中继)        ←→    ContextManager (上下文中继)
-Cerebrum (认知推理)           ←→    MemoryManager (记忆存取)
-Cerebellum (战术编排)         ←→    GraphBuilder (图构建)
-Brainstem (运动执行)          ←→    Dapr State Store (持久化)
-Engine (运行时编排)           ←→    ContextManager (初始化 + 注入)
-```
-
-### 8.2 数据流
+### 8.1 三层缓存架构
 
 ```
-                   Dapr State Store
-                   ┌──────────┐
-                   │ context* │ ←── 持久化/加载
-                   │ memory*  │      │
-                   └──────────┘      │
-                                     │
-                   ┌─────────────────┴──────────────────┐
-                   │         ContextManager              │
-                   │  ┌──────────────┬─────────────┐    │
-                   │  │ GraphBuilder │ Orchestrator│    │
-                   │  └──────┬───────┴──────┬──────┘    │
-                   └─────────┼──────────────┼───────────┘
-                             │              │
-              ┌──────────────┼───── Inject ─┼──────────────┐
-              │              │              │              │
-         ┌────┴────┐   ┌────┴────┐   ┌─────┴─────┐  ┌────┴────┐
-         │Global   │   │Local    │   │ Isolated  │  │其他Host │
-         │Context  │   │Context  │   │ Context   │  │(Dapr    │
-         │(只读)   │   │(可写)   │   │(私有)     │  │ Pub/Sub)│
-         └─────────┘   └─────────┘   └───────────┘  └─────────┘
+MemoryContextManager (Tier 1~3)      ← 文件系统 + L1 缓存
+         │
+session.Manager                     ← 会话状态管理
+  ├── L1: 进程内 Otter 缓存 (Instant)
+  ├── L2: SurrealDB 缓存表 (24h TTL)  [可选]
+  └── DB: SurrealDB 会话表 (持久化)    [仅 Core 模式]
 ```
 
-### 8.3 Brain 接口更新
+### 8.2 持久化流程
 
 ```go
-// 扩展已有 Brain 接口
-type Brain interface {
-    Think(ctx context.Context, observation Observation) (Intent, error)
-    Memorize(ctx context.Context, info MemoryPayload) error    // 已定义，待实现
-    Recall(ctx context.Context, query string) ([]MemoryPayload, error) // 已定义，待实现
+// SaveSession
+// 1. Upsert to SurrealDB (with RecordID for hyphens)
+// 2. Update L2 cache
+// 3. Set L1 cache
+// 4. Emit event via EventBus
 
-    // 新增：绑定 ContextManager
-    SetContextManager(m *ContextManager)
-}
+// GetSession
+// 1. Try L1 cache
+// 2. Try L2 cache
+// 3. Query SurrealDB (SELECT * FROM $id  with RecordID param)
+// 4. L2 miss → return fresh empty session (never "not found" error)
 ```
 
-### 8.4 Engine 集成
+### 8.3 关键修复
+
+| 问题 | 修复 | 文件 |
+|------|------|------|
+| SurrealDB 3.x `type::thing` 移除 | 改用 `type::record` (注意：`FROM` 后不能用) | `surreal.go` |
+| 带连字符 ID 被解析为减法 | 必须使用 `models.NewRecordID("table", id)` + `SELECT * FROM $id` | `surreal_store.go` |
+| `Query[any]` 空结果集返回 `[{Session{ID:""}}]` | 在 unmarshal 路径增加 `len(id) > 0` 检查 | `session/manager.go` |
+| 空 ID 被保存到 L2 缓存 | `SaveSession` 入口处增加 `len(session.ID) == 0` 校验 | `session/manager.go` |
+
+### 8.4 模式切换
 
 ```go
-// coreEngine 新增字段
-type coreEngine struct {
-    // ... 现有字段
-    contextManager *ContextManager    // 上下文管理器
-    memoryManager  *MemoryManager     // 记忆管理器
+// Core 模式: 使用 SurrealDB (持久化)
+// Standalone 模式: 使用 MemoryStore (进程内) 或 BadgerStore (磁盘)
+
+switch mode {
+case CoreMode:
+    store = NewSurrealStore(surrealDB)
+case DevMode:
+    store = NewMemoryStore()
+case StandaloneMode:
+    store = NewBadgerStore(path) // 文件级持久化
 }
-
-// Start 时初始化
-func (e *coreEngine) Start(ctx context.Context) error {
-    e.contextManager = NewContextManager(e.daprClient, "contextstore", e.diencephalon)
-    e.memoryManager = NewMemoryManager(e.daprClient, "contextstore", e.contextManager)
-    // ... 启动已有节点
-}
-```
-
----
-
-## 九、API 设计（供 Diencephalon/Reasoner 调用）
-
-```go
-// ---- Context 操作 ----
-
-// 在当前 Session 的 LocalContext 中追加内容
-func AppendToLocalContext(ctx, sessionID string, turn *Turn) error
-
-// 在当前 Agent 的 IsolatedContext 中追加内容
-func AppendToIsolatedContext(ctx, sessionID, agentID string, turn *Turn) error
-
-// 将 LocalContext 同步到 GlobalContext（谨慎使用，需要高权限）
-func PromoteToGlobal(ctx, sessionID string, nodeIDs []string) error
-
-// ---- Memory 操作 ----
-
-// 存入 LTM
-func SaveToMemory(ctx, sessionID string, content string, tags []string) error
-
-// 从 LTM 检索
-func SearchMemory(ctx, query string, limit int) ([]*ContextNode, error)
-
-// ---- 子 Agent 上下文管理 ----
-
-// 创建子 Agent 时注入上下文
-func InjectContextToChild(
-    ctx,
-    parentSessionID string,
-    parentScope ContextScope,
-    childSessionID string,
-    childScope ContextScope,
-    policy ContextPassingPolicy,
-) error
-
-// 子 Agent 完成时同步回父 Agent
-func SyncBackToParent(
-    ctx,
-    childSessionID string,
-    parentSessionID string,
-) error
 ```
 
 ---
 
-## 十、实施路径
+## 九、集成到现有 Domour 架构
 
-| Phase | 内容 | 依赖 |
-|-------|------|------|
-| **P1** | 核心类型定义：ContextNode, ContextGraph, GraphBuilder | 无 |
-| **P2** | ContextManager 基本 CRUD + Dapr State Store 集成 | P1 |
-| **P3** | STM 工作缓冲区 + 环状队列 + 保护策略 | P2 |
-| **P4** | LTM：Memorize/Recall + 摘要策略 | P2 |
-| **P5** | Pipeline 处理器链：Masking → Distillation → Truncation → Snapshot | P3 |
-| **P6** | 子 Agent 上下文注入：InjectContext + ContextPassingPolicy | P4, P5 |
-| **P7** | 跨进程同步：Dapr Pub/Sub 事件广播 | P2 |
-| **P8** | 集成到现有 Diencephalon drive 循环 + Reasoner 状态机 | 全部 |
+### 9.1 组件定位
+
+| Domour 组件 | 上下文组件 | 关系 |
+|-------------|-----------|------|
+| Diencephalon | MemoryContextManager | 读取 Tier 1~3 静态提示词 |
+| Cerebrum (Brain) | ContextManager (完整) | 全量 Pristine + STM + RenderForAPI |
+| Cerebellum | ContextManager (剥离) | RenderForCerebellum → 仅意图+工具 |
+| Brainstem | 无 ContextManager | 仅接收安全拦截指令 |
+| Engine | session.Manager | 初始化和持久化 |
+| Diencephalon 中继 | ContextBridge | Broker 角色连接各 Agent |
+
+### 9.2 数据流
+
+```
+用户输入
+  │
+  ▼
+Diencephalon
+  │  ├── MemoryContextManager.LoadSystemPrompt()  → system message (Tier 1 + 2)
+  │  ├── MemoryContextManager.DiscoverContext()    → JIT context (Tier 3)
+  │  └── ContextBridge.Subscribe()                 → 来自 Cerebrum 的同步
+  │
+  ▼
+Cerebrum (Brain)
+  │  ├── ContextManager.Assemble()    → 组装完整上下文
+  │  ├── ContextManager.RenderForAPI() → → → LLM Provider
+  │  └── ContextBridge.Publish()      → 处理后透传给 Cerebellum
+  │
+  ▼
+Cerebellum
+  │  ├── ContextManager.RenderForCerebellum() → 仅意图+工具 schema
+  │  └── ContextBridge.Publish()       → 执行结果回传
+  │
+  ▼
+Brainstem (Motor)
+     └── 直接执行，不关心上下文
+```
+
+---
+
+## 十、API 设计（已完成的内核 API）
+
+```go
+// ---- MemoryContextManager API ----
+
+// LoadSystemPrompt 加载系统提示词（Tier 1 + Tier 2，纯静态）
+func (m *MemoryContextManager) LoadSystemPrompt(ctx context.Context, sessionID string) string
+
+// DiscoverContext JIT 文件发现（Tier 3）
+func (m *MemoryContextManager) DiscoverContext(ctx context.Context, accessedPath string) ([]byte, error)
+
+// ---- ContextManager API ----
+
+// Assemble 组装一次完整的上下文（Tier 1~3 + STM + 用户输入）
+func (m *ContextManager) Assemble(ctx context.Context, tier1, tier2 string, tier3 []byte, userInput string) (*AssembledContext, error)
+
+// RenderForAPI 渲染为 LLM Provider 可用的消息格式
+func (m *ContextManager) RenderForAPI(ctx context.Context, ac *AssembledContext) ([]Message, ProviderInfo)
+
+// RenderForCerebellum 渲染小脑可读的简化上下文
+func (m *ContextManager) RenderForCerebellum(ctx context.Context, ac *AssembledContext) *CerebellumContext
+
+// RenderForDiencephalon 渲染间脑中继用最小上下文
+func (m *ContextManager) RenderForDiencephalon(ctx context.Context, ac *AssembledContext) *DiencephalonContext
+
+// ---- ContextBridge API ----
+
+// Publish / Subscribe / PublishDirect / AddScopeACL
+
+// ---- session.Manager API ----
+
+// SaveSession / GetSession
+```
+
+---
+
+## 十一、实施路径与完成状态
+
+| Phase | 内容 | 依赖 | 状态 |
+|-------|------|------|------|
+| **P1** | 核心类型：ConcreteNode, ContextGraph, NodeType | 无 | ✅ **已完成** |
+| **P2** | MemoryContextManager Tier 1~3 + L1 缓存 | P1 | ✅ **已完成** |
+| **P3** | ContextManager STM + Pristine + Pipeline | P1 | ✅ **已完成** |
+| **P4** | Pipeline 处理器链 (Masking → Degradation → Distillation → Truncation) | P3 | ✅ **已完成** |
+| **P5** | ContextBridge + RenderFor* (Cerebellum/Diencephalon/Brain) | P3 | ✅ **已完成** |
+| **P6** | Session 持久化 — SurrealDB Core 模式 | P2 | ✅ **已完成** |
+| **P7** | 静态提示词前缀 + KV Cache 优化 | P2 | ✅ **已完成** |
+| **P8** | 模式感知配置 (mode-aware STM config) | P3 | ✅ **已完成** |
+| **P9** | LTM：Memorize/Recall + 向量存储 | P6 | ⏳ **待实现** (stub) |
+| **P10** | 集成到 Diencephalon drive 循环 | 全部 | 🔄 **进行中** |

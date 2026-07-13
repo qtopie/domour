@@ -252,13 +252,13 @@ func TestLocalOrchestrator_ChunkTypeClassification(t *testing.T) {
 
 	for _, ev := range events {
 		switch ev.Type {
-		case 2: // CHUNK_THINKING
+		case 1: // CHUNK_THINKING
 			thinkingChunks++
 			t.Logf("[THINKING] Content: %q", ev.Content)
 			if ev.Thinking == nil {
-				t.Logf("WARNING: type 2 event without Thinking detail")
+				t.Logf("WARNING: type 1 event without Thinking detail")
 			}
-		case 1: // CHUNK_TEXT
+		case 0: // CHUNK_TEXT
 			textChunks++
 			t.Logf("[TEXT] Content: %q", ev.Content)
 		}

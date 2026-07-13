@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/surrealdb/surrealdb.go"
+	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
 
 type Config struct {
@@ -87,6 +88,42 @@ func (s *SurrealDB) Create(ctx context.Context, thing string, data interface{}) 
 // Update updates a record
 func (s *SurrealDB) Update(ctx context.Context, thing string, data interface{}) (interface{}, error) {
 	res, err := surrealdb.Update[any](ctx, s.db, thing, data)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	return *res, nil
+}
+
+// Upsert creates or replaces a record using a RecordID (properly handles hyphens in IDs)
+func (s *SurrealDB) Upsert(ctx context.Context, rid models.RecordID, data interface{}) (interface{}, error) {
+	res, err := surrealdb.Upsert[any](ctx, s.db, rid, data)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	return *res, nil
+}
+
+// SelectWithRecordID selects a single record by RecordID
+func (s *SurrealDB) SelectWithRecordID(ctx context.Context, rid models.RecordID) (interface{}, error) {
+	res, err := surrealdb.Select[any](ctx, s.db, rid)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	return *res, nil
+}
+
+// DeleteWithRecordID deletes a single record by RecordID
+func (s *SurrealDB) DeleteWithRecordID(ctx context.Context, rid models.RecordID) (interface{}, error) {
+	res, err := surrealdb.Delete[any](ctx, s.db, rid)
 	if err != nil {
 		return nil, err
 	}

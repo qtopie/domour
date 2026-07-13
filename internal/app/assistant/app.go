@@ -227,12 +227,19 @@ func InitStore(cfg *config.DomourConfig) session.Store {
 			DaprAddress: cfg.DaprHTTPAddress(),
 		})
 		if err != nil {
-			fmt.Printf("Error: failed to connect to SurrealDB: %v. Falling back to memory store.\n", err)
-			return db.NewMemoryStore()
+			fmt.Printf("Error: failed to connect to SurrealDB: %v. Falling back to BadgerDB.\n", err)
+		} else {
+			return db.NewSurrealStore(surrealDB)
 		}
-		return db.NewSurrealStore(surrealDB)
 	}
-	return db.NewMemoryStore()
+	// Default: BadgerDB — survives restarts.
+	badgerStore, err := db.NewBadgerStore("")
+	if err != nil {
+		fmt.Printf("Error: failed to open BadgerDB store: %v. Falling back to memory store.\n", err)
+		return db.NewMemoryStore()
+	}
+	fmt.Println("[Bootstrap] Initialized BadgerDB Session Store (survives restarts)")
+	return badgerStore
 }
 
 func resolveAddress() string {

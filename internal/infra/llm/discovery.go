@@ -28,8 +28,6 @@ func DiscoverModels(ctx context.Context, cfg *Config) (DiscoveryResult, error) {
 	switch provider {
 	case "llamacpp":
 		return discoverLlamaCppModels(ctx, *cfg)
-	case "ollama":
-		return discoverOllamaModels(ctx, *cfg)
 	case "openai", "deepseek":
 		return discoverOpenAICompatibleModels(ctx, *cfg)
 	case "gemini":
@@ -83,62 +81,6 @@ func discoverLlamaCppModels(ctx context.Context, cfg Config) (DiscoveryResult, e
 		Provider: provider,
 		Models:   models,
 		Source:   endpoint,
-	}, nil
-}
-
-func discoverOllamaModels(ctx context.Context, cfg Config) (DiscoveryResult, error) {
-	rootURL := strings.TrimSpace(cfg.BaseURL)
-	if rootURL == "" {
-		rootURL = "http://127.0.0.1:11434/v1"
-	}
-	rootURL = trimTrailingVersionPath(rootURL)
-	endpoint := strings.TrimRight(rootURL, "/") + "/api/tags"
-
-	httpClient, err := newHTTPClientWithProxy(cfg.ProxyURL)
-	if err != nil {
-		return DiscoveryResult{}, err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return DiscoveryResult{}, fmt.Errorf("build ollama discovery request: %w", err)
-	}
-	response, err := effectiveHTTPClient(httpClient).Do(request)
-	if err == nil && response != nil && response.StatusCode >= 200 && response.StatusCode < 300 {
-		defer response.Body.Close()
-		var payload struct {
-			Models []struct {
-				Name string `json:"name"`
-			} `json:"models"`
-		}
-		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-			return DiscoveryResult{}, fmt.Errorf("decode ollama models: %w", err)
-		}
-		models := make([]string, 0, len(payload.Models))
-		for _, item := range payload.Models {
-			models = append(models, item.Name)
-		}
-		return DiscoveryResult{
-			Provider: "ollama",
-			Models:   normalizeModelList(models),
-			Source:   endpoint,
-		}, nil
-	}
-	if response != nil {
-		response.Body.Close()
-	}
-
-	fallbackEndpoint := ensureModelsEndpoint(strings.TrimRight(rootURL, "/") + "/v1")
-	models, fallbackErr := fetchOpenAIModels(ctx, fallbackEndpoint, cfg)
-	if fallbackErr != nil {
-		if err != nil {
-			return DiscoveryResult{}, fmt.Errorf("discover ollama models: %w; fallback %v", err, fallbackErr)
-		}
-		return DiscoveryResult{}, fallbackErr
-	}
-	return DiscoveryResult{
-		Provider: "ollama",
-		Models:   models,
-		Source:   fallbackEndpoint,
 	}, nil
 }
 

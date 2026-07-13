@@ -17,7 +17,7 @@ import (
 )
 
 type Config struct {
-	Provider string // "openai", "ollama", "llamacpp", "gemini", "qwen", "gemini-cli", "github-copilot-cli", "qodercli"
+	Provider string // "openai", "llamacpp", "gemini", "qwen", "gemini-cli", "github-copilot-cli", "qodercli"
 	APIKey   string
 	BaseURL  string // Optional for providers like OpenAI
 	Model    string // e.g. "gpt-4", "gemini-pro"
@@ -125,15 +125,6 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			llamacppCfg.APIKey = "llamacpp"
 		}
 		return newOpenAICompatibleChatModel(ctx, httpClient, llamacppCfg)
-	case "ollama":
-		ollamaCfg := *cfg
-		if strings.TrimSpace(ollamaCfg.BaseURL) == "" {
-			ollamaCfg.BaseURL = "http://127.0.0.1:11434/v1"
-		}
-		if strings.TrimSpace(ollamaCfg.APIKey) == "" {
-			ollamaCfg.APIKey = "ollama"
-		}
-		return newOpenAICompatibleChatModel(ctx, httpClient, ollamaCfg)
 	case "gemini":
 		client, err := genai.NewClient(ctx, &genai.ClientConfig{
 			APIKey:     cfg.APIKey,

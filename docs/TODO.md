@@ -12,7 +12,7 @@
 - [x] **LLM 驱动接入 (`internal/infra/llm`)**
   - [x] 实现 Gemini API 原生接入 (支持 Function Calling 约束封装)
   - [x] 实现 DeepSeek 原生接入与测试 (OpenAI 兼容模式)
-  - [x] 支持多模型适配器 (Ollama, Qwen, Claude-ready)
+  - [x] 支持多模型适配器 (Llama.cpp, Qwen, Claude-ready)
 - [x] **系统运行模式矩阵 (`internal/engine/state.go`)**
   - [x] 实现 Hibernate, Casual, Balanced, Performance 基础模式
   - [x] 实现 Vigilant, Survival, Deep Think, Stealth, Diagnostic 进阶模式

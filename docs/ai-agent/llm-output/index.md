@@ -58,6 +58,6 @@ For Stdio transport (JSON-RPC 2.0), the server sends one-way progress notificati
 
 Different LLM providers are adapted to ensure uniform stream output format:
 
-* **Ollama**: Captures inline `<think>...</think>` tags using a streaming regex state parser, redirecting those tokens to `CHUNK_THINKING`.
+* **Llama.cpp**: Captures inline `<think>...</think>` tags using a streaming regex state parser, redirecting those tokens to `CHUNK_THINKING`.
 * **DeepSeek API**: Intercepts the raw SSE stream and maps `choices[0].delta.reasoning_content` to `CHUNK_THINKING`.
 * **CLI Providers (agy, copilot, etc.)**: Rewritten to run asynchronously (`cmd.Start()`), piping stdout and parsing logs in real-time to stream thoughts, tool calls, and text without blocking the UI.

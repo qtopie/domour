@@ -295,7 +295,7 @@ func GetModelThresholds(cfg appconfig.DomourConfig, provider, model string) (int
 		strings.Contains(provider, "agy-sdk") || strings.Contains(provider, "agy_sdk") {
 		return 24000, 16000
 	}
-	if strings.Contains(provider, "ollama") || strings.Contains(model, "ollama") {
+	if strings.Contains(provider, "llamacpp") || strings.Contains(provider, "ollama") || strings.Contains(model, "llamacpp") || strings.Contains(model, "ollama") {
 		return 4000, 3000
 	}
 	if strings.Contains(provider, "copilot") || strings.Contains(provider, "qoder") {

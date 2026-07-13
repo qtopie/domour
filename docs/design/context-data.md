@@ -22,24 +22,24 @@ Agent 每轮可以感知到以下 6 类数据，按来源层级划分：
 
 ## 二、数据结构
 
-### 2.1 两层存储架构
+### 2.1 两层存储架构（代码实现）
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ MemoryContextManager（跨所有 Agent 共享）              │
+│ MemoryContextManager（全局共享 — 仅一个实例）          │
 │                                                       │
-│  Tier 1 → System Instruction                          │
-│    ├── globalMemory（~/.domour/*.md）                  │
-│    └── userProjectMemory（.domour/*.md）               │
+│  Tier 1 → System Instruction (纯静态, L1 30min TTL)   │
+│    ├── 全局规则 ~/.domour/*.md (+ Skills 元数据)      │
+│    └── 项目记忆 .domour/*.md                          │
 │                                                       │
-│  Tier 2 → 首条 user message                            │
-│    ├── extensionMemory（IDE/扩展记忆）                  │
-│    └── projectMemory（项目上下文文件）                  │
+│  Tier 2 → 同 Tier 1（与 Tier1 合并到 system message）  │
+│    └── 区别仅在于来源路径不同，渲染时合并              │
 │                                                       │
-│  Tier 3 → JIT 文件发现                                 │
-│    └── discoverContext(accessedPath, trustedRoots)    │
+│  Tier 3 → JIT 文件发现 (L1 5min TTL)                  │
+│    └── discoverContext(ctx, accessedPath)             │
+│    └── 响应式: 用户在 IDE 中跳转/打开文件时触发       │
 └──────────────────────┬──────────────────────────────┘
-                       │
+                       │ 共享 Config + L1 Cache
 ┌──────────────────────▼──────────────────────────────┐
 │ ContextManager（每 Agent 实例独有）                   │
 │                                                       │
@@ -47,51 +47,62 @@ Agent 每轮可以感知到以下 6 类数据，按来源层级划分：
 │  ┌──────────────────────────────────────────────┐    │
 │  │ Nodes: map[string]*ConcreteNode               │    │
 │  │ Edges: map[string][]string                    │    │
-│  │ 用途: 保留原始版本，用于回退与校准               │    │
+│  │ 用途: "真实发生了什么" 的原始记录               │    │
 │  └──────────────────────────────────────────────┘    │
 │                                                       │
-│  Working Buffer（可操作）                              │
+│  STM 环状缓冲区（带保护区）                            │
 │  ┌──────────────────────────────────────────────┐    │
-│  │ STM 环状缓冲区（带保护区）                      │    │
-│  │ ├── 保护区域: 最近 N 轮（不压缩）               │    │
-│  │ ├── 可压缩区域: 更旧轮次（摘要/截断节点）        │    │
-│  │ └── 本轮新增: 用户消息 + 中间状态 + 工具结果    │    │
+│  │ 保护区域: 最近 N 轮（跳过 Pipeline 处理）       │    │
+│  │ 可压缩区域: 更旧轮次（蒸馏/截断/摘要）           │    │
+│  │ 本轮新增: 用户消息 + 工具结果                   │    │
 │  └──────────────────────────────────────────────┘    │
+│                                                       │
+│  Pipeline 处理器链 (mode 感知)                        │
+│  ┌──────────────────────────────────────────────┐    │
+│  │ ToolMasking → BlobDegradation →              │    │
+│  │ NodeDistillation → NodeTruncation            │    │
+│  └──────────────────────────────────────────────┘    │
+│                                                       │
+│  ContextBridge (跨 Agent Channel Pub/Sub)             │
 └─────────────────────────────────────────────────────┘
 ```
 
-### 2.2 核心节点类型
+### 2.2 核心节点类型（代码实现）
 
 ```go
 type NodeType string
 
 const (
-    NodeUserPrompt    NodeType = "user_prompt"     // 用户输入
-    NodeAgentThought  NodeType = "agent_thought"   // LLM 推理输出
-    NodeToolCall      NodeType = "tool_call"       // 工具调用请求
-    NodeToolResult    NodeType = "tool_result"     // 工具执行结果
-    NodeSystemEvent   NodeType = "system_event"    // 系统事件（系统指令、配置变更）
-    NodeIntent        NodeType = "intent"          // 意图识别结果
-    NodeSnapshot      NodeType = "snapshot"        // 摘要合成节点
-    NodeRollingSummary NodeType = "rolling_summary" // 滚动摘要节点
+    NodeUnknown        NodeType = "unknown"
+    NodeInstruction    NodeType = "instruction"     // 系统指令/提示词
+    NodeConversation   NodeType = "conversation"    // 对话轮次
+    NodeObservation    NodeType = "observation"     // 观察/感知输入
+    NodeAction         NodeType = "action"          // 动作/行动
+    NodePlan           NodeType = "plan"            // 规划结果
+    NodeReflection     NodeType = "reflection"      // 反思/自省
+    NodeSummary        NodeType = "summary"         // 摘要
+    NodeSnapshot       NodeType = "snapshot"        // 摘要合成节点
+    NodeToolResult     NodeType = "tool_result"     // 工具执行结果
 )
 ```
 
-### 2.3 节点字段定义
+### 2.3 节点字段定义（代码实现）
 
 ```go
 type ConcreteNode struct {
-    ID           string            // 稳定哈希 ID（基于 Content + Type + TurnID）
-    Type         NodeType          // 节点类型
-    Role         string            // 仅 "user" | "model"（角色，与 LLM API 对齐）
-    TurnID       string            // 所属轮次 ID
-    Timestamp    time.Time         // 创建时间戳
-    Payload      interface{}       // 包装 LLM Provider 原生 Content 对象（双向映射关键）
-    Metadata     map[string]string // 扩展属性：来源、Token 数、安全等级、意图标签等
-    ReplacesID   string            // 1:1 替换链（如 ToolMasking 替换原始工具结果）
-    AbstractsIDs []string          // N:1 摘要链（被哪些节点摘要替代）
-    TokenCount   int               // 预估 Token 数
-    Version      int64             // 乐观锁版本号
+    ID        string            `msgpack:"id"`         // 唯一标识
+    Type      NodeType          `msgpack:"type"`       // 节点类型
+    AgentID   string            `msgpack:"agent_id"`   // 所属 Agent
+    SessionID string            `msgpack:"session_id"` // 所属会话
+    Scope     ContextScope      `msgpack:"scope"`      // 作用域
+    Turn      int               `msgpack:"turn"`       // 所属轮次索引
+    Priority  int               `msgpack:"priority"`   // 优先级 0~100
+    TokenSize int               `msgpack:"token_size"` // 预估 Token 数
+    Content   string            `msgpack:"content"`    // 文本内容
+    Metadata  map[string]string `msgpack:"metadata"`   // 扩展属性
+    Tags      []string          `msgpack:"tags"`       // 标签索引
+    CreatedAt int64             `msgpack:"created_at"` // 创建时间戳 (unix)
+    children  []*ConcreteNode   // Graph 内部子节点（不序列化）
 }
 ```
 
@@ -156,9 +167,8 @@ STM 环状缓冲区维护了一个**带保护区的滑动窗口**：
       ├── ToolMasking: 掩码超长工具输出（>8000 tokens）
       ├── BlobDegradation: 降级大二进制数据
       ├── NodeDistillation: 蒸馏大节点（>15000 tokens）
-      ├── NodeTruncation: 截断节点（>4000 tokens）
-      └── StateSnapshot: 紧急 GC 摘要
-      → Render: 按 turnId 聚合，按 role 交替重建 LLM Content[]
+      └── NodeTruncation: 截断节点（>4000 tokens）
+      → Render: 按 turn 聚合，重建 LLM Content[]
 输出: LLM 可消费的 Content 消息数组
 ```
 
@@ -193,19 +203,22 @@ STM 环状缓冲区维护了一个**带保护区的滑动窗口**：
 - Pristine Graph 始终不可变，用于对比和回退
 - 本轮所有节点关联同一 TurnID
 
-#### ⑤ 持久化阶段（Persist）
+#### ⑤ 持久化阶段（Persist — 仅 Core 模式）
 
 ```
 输入: 更新后的 Working Buffer
 动作: 
-  ├── SaveGraph → Dapr State Store / 本地文件（fallback）
-  ├── EvictToLTM: 压缩可压缩区域中最旧的节点→转入 LTM
+  ├── session.Manager.SaveSession → SurrealDB (Upsert + L1/L2 缓存)
+  │     ├── 三层: L1 (Otter进程内) → L2 (SurrealDB缓存表, 24h TTL) → DB (SurrealDB会话表)
+  │     └── RecordID 处理连字符 (models.NewRecordID)
+  ├── EvictToLTM: 压缩可压缩区域中最旧的节点→转入 LTM（stub）
   └── 更新会话元数据（轮次计数、Token 累计用量）
 输出: 持久化完成
 ```
 
-- 支持断点续传：恢复时从 Pristine + Working 重建上下文
-- 离线环境优先写本地文件，上线后增量同步
+- Core 模式: SurrealDB 持久化，重启恢复
+- Standalone 模式: MemoryStore（进程内）或 BadgerStore（磁盘文件）
+- 所有模式均支持从 L1 → L2 → DB 三级回退恢复
 
 ---
 

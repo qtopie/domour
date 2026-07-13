@@ -52,23 +52,23 @@ func TestProxyForProviderPrefersProviderOverride(t *testing.T) {
 	}
 }
 
-func TestProviderConfigNormalizesOllama(t *testing.T) {
+func TestProviderConfigNormalizesLlamaCpp(t *testing.T) {
 	t.Parallel()
 
 	cfg := DomourConfig{
 		Providers: map[string]ProviderConfig{
-			"ollama": {
-				BaseURL: "http://127.0.0.1:11434/v1",
-				APIKey:  "ollama",
+			"llamacpp": {
+				BaseURL: "http://127.0.0.1:8080/v1",
+				APIKey:  "llamacpp",
 			},
 		},
 	}
 
-	if got := cfg.BaseURLForProvider("ollama"); got != "http://127.0.0.1:11434/v1" {
-		t.Fatalf("BaseURLForProvider(ollama) = %q, want %q", got, "http://127.0.0.1:11434/v1")
+	if got := cfg.BaseURLForProvider("llamacpp"); got != "http://127.0.0.1:8080/v1" {
+		t.Fatalf("BaseURLForProvider(llamacpp) = %q, want %q", got, "http://127.0.0.1:8080/v1")
 	}
-	if got := cfg.APIKeyForProvider("ollama"); got != "ollama" {
-		t.Fatalf("APIKeyForProvider(ollama) = %q, want %q", got, "ollama")
+	if got := cfg.APIKeyForProvider("llamacpp"); got != "llamacpp" {
+		t.Fatalf("APIKeyForProvider(llamacpp) = %q, want %q", got, "llamacpp")
 	}
 }
 
@@ -102,8 +102,8 @@ func TestSetDefaultAndEntrySelection(t *testing.T) {
 
 	cfg := DomourConfig{}
 	cfg.SetDefaultSelection("copilot-cli", "gpt-5")
-	cfg.SetEntrySelection("chat", "ollama", "phi4-mini")
-	cfg.SetProviderDiscoveredModels("ollama", []string{"phi4-mini", "llama3.2", "phi4-mini"})
+	cfg.SetEntrySelection("chat", "llamacpp", "phi4-mini")
+	cfg.SetProviderDiscoveredModels("llamacpp", []string{"phi4-mini", "llama3.2", "phi4-mini"})
 
 	if got := cfg.DefaultProviderName(); got != "github-copilot-cli" {
 		t.Fatalf("DefaultProviderName() = %q, want %q", got, "github-copilot-cli")
@@ -111,15 +111,15 @@ func TestSetDefaultAndEntrySelection(t *testing.T) {
 	if got := cfg.DefaultModelName(); got != "gpt-5" {
 		t.Fatalf("DefaultModelName() = %q, want %q", got, "gpt-5")
 	}
-	if got := cfg.EntryProvider("chat"); got != "ollama" {
-		t.Fatalf("EntryProvider(chat) = %q, want %q", got, "ollama")
+	if got := cfg.EntryProvider("chat"); got != "llamacpp" {
+		t.Fatalf("EntryProvider(chat) = %q, want %q", got, "llamacpp")
 	}
 	if got := cfg.EntryModel("chat"); got != "phi4-mini" {
 		t.Fatalf("EntryModel(chat) = %q, want %q", got, "phi4-mini")
 	}
-	gotModels := cfg.ProviderModels("ollama")
+	gotModels := cfg.ProviderModels("llamacpp")
 	if len(gotModels) != 2 || gotModels[0] != "llama3.2" || gotModels[1] != "phi4-mini" {
-		t.Fatalf("ProviderModels(ollama) = %#v, want sorted unique models", gotModels)
+		t.Fatalf("ProviderModels(llamacpp) = %#v, want sorted unique models", gotModels)
 	}
 }
 

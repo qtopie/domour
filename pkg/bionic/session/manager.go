@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
@@ -13,6 +12,7 @@ import (
 	"github.com/qtopie/domour/pkg/infra/cache/l1"
 	"github.com/qtopie/domour/pkg/infra/eventbus"
 	"github.com/qtopie/domour/pkg/infra/storage"
+	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
 
 type Manager struct {
@@ -84,14 +84,9 @@ func (m *Manager) GetSession(ctx context.Context, id string) (Session, error) {
 		log.Printf("L2 cache error: %v", err)
 	}
 
-	// 3. Check DB
-	dbID := id
-	if !strings.HasPrefix(dbID, "session:") {
-		dbID = "session:" + dbID
-	}
-
-	// SurrealDB query
-	res, err := m.db.Query(ctx, "SELECT * FROM type::thing($id)", map[string]any{"id": dbID})
+	// 3. Check DB — pass RecordID object to handle hyphens and special characters
+	rid := models.NewRecordID("session", id)
+	res, err := m.db.Query(ctx, "SELECT * FROM $id", map[string]any{"id": rid})
 	if err != nil {
 		return Session{}, fmt.Errorf("failed to get from db: %w", err)
 	}
@@ -103,7 +98,7 @@ func (m *Manager) GetSession(ctx context.Context, id string) (Session, error) {
 	var queryResults []struct {
 		Result []Session `json:"result"`
 	}
-	if err := json.Unmarshal(bytes, &queryResults); err == nil && len(queryResults) > 0 && len(queryResults[0].Result) > 0 {
+	if err := json.Unmarshal(bytes, &queryResults); err == nil && len(queryResults) > 0 && len(queryResults[0].Result) > 0 && len(queryResults[0].Result[0].ID) > 0 {
 		s := queryResults[0].Result[0]
 		m.l2.Set(ctx, id, s, 24*time.Hour) // Set default L2 TTL if needed
 		m.l1.Set(id, s)
@@ -111,7 +106,7 @@ func (m *Manager) GetSession(ctx context.Context, id string) (Session, error) {
 	}
 
 	var sessions []Session
-	if err := json.Unmarshal(bytes, &sessions); err == nil && len(sessions) > 0 {
+	if err := json.Unmarshal(bytes, &sessions); err == nil && len(sessions) > 0 && len(sessions[0].ID) > 0 {
 		s := sessions[0]
 		m.l2.Set(ctx, id, s, 24*time.Hour)
 		m.l1.Set(id, s)
@@ -129,14 +124,15 @@ func (m *Manager) GetSession(ctx context.Context, id string) (Session, error) {
 }
 
 func (m *Manager) SaveSession(ctx context.Context, s Session) error {
-	dbID := s.ID
-	if !strings.HasPrefix(dbID, "session:") {
-		dbID = "session:" + dbID
+	if s.ID == "" {
+		return fmt.Errorf("cannot save session with empty ID")
 	}
+
+	dbID := "session:" + s.ID
 
 	// 1. Write to DB (Strong Consistency)
 	if _, err := m.db.Update(ctx, dbID, s); err != nil {
-		// Try Create if update fails (or use Upsert logic if available)
+		// Try Create if update fails
 		if _, err := m.db.Create(ctx, "session", s); err != nil {
 			return fmt.Errorf("failed to save to db: %w", err)
 		}

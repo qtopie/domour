@@ -7,7 +7,14 @@ import (
 	"time"
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
+	"github.com/surrealdb/surrealdb.go"
+	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
+
+// sessionRID creates a models.RecordID for the session table.
+func sessionRID(id string) models.RecordID {
+	return models.NewRecordID("session", id)
+}
 
 type SurrealStore struct {
 	db *SurrealDB
@@ -18,7 +25,7 @@ func NewSurrealStore(db *SurrealDB) *SurrealStore {
 }
 
 func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (shared.Session, error) {
-	res, err := s.db.Select(ctx, "session:"+sessionID)
+	res, err := s.db.SelectWithRecordID(ctx, sessionRID(sessionID))
 	if err != nil {
 		return shared.Session{
 			ID:        sessionID,
@@ -32,16 +39,24 @@ func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (shared
 		return shared.Session{}, err
 	}
 
-	var sessions []shared.Session
-	if err := json.Unmarshal(bytes, &sessions); err == nil && len(sessions) > 0 {
-		return sessions[0], nil
-	}
-
+	// Direct unmarshal as shared.Session (v1.x SDK returns the record directly)
 	var sess shared.Session
 	if err := json.Unmarshal(bytes, &sess); err == nil && sess.ID != "" {
 		return sess, nil
 	}
 
+	// Fallback: unwrap from QueryResult array (legacy v0.x format)
+	var queryResults []surrealdb.QueryResult[any]
+	if err := json.Unmarshal(bytes, &queryResults); err == nil && len(queryResults) > 0 {
+		resultBytes, _ := json.Marshal(queryResults[0].Result)
+		if string(resultBytes) != "null" {
+			if err := json.Unmarshal(resultBytes, &sess); err == nil && sess.ID != "" {
+				return sess, nil
+			}
+		}
+	}
+
+	// Return a fresh session if nothing found
 	return shared.Session{
 		ID:        sessionID,
 		CreatedAt: time.Now(),
@@ -51,9 +66,10 @@ func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (shared
 
 func (s *SurrealStore) SaveSession(ctx context.Context, sess shared.Session) error {
 	sess.UpdatedAt = time.Now()
-	if _, err := s.db.Update(ctx, "session:"+sess.ID, sess); err != nil {
-		if _, err := s.db.Create(ctx, "session", sess); err != nil {
-			return fmt.Errorf("failed to save to SurrealDB: %w", err)
+	_, err := s.db.Upsert(ctx, sessionRID(sess.ID), sess)
+	if err != nil {
+		if _, err2 := s.db.Create(ctx, "session", sess); err2 != nil {
+			return fmt.Errorf("failed to save to SurrealDB: %w", err2)
 		}
 	}
 	return nil

@@ -10,15 +10,15 @@ Model downloading is no longer treated as a simple API call. Instead, it is trea
 
 ## 2. Technical Stack
 - **Backend (Go)**: Constructs an `L2Task` (Explicit Plan) and submits it to the `cosmos-star` gRPC gateway.
-- **Engine 1 (Pulumi)**: Uses the `pulumi-command` provider to execute `ollama pull`. It manages retries and concurrency locks.
-- **Engine 2 (Taskfile)**: Executes dynamic validation scripts (e.g., `ollama list | grep`) to verify success.
+- **Engine 1 (Pulumi)**: Uses the `pulumi-command` provider to execute `llama-cli pull`. It manages retries and concurrency locks.
+- **Engine 2 (Taskfile)**: Executes dynamic validation scripts (e.g., `llama-cli list | grep`) to verify success.
 - **Frontend (React)**: Polls task status and uses regex to parse CLI stdout into structured progress data.
 
 ## 3. Task Workflow (Sequence)
 1.  **UI Trigger**: User clicks "Download" on a model (e.g., `phi4`).
 2.  **Plan Construction**: `models.Service` builds a gRPC `SubmitTaskRequest` with:
-    -   `SubTask 1`: Engine `pulumi`, Method `up`, Script `ollama pull phi4`.
-    -   `SubTask 2`: Engine `taskfile`, DependsOn `SubTask 1`, Script `ollama list | grep phi4`.
+    -   `SubTask 1`: Engine `pulumi`, Method `up`, Script `llama-cli pull phi4`.
+    -   `SubTask 2`: Engine `taskfile`, DependsOn `SubTask 1`, Script `llama-cli list | grep phi4`.
 3.  **Cluster Submission**: Task is sent to the `cosmos-star` node (port 50061).
 4.  **Polling**: Frontend polls `GetInfraTaskStatus`.
 5.  **Progress Extraction**: Frontend parses the incoming `stdout` stream:
@@ -27,7 +27,7 @@ Model downloading is no longer treated as a simple API call. Instead, it is trea
 6.  **Completion**: Once SubTask 2 passes, the model is marked as `Ready` in the UI.
 
 ## 4. Current Implementation Details
-- **Location**: `pkg/models/service.go` (`PullOllamaModel` method).
+- **Location**: `pkg/models/service.go` (`PullOllamaModel` method, which now delegates to Llama.cpp under the hood).
 - **Frontend**: `frontend/src/pages/ModelManager/index.tsx` (Polling & Regex logic).
 - **Validation**: Uses inline Taskfile YAML strings to avoid dependency on local files.
 

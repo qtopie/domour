@@ -273,12 +273,6 @@ func init() {
 		Intelligence: IntelligenceHigh,
 	}, defaultLLMFactory)
 
-	RegisterProvider("ollama", ProviderMetadata{
-		Type:         "api",
-		Trust:        TrustComplete,
-		Intelligence: IntelligenceMedium,
-	}, defaultLLMFactory)
-
 	RegisterProvider("llamacpp", ProviderMetadata{
 		Type:         "api",
 		Trust:        TrustComplete,

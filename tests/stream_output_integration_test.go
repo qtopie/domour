@@ -165,17 +165,17 @@ func TestStreamOutputReActTagAndToolClassification(t *testing.T) {
 
 	for _, ev := range events {
 		switch ev.Type {
-		case 1: // CHUNK_TEXT
+		case 0: // CHUNK_TEXT
 			hasTextChunk = true
 			t.Logf("[Text] Content: %q", ev.Content)
-		case 2: // CHUNK_THINKING
+		case 1: // CHUNK_THINKING
 			hasThinkingChunk = true
 			if ev.Thinking != nil {
 				t.Logf("[Thinking Start] Engine: %s, Stage: %s", ev.Thinking.Engine, ev.Thinking.Stage)
 			} else {
 				t.Logf("[Thinking Content] Content: %q", ev.Content)
 			}
-		case 4: // CHUNK_TOOL_CALL
+		case 2: // CHUNK_TOOL_CALL
 			if ev.ToolCall == nil {
 				t.Errorf("Expected ToolCall detail for CHUNK_TOOL_CALL event")
 			} else {
