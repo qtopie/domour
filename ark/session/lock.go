@@ -3,12 +3,12 @@ package session
 import (
 	"context"
 	"sync"
+
+	"github.com/qtopie/domour/ark/storage"
 )
 
-// Locker provides a lock interface for session-based request serialization.
-type Locker interface {
-	Lock(ctx context.Context, sessionID string) (unlock func(), err error)
-}
+// Locker is an alias to storage.SessionLocker to keep internal usages clean.
+type Locker = storage.SessionLocker
 
 // LocalLocker is an in-memory, thread-safe session locker that serializes requests
 // based on SessionID. It cleans up unused resources dynamically.

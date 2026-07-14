@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/qtopie/domour/internal/app/assistant/shared"
+	"github.com/qtopie/domour/ark/storage"
 	"github.com/surrealdb/surrealdb.go"
 	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
@@ -24,10 +24,10 @@ func NewSurrealStore(db *SurrealDB) *SurrealStore {
 	return &SurrealStore{db: db}
 }
 
-func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (shared.Session, error) {
+func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (storage.Session, error) {
 	res, err := s.db.SelectWithRecordID(ctx, sessionRID(sessionID))
 	if err != nil {
-		return shared.Session{
+		return storage.Session{
 			ID:        sessionID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -36,11 +36,11 @@ func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (shared
 
 	bytes, err := json.Marshal(res)
 	if err != nil {
-		return shared.Session{}, err
+		return storage.Session{}, err
 	}
 
-	// Direct unmarshal as shared.Session (v1.x SDK returns the record directly)
-	var sess shared.Session
+	// Direct unmarshal as storage.Session (v1.x SDK returns the record directly)
+	var sess storage.Session
 	if err := json.Unmarshal(bytes, &sess); err == nil && sess.ID != "" {
 		return sess, nil
 	}
@@ -57,14 +57,14 @@ func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (shared
 	}
 
 	// Return a fresh session if nothing found
-	return shared.Session{
+	return storage.Session{
 		ID:        sessionID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}, nil
 }
 
-func (s *SurrealStore) SaveSession(ctx context.Context, sess shared.Session) error {
+func (s *SurrealStore) SaveSession(ctx context.Context, sess storage.Session) error {
 	sess.UpdatedAt = time.Now()
 	_, err := s.db.Upsert(ctx, sessionRID(sess.ID), sess)
 	if err != nil {
@@ -75,7 +75,7 @@ func (s *SurrealStore) SaveSession(ctx context.Context, sess shared.Session) err
 	return nil
 }
 
-func (s *SurrealStore) AppendHistory(ctx context.Context, sessionID string, msg shared.Message) error {
+func (s *SurrealStore) AppendHistory(ctx context.Context, sessionID string, msg storage.Message) error {
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func (s *SurrealStore) AppendHistory(ctx context.Context, sessionID string, msg 
 	return s.SaveSession(ctx, sess)
 }
 
-func (s *SurrealStore) GetHistory(ctx context.Context, sessionID string) ([]shared.Message, error) {
+func (s *SurrealStore) GetHistory(ctx context.Context, sessionID string) ([]storage.Message, error) {
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (s *SurrealStore) GetHistory(ctx context.Context, sessionID string) ([]shar
 	return sess.History, nil
 }
 
-func (s *SurrealStore) ListSessions(ctx context.Context) ([]shared.Session, error) {
+func (s *SurrealStore) ListSessions(ctx context.Context) ([]storage.Session, error) {
 	res, err := s.db.Select(ctx, "session")
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func (s *SurrealStore) ListSessions(ctx context.Context) ([]shared.Session, erro
 		return nil, err
 	}
 
-	var sessions []shared.Session
+	var sessions []storage.Session
 	if err := json.Unmarshal(bytes, &sessions); err != nil {
 		return nil, err
 	}

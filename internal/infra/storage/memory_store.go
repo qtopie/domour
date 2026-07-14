@@ -5,28 +5,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qtopie/domour/internal/app/assistant/shared"
+	"github.com/qtopie/domour/ark/storage"
 )
 
 // MemoryStore is an in-memory session store.
 type MemoryStore struct {
 	mu       sync.RWMutex
-	sessions map[string]shared.Session
+	sessions map[string]storage.Session
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		sessions: make(map[string]shared.Session),
+		sessions: make(map[string]storage.Session),
 	}
 }
 
-func (s *MemoryStore) AppendHistory(_ context.Context, sessionID string, msg shared.Message) error {
+func (s *MemoryStore) AppendHistory(_ context.Context, sessionID string, msg storage.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	sess, ok := s.sessions[sessionID]
 	if !ok {
-		sess = shared.Session{
+		sess = storage.Session{
 			ID:        sessionID,
 			CreatedAt: time.Now(),
 		}
@@ -52,26 +52,26 @@ func (s *MemoryStore) AppendHistory(_ context.Context, sessionID string, msg sha
 	return nil
 }
 
-func (s *MemoryStore) GetHistory(_ context.Context, sessionID string) ([]shared.Message, error) {
+func (s *MemoryStore) GetHistory(_ context.Context, sessionID string) ([]storage.Message, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	sess, ok := s.sessions[sessionID]
 	if !ok {
-		return []shared.Message{}, nil
+		return []storage.Message{}, nil
 	}
-	result := make([]shared.Message, len(sess.History))
+	result := make([]storage.Message, len(sess.History))
 	copy(result, sess.History)
 	return result, nil
 }
 
-func (s *MemoryStore) GetSession(_ context.Context, sessionID string) (shared.Session, error) {
+func (s *MemoryStore) GetSession(_ context.Context, sessionID string) (storage.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	sess, ok := s.sessions[sessionID]
 	if !ok {
-		return shared.Session{
+		return storage.Session{
 			ID:        sessionID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -80,7 +80,7 @@ func (s *MemoryStore) GetSession(_ context.Context, sessionID string) (shared.Se
 	return sess, nil
 }
 
-func (s *MemoryStore) SaveSession(_ context.Context, sess shared.Session) error {
+func (s *MemoryStore) SaveSession(_ context.Context, sess storage.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -89,11 +89,11 @@ func (s *MemoryStore) SaveSession(_ context.Context, sess shared.Session) error 
 	return nil
 }
 
-func (s *MemoryStore) ListSessions(_ context.Context) ([]shared.Session, error) {
+func (s *MemoryStore) ListSessions(_ context.Context) ([]storage.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	list := make([]shared.Session, 0, len(s.sessions))
+	list := make([]storage.Session, 0, len(s.sessions))
 	for _, sess := range s.sessions {
 		list = append(list, sess)
 	}
@@ -104,6 +104,6 @@ func (s *MemoryStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.sessions = make(map[string]shared.Session)
+	s.sessions = make(map[string]storage.Session)
 	return nil
 }

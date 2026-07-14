@@ -13,7 +13,7 @@ import (
 	copilotpb "github.com/qtopie/domour/gen/assistant/copilot"
 	internalgrpc "github.com/qtopie/domour/internal/app/api/grpc"
 	internalhttp "github.com/qtopie/domour/internal/app/api/http"
-	"github.com/qtopie/domour/pkg/bionic/session"
+	"github.com/qtopie/domour/ark/storage"
 	"github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
@@ -25,7 +25,7 @@ import (
 
 type App struct {
 	cfg   config.DomourConfig
-	store session.Store
+	store storage.SessionStore
 
 	grpcAddr string
 	httpAddr string
@@ -33,7 +33,7 @@ type App struct {
 
 type AppOption func(*App)
 
-func WithStore(store session.Store) AppOption {
+func WithStore(store storage.SessionStore) AppOption {
 	return func(a *App) {
 		a.store = store
 	}
@@ -211,7 +211,7 @@ func (a *App) RunWithNotify(ctx context.Context, ready chan<- struct{}) error {
 	return nil
 }
 
-func InitStore(cfg *config.DomourConfig) session.Store {
+func InitStore(cfg *config.DomourConfig) storage.SessionStore {
 	if cfg == nil {
 		loaded, _ := config.LoadDomourConfig()
 		cfg = &loaded

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/qtopie/domour/ark/storage"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/pkg/bionic/session"
 )
 
 func TestMemoryStore_FullSession(t *testing.T) {
@@ -45,7 +45,7 @@ func TestMemoryStore_FullSession(t *testing.T) {
 	sess.MemorySummary = "Summarized context"
 	sess.ActiveProvider = "openai"
 	sess.ActiveModel = "gpt-4o"
-	sess.ProviderStats = map[string]*session.ProviderStat{
+	sess.ProviderStats = map[string]*storage.ProviderStat{
 		"openai": {
 			TokenUsed: 1500,
 			CallCount: 2,

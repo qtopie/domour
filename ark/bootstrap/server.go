@@ -9,12 +9,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/qtopie/domour/ark/storage"
 	"github.com/qtopie/domour/ark/telemetry"
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/config"
-	domourskill "github.com/qtopie/domour/pkg/bionic/skill"
-	domourtool "github.com/qtopie/domour/pkg/bionic/tool"
-	"github.com/qtopie/domour/pkg/bionic/session"
+	domourskill "github.com/qtopie/domour/ark/skill"
+	domourtool "github.com/qtopie/domour/ark/tool"
 	"google.golang.org/grpc"
 )
 
@@ -105,7 +105,7 @@ type Option func(*options)
 
 type options struct {
 	grpcServer *grpc.Server
-	store      session.Store
+	store      storage.SessionStore
 }
 
 // WithGRPCServer allows passing an existing gRPC server to reuse.
@@ -116,7 +116,7 @@ func WithGRPCServer(s *grpc.Server) Option {
 }
 
 // WithStore allows passing a custom session store/manager.
-func WithStore(store session.Store) Option {
+func WithStore(store storage.SessionStore) Option {
 	return func(o *options) {
 		o.store = store
 	}

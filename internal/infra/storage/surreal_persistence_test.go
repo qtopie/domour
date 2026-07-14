@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/pkg/bionic/session"
+	"github.com/qtopie/domour/ark/session"
 	"github.com/qtopie/domour/pkg/infra/cache"
 	"github.com/qtopie/domour/pkg/infra/cache/l1"
 	"github.com/qtopie/domour/pkg/infra/eventbus"

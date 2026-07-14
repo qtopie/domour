@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
-	publictool "github.com/qtopie/domour/pkg/bionic/tool"
+	publictool "github.com/qtopie/domour/ark/tool"
 )
 
 type ToolKind string

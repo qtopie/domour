@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/qtopie/domour/ark/storage"
 )
 
 type UserRequest struct {
@@ -20,14 +22,8 @@ type ChunkData struct {
 	IsLast  bool
 }
 
-type Message struct {
-	Role     string `json:"role"` // "user" or "assistant"
-	Content  string `json:"content"`
-	Time     int64  `json:"time"`
-	Seq      int32  `json:"seq,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
-}
+// Message is an alias to storage.Message to keep internal usages clean.
+type Message = storage.Message
 
 type BrainChatRequest struct {
 	SessionID     string

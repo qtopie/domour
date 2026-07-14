@@ -15,7 +15,7 @@ import (
 
 	skillpkg "github.com/qtopie/domour/internal/bionic/skill"
 	"github.com/qtopie/domour/internal/config"
-	publicskill "github.com/qtopie/domour/pkg/bionic/skill"
+	publicskill "github.com/qtopie/domour/ark/skill"
 )
 
 type SkillInfo struct {

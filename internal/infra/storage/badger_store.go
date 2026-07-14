@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/pkg/bionic/session"
+	"github.com/qtopie/domour/ark/storage"
 )
 
 // BadgerStore persists session data in BadgerDB, surviving restarts.
@@ -137,7 +136,7 @@ func sessionKey(sessionID string) []byte {
 	return append([]byte("sess:"), []byte(sessionID)...)
 }
 
-func (s *BadgerStore) GetSession(_ context.Context, sessionID string) (sess session.Session, err error) {
+func (s *BadgerStore) GetSession(_ context.Context, sessionID string) (sess storage.Session, err error) {
 	if s == nil || s.db == nil {
 		return emptySession(sessionID), nil
 	}
@@ -161,16 +160,16 @@ func (s *BadgerStore) GetSession(_ context.Context, sessionID string) (sess sess
 		return emptySession(sessionID), nil
 	}
 	if err != nil {
-		return session.Session{}, fmt.Errorf("read session %s: %w", sessionID, err)
+		return storage.Session{}, fmt.Errorf("read session %s: %w", sessionID, err)
 	}
 
 	if err := json.Unmarshal(raw, &sess); err != nil {
-		return session.Session{}, fmt.Errorf("decode session %s: %w", sessionID, err)
+		return storage.Session{}, fmt.Errorf("decode session %s: %w", sessionID, err)
 	}
 	return sess, nil
 }
 
-func (s *BadgerStore) SaveSession(_ context.Context, sess session.Session) (err error) {
+func (s *BadgerStore) SaveSession(_ context.Context, sess storage.Session) (err error) {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("badger store not initialized")
 	}
@@ -196,7 +195,7 @@ func (s *BadgerStore) SaveSession(_ context.Context, sess session.Session) (err 
 	})
 }
 
-func (s *BadgerStore) AppendHistory(ctx context.Context, sessionID string, msg shared.Message) error {
+func (s *BadgerStore) AppendHistory(ctx context.Context, sessionID string, msg storage.Message) error {
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -219,17 +218,17 @@ func (s *BadgerStore) AppendHistory(ctx context.Context, sessionID string, msg s
 	return s.SaveSession(ctx, sess)
 }
 
-func (s *BadgerStore) GetHistory(ctx context.Context, sessionID string) ([]shared.Message, error) {
+func (s *BadgerStore) GetHistory(ctx context.Context, sessionID string) ([]storage.Message, error) {
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]shared.Message, len(sess.History))
+	result := make([]storage.Message, len(sess.History))
 	copy(result, sess.History)
 	return result, nil
 }
 
-func (s *BadgerStore) ListSessions(_ context.Context) (list []session.Session, err error) {
+func (s *BadgerStore) ListSessions(_ context.Context) (list []storage.Session, err error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
@@ -251,7 +250,7 @@ func (s *BadgerStore) ListSessions(_ context.Context) (list []session.Session, e
 			if err != nil {
 				continue
 			}
-			var sess session.Session
+			var sess storage.Session
 			if err := json.Unmarshal(val, &sess); err != nil {
 				continue
 			}
@@ -311,8 +310,8 @@ func (s *BadgerStore) Recover(path string) error {
 	return nil
 }
 
-func emptySession(sessionID string) session.Session {
-	return session.Session{
+func emptySession(sessionID string) storage.Session {
+	return storage.Session{
 		ID:        sessionID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),

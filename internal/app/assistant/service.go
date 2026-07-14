@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
-	"github.com/qtopie/domour/pkg/bionic/session"
+	"github.com/qtopie/domour/ark/session"
 	appconfig "github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/dapr"

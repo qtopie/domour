@@ -11,18 +11,25 @@ import (
 	"github.com/qtopie/domour/pkg/infra/cache"
 	"github.com/qtopie/domour/pkg/infra/cache/l1"
 	"github.com/qtopie/domour/pkg/infra/eventbus"
-	"github.com/qtopie/domour/pkg/infra/storage"
 	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
+
+// DB defines the database interface needed by the session manager.
+type DB interface {
+	Query(ctx context.Context, query string, vars map[string]any) (any, error)
+	Create(ctx context.Context, table string, data any) (any, error)
+	Update(ctx context.Context, id string, data any) (any, error)
+	Close() error
+}
 
 type Manager struct {
 	l1       *l1.Cache[string, Session]
 	l2       cache.Cache[Session]
-	db       storage.DB
+	db       DB
 	eventBus eventbus.EventBus
 }
 
-func NewManager(l1Cache *l1.Cache[string, Session], l2Cache cache.Cache[Session], database storage.DB, eb eventbus.EventBus) *Manager {
+func NewManager(l1Cache *l1.Cache[string, Session], l2Cache cache.Cache[Session], database DB, eb eventbus.EventBus) *Manager {
 	return &Manager{
 		l1:       l1Cache,
 		l2:       l2Cache,

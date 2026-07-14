@@ -8,7 +8,7 @@ import (
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/storage"
-	"github.com/qtopie/domour/pkg/bionic/session"
+	"github.com/qtopie/domour/ark/session"
 )
 
 func TestQuerySessions_MemoryAndFilter(t *testing.T) {
