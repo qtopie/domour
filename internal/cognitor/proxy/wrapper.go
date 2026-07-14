@@ -279,6 +279,12 @@ func init() {
 		Intelligence: IntelligenceMedium,
 	}, defaultLLMFactory)
 
+	RegisterProvider("dapr-actor", ProviderMetadata{
+		Type:         "api",
+		Trust:        TrustComplete,
+		Intelligence: IntelligenceMedium,
+	}, defaultLLMFactory)
+
 	// Pre-register built-in CLI providers
 	RegisterProvider("claude", ProviderMetadata{
 		Type:         "cli",

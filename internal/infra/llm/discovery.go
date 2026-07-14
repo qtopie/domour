@@ -32,7 +32,7 @@ func DiscoverModels(ctx context.Context, cfg *Config) (DiscoveryResult, error) {
 		return discoverOpenAICompatibleModels(ctx, *cfg)
 	case "gemini":
 		return discoverGeminiModels(ctx, *cfg)
-	case "github-copilot-cli", "qodercli", "agy-cli", "agy-sdk":
+	case "github-copilot-cli", "qodercli", "agy-cli", "agy-sdk", "dapractor", "dapr-actor", "actor":
 		return DiscoveryResult{Provider: provider}, ErrModelDiscoveryUnsupported
 	default:
 		return DiscoveryResult{Provider: provider}, fmt.Errorf("unsupported provider: %s", cfg.Provider)

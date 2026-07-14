@@ -147,6 +147,8 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 			c.HTTPClient = httpClient
 		}
 		return qwen.NewChatModel(ctx, c)
+	case "dapractor", "dapr-actor", "actor":
+		return newDaprActorChatModel(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
 	}

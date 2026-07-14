@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
@@ -51,6 +52,16 @@ func (a *CopilotAgent) Delegate(ctx context.Context, task DelegateTask) (Delegat
 		WorkDir:        task.WorkDir,
 		HookServerAddr: a.hookServer.Addr(),
 		VetoLevel:      a.veto.Level,
+	}
+
+	// Pass through COPILOT_PROVIDER_* and COPILOT_MODEL env vars from parent
+	// process so gh copilot can route through a custom API (e.g. DeepSeek).
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "COPILOT_PROVIDER_") ||
+			strings.HasPrefix(e, "COPILOT_MODEL") ||
+			strings.HasPrefix(e, "COPILOT_OFFLINE") {
+			cfg.ExtraEnv = append(cfg.ExtraEnv, e)
+		}
 	}
 
 	// Apply meta overrides
