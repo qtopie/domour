@@ -34,6 +34,11 @@ message ChatRequest {
   string provider = 6;
   string model = 7;
   EditorContext editor_context = 8;
+  // system_prompt_override replaces the default system prompt entirely when set.
+  // The caller (e.g. cosmos-star / cosmos-assistant) can inject channel-specific
+  // instructions (multimedia formatting, etc.) without relying on gRPC metadata
+  // headers, which have ASCII-only constraints.
+  string system_prompt_override = 9;
 }
 
 message EditorContext {

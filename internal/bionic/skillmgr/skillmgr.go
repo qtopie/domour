@@ -1,4 +1,4 @@
-package tool
+package skillmgr
 
 import (
 	"context"
@@ -18,6 +18,12 @@ import (
 	publicskill "github.com/qtopie/domour/ark/skill"
 )
 
+const (
+	defaultIdleTTL       = 5 * time.Minute
+	defaultCleanupPeriod = 30 * time.Second
+)
+
+// SkillInfo is a summary representation of a registered skill.
 type SkillInfo struct {
 	Name        string                    `json:"name"`
 	Description string                    `json:"description,omitempty"`
@@ -28,6 +34,7 @@ type SkillInfo struct {
 	Tools       []skillpkg.ToolDefinition `json:"tools,omitempty"`
 }
 
+// SkillSnapshot is the resolved representation of a skill with its loaded instructions and tools.
 type SkillSnapshot struct {
 	Name         string                    `json:"name"`
 	Description  string                    `json:"description,omitempty"`
@@ -38,8 +45,10 @@ type SkillSnapshot struct {
 	Tools        []skillpkg.ToolDefinition `json:"tools,omitempty"`
 }
 
+// SkillLoader loads a skill on demand.
 type SkillLoader func(ctx context.Context) (*skillpkg.Skill, error)
 
+// SkillSpec describes how to register and load a skill.
 type SkillSpec struct {
 	Name        string
 	Description string
@@ -58,7 +67,24 @@ type skillState struct {
 	cond     *sync.Cond
 }
 
-func (m *Manager) RegisterSkill(spec SkillSpec) error {
+// SkillManager manages skill lifecycle: registration, loading, resolution, and cleanup.
+type SkillManager struct {
+	mu                   sync.Mutex
+	skills               map[string]*skillState
+	activeSkillPrompt    string
+	activeSkillPromptSet chan struct{}
+}
+
+// NewSkillManager creates a new SkillManager.
+func NewSkillManager() *SkillManager {
+	return &SkillManager{
+		skills:               make(map[string]*skillState),
+		activeSkillPromptSet: make(chan struct{}),
+	}
+}
+
+// RegisterSkill registers a skill spec for lazy loading.
+func (m *SkillManager) RegisterSkill(spec SkillSpec) error {
 	if err := validateSkillSpec(spec); err != nil {
 		return err
 	}
@@ -75,67 +101,143 @@ func (m *Manager) RegisterSkill(spec SkillSpec) error {
 	return nil
 }
 
-func (m *Manager) LoadDefaultSkillSources() error {
-	if err := m.loadDefaultSources(); err != nil {
-		return err
+// ListSkills returns a sorted list of all registered skills.
+func (m *SkillManager) ListSkills() []SkillInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	skills := make([]SkillInfo, 0, len(m.skills))
+	for _, state := range m.skills {
+		info := SkillInfo{
+			Name:        state.spec.Name,
+			Description: state.spec.Description,
+			SourcePath:  state.spec.SourcePath,
+			Provider:    state.spec.Provider,
+			Format:      state.spec.Format,
+			Loaded:      state.loaded != nil,
+		}
+		if state.loaded != nil {
+			info.Tools = cloneToolDefinitions(state.loaded.Tools)
+		}
+		skills = append(skills, info)
 	}
-	return m.loadConfiguredDir()
+
+	sort.Slice(skills, func(i, j int) bool {
+		return skills[i].Name < skills[j].Name
+	})
+
+	return skills
 }
 
-// loadDefaultSources loads provider-specific skill files and registered public skills.
-// This is the first phase of skill loading, shared by initial load and reload.
-func (m *Manager) loadDefaultSources() error {
-	for _, source := range discoverDefaultSkillSources() {
-		if err := m.RegisterSkill(source); err != nil && !strings.Contains(err.Error(), "already registered") {
-			return err
+// ResolveSkill loads (or returns cached) a skill by name.
+func (m *SkillManager) ResolveSkill(ctx context.Context, name string) (SkillSnapshot, error) {
+	m.mu.Lock()
+	state, ok := m.skills[strings.TrimSpace(name)]
+	if !ok {
+		m.mu.Unlock()
+		return SkillSnapshot{}, fmt.Errorf("skill %q is not registered", name)
+	}
+	for state.loading {
+		state.cond.Wait()
+	}
+	if state.loaded == nil {
+		load := state.spec.Load
+		state.loading = true
+		m.mu.Unlock()
+		loaded, err := load(ctx)
+		m.mu.Lock()
+		state.loading = false
+		state.cond.Broadcast()
+		if err != nil {
+			m.mu.Unlock()
+			return SkillSnapshot{}, err
 		}
+		state.loaded = loaded
 	}
 
-	// Load registered public skills
-	for _, s := range publicskill.List() {
-		spec := SkillSpec{
-			Name:        s.Name,
-			Description: s.Description,
-			Provider:    "internal",
-			Format:      "skill-struct",
-			Load: func(ctx context.Context) (*skillpkg.Skill, error) {
-				return &skillpkg.Skill{
-					ID:           s.Name,
-					Name:         s.Name,
-					Description:  s.Description,
-					Instructions: s.Instructions,
-					IntentTags:   s.IntentTags,
-				}, nil
-			},
-		}
-		if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
-			return err
-		}
+	state.lastUsed = time.Now()
+	loaded := state.loaded
+	snapshot := SkillSnapshot{
+		Name:         firstNonEmpty(strings.TrimSpace(loaded.Name), state.spec.Name),
+		Description:  firstNonEmpty(strings.TrimSpace(loaded.Description), state.spec.Description),
+		Instructions: strings.TrimSpace(loaded.Instructions),
+		SourcePath:   state.spec.SourcePath,
+		Provider:     state.spec.Provider,
+		Format:       state.spec.Format,
+		Tools:        cloneToolDefinitions(loaded.Tools),
 	}
-	return nil
+	m.mu.Unlock()
+	return snapshot, nil
 }
 
-// loadConfiguredDir loads skills from the configured SkillsDir.
-// This is the second phase of skill loading, shared by initial load and reload.
-func (m *Manager) loadConfiguredDir() error {
-	cfg, err := config.LoadDomourConfig()
+// BuildSkillInstruction returns a formatted instruction string for a skill.
+func (m *SkillManager) BuildSkillInstruction(ctx context.Context, name string) (string, error) {
+	snapshot, err := m.ResolveSkill(ctx, name)
 	if err != nil {
-		return nil
+		return "", err
 	}
-	skillsDir := strings.TrimSpace(cfg.SkillsDir)
-	if skillsDir != "" {
-		if err := m.LoadSkillsFromDir(skillsDir); err != nil {
-			slog.Warn("Failed to load skills from configured directory", "dir", skillsDir, "error", err)
+
+	var builder strings.Builder
+	builder.WriteString("Skill: ")
+	builder.WriteString(snapshot.Name)
+	if snapshot.Description != "" {
+		builder.WriteString("\nDescription: ")
+		builder.WriteString(snapshot.Description)
+	}
+	if snapshot.Instructions != "" {
+		builder.WriteString("\nInstructions:\n")
+		builder.WriteString(snapshot.Instructions)
+	}
+	if len(snapshot.Tools) > 0 {
+		builder.WriteString("\nAllowed tools:\n")
+		for _, tool := range snapshot.Tools {
+			builder.WriteString("- ")
+			builder.WriteString(tool.Name)
+			if tool.Description != "" {
+				builder.WriteString(": ")
+				builder.WriteString(tool.Description)
+			}
+			builder.WriteString("\n")
 		}
 	}
+	return strings.TrimSpace(builder.String()), nil
+}
+
+// UnloadSkill clears the cached loaded state for a skill.
+func (m *SkillManager) UnloadSkill(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.skills[strings.TrimSpace(name)]
+	if !ok {
+		return fmt.Errorf("skill %q is not registered", name)
+	}
+	state.loaded = nil
+	state.lastUsed = time.Time{}
 	return nil
+}
+
+// UnloadIdleSkills evicts loaded skills that have exceeded their idle TTL.
+func (m *SkillManager) UnloadIdleSkills() {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, state := range m.skills {
+		if state.loaded == nil {
+			continue
+		}
+		if now.Sub(state.lastUsed) < state.spec.IdleTTL {
+			continue
+		}
+		state.loaded = nil
+		state.lastUsed = time.Time{}
+	}
 }
 
 // ReloadSkills clears all registered skills and reloads them from all sources.
-// This is called by the /skills reload command or automatically after a skill install.
-func (m *Manager) ReloadSkills() error {
+func (m *SkillManager) ReloadSkills() error {
 	m.mu.Lock()
-	// Clear the skills map entirely before reloading
 	m.skills = make(map[string]*skillState)
 	m.mu.Unlock()
 
@@ -145,7 +247,8 @@ func (m *Manager) ReloadSkills() error {
 	return m.loadConfiguredDir()
 }
 
-func (m *Manager) LoadSkillsFromDir(dir string) error {
+// LoadSkillsFromDir walks a directory and registers all skill files.
+func (m *SkillManager) LoadSkillsFromDir(dir string) error {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return nil
@@ -194,168 +297,202 @@ func (m *Manager) LoadSkillsFromDir(dir string) error {
 	return err
 }
 
-func (m *Manager) ListSkills() []SkillInfo {
+// LoadDefaultSkillSources loads provider-specific skill files and registered public skills.
+func (m *SkillManager) LoadDefaultSkillSources() error {
+	if err := m.loadDefaultSources(); err != nil {
+		return err
+	}
+	return m.loadConfiguredDir()
+}
+
+// loadDefaultSources loads provider-specific skill files and registered public skills.
+func (m *SkillManager) loadDefaultSources() error {
+	for _, source := range discoverDefaultSkillSources() {
+		if err := m.RegisterSkill(source); err != nil && !strings.Contains(err.Error(), "already registered") {
+			return err
+		}
+	}
+
+	// Load registered public skills
+	for _, s := range publicskill.List() {
+		spec := SkillSpec{
+			Name:        s.Name,
+			Description: s.Description,
+			Provider:    "internal",
+			Format:      "skill-struct",
+			Load: func(ctx context.Context) (*skillpkg.Skill, error) {
+				return &skillpkg.Skill{
+					ID:           s.Name,
+					Name:         s.Name,
+					Description:  s.Description,
+					Instructions: s.Instructions,
+					IntentTags:   s.IntentTags,
+				}, nil
+			},
+		}
+		if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
+			return err
+		}
+	}
+	return nil
+}
+
+// loadConfiguredDir loads skills from the configured SkillsDir.
+func (m *SkillManager) loadConfiguredDir() error {
+	cfg, err := config.LoadDomourConfig()
+	if err != nil {
+		return nil
+	}
+	skillsDir := strings.TrimSpace(cfg.SkillsDir)
+	if skillsDir != "" {
+		if err := m.LoadSkillsFromDir(skillsDir); err != nil {
+			slog.Warn("Failed to load skills from configured directory", "dir", skillsDir, "error", err)
+		}
+	}
+	return nil
+}
+
+// SetActiveSkillPrompt stores the active skill instructions.
+func (m *SkillManager) SetActiveSkillPrompt(prompt string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	skills := make([]SkillInfo, 0, len(m.skills))
-	for _, state := range m.skills {
-		info := SkillInfo{
-			Name:        state.spec.Name,
-			Description: state.spec.Description,
-			SourcePath:  state.spec.SourcePath,
-			Provider:    state.spec.Provider,
-			Format:      state.spec.Format,
-			Loaded:      state.loaded != nil,
-		}
-		if state.loaded != nil {
-			info.Tools = cloneToolDefinitions(state.loaded.Tools)
-		}
-		skills = append(skills, info)
+	m.activeSkillPrompt = prompt
+	select {
+	case <-m.activeSkillPromptSet:
+	default:
+		close(m.activeSkillPromptSet)
 	}
-
-	sort.Slice(skills, func(i, j int) bool {
-		return skills[i].Name < skills[j].Name
-	})
-
-	return skills
 }
 
-func (m *Manager) ResolveSkill(ctx context.Context, name string) (SkillSnapshot, error) {
+// ActiveSkillPrompt returns the currently active skill instructions, or empty string.
+func (m *SkillManager) ActiveSkillPrompt() string {
 	m.mu.Lock()
-	state, ok := m.skills[strings.TrimSpace(name)]
-	if !ok {
-		m.mu.Unlock()
-		return SkillSnapshot{}, fmt.Errorf("skill %q is not registered", name)
-	}
-	for state.loading {
-		state.cond.Wait()
-	}
-	if state.loaded == nil {
-		load := state.spec.Load
-		state.loading = true
-		m.mu.Unlock()
-		loaded, err := load(ctx)
-		m.mu.Lock()
-		state.loading = false
-		state.cond.Broadcast()
-		if err != nil {
-			m.mu.Unlock()
-			return SkillSnapshot{}, err
-		}
-		state.loaded = loaded
-	}
-
-	state.lastUsed = time.Now()
-	loaded := state.loaded
-	snapshot := SkillSnapshot{
-		Name:         firstNonEmpty(strings.TrimSpace(loaded.Name), state.spec.Name),
-		Description:  firstNonEmpty(strings.TrimSpace(loaded.Description), state.spec.Description),
-		Instructions: strings.TrimSpace(loaded.Instructions),
-		SourcePath:   state.spec.SourcePath,
-		Provider:     state.spec.Provider,
-		Format:       state.spec.Format,
-		Tools:        cloneToolDefinitions(loaded.Tools),
-	}
-	m.mu.Unlock()
-	return snapshot, nil
+	defer m.mu.Unlock()
+	return m.activeSkillPrompt
 }
 
-func (m *Manager) BuildSkillInstruction(ctx context.Context, name string) (string, error) {
+// ClearActiveSkillPrompt clears any stored active skill prompt.
+func (m *SkillManager) ClearActiveSkillPrompt() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeSkillPrompt = ""
+}
+
+// BuildAvailableSkillsPrompt builds a sorted, deterministic prompt of available skills for injection.
+func (m *SkillManager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error) {
+	skills := m.ListSkills()
+	if len(skills) == 0 {
+		return "", nil
+	}
+	var builder strings.Builder
+	builder.WriteString("# Available Agent Skills\n\n")
+	builder.WriteString("You have access to the following specialized skills. To activate a skill, call the activate_skill tool with skill_name set to the skill's name.\n")
+	builder.WriteString("IMPORTANT: After calling activate_skill, do NOT describe or repeat the skill's capabilities yourself. The skill details are returned as the tool result and will be shown automatically. Simply acknowledge the activation and ask the user what they'd like to do.\n\n")
+	builder.WriteString("<available_skills>\n")
+	for _, skill := range skills {
+		if strings.HasSuffix(skill.Name, ":diagnostic") || skill.Name == "cosmos-star:diagnostic" {
+			continue
+		}
+		builder.WriteString("  <skill>\n")
+		builder.WriteString("    <name>" + skill.Name + "</name>\n")
+		if skill.Description != "" {
+			builder.WriteString("    <description>" + skill.Description + "</description>\n")
+		}
+		builder.WriteString("  </skill>\n")
+	}
+	builder.WriteString("</available_skills>")
+	return builder.String(), nil
+}
+
+// BuildActiveSkillPrompt resolves an active skill and formats it as Markdown frontmatter wrapped in active_skill tags.
+func (m *SkillManager) BuildActiveSkillPrompt(ctx context.Context, name string) (string, error) {
 	snapshot, err := m.ResolveSkill(ctx, name)
 	if err != nil {
 		return "", err
 	}
 
 	var builder strings.Builder
-	builder.WriteString("Skill: ")
-	builder.WriteString(snapshot.Name)
+	builder.WriteString("<active_skill>\n")
+	builder.WriteString("---\n")
+	builder.WriteString("id: " + name + "\n")
+	builder.WriteString("name: " + snapshot.Name + "\n")
 	if snapshot.Description != "" {
-		builder.WriteString("\nDescription: ")
-		builder.WriteString(snapshot.Description)
+		builder.WriteString("description: " + snapshot.Description + "\n")
 	}
-	if snapshot.Instructions != "" {
-		builder.WriteString("\nInstructions:\n")
-		builder.WriteString(snapshot.Instructions)
+	if snapshot.Provider != "" {
+		builder.WriteString("provider: " + snapshot.Provider + "\n")
 	}
 	if len(snapshot.Tools) > 0 {
-		builder.WriteString("\nAllowed tools:\n")
+		builder.WriteString("tools:\n")
 		for _, tool := range snapshot.Tools {
-			builder.WriteString("- ")
-			builder.WriteString(tool.Name)
+			builder.WriteString("  - name: " + tool.Name + "\n")
 			if tool.Description != "" {
-				builder.WriteString(": ")
-				builder.WriteString(tool.Description)
+				builder.WriteString("    description: " + tool.Description + "\n")
 			}
-			builder.WriteString("\n")
 		}
 	}
-	return strings.TrimSpace(builder.String()), nil
-}
-
-func (m *Manager) UnloadSkill(name string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	state, ok := m.skills[strings.TrimSpace(name)]
-	if !ok {
-		return fmt.Errorf("skill %q is not registered", name)
+	builder.WriteString("---\n\n")
+	if snapshot.Instructions != "" {
+		builder.WriteString(snapshot.Instructions + "\n")
 	}
-	state.loaded = nil
-	state.lastUsed = time.Time{}
-	return nil
+	builder.WriteString("</active_skill>")
+	return builder.String(), nil
 }
 
-func (m *Manager) UnloadIdleSkills() {
-	now := time.Now()
+// DetectActiveSkill matches the user query against registered skills' intent tags and name.
+// Returns the matched skill name, or empty string if no match is found.
+func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) string {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	names := make([]string, 0, len(m.skills))
+	for name := range m.skills {
+		names = append(names, name)
+	}
+	m.mu.Unlock()
 
-	for _, state := range m.skills {
-		if state.loaded == nil {
+	sort.Strings(names)
+
+	queryLower := strings.ToLower(query)
+	for _, name := range names {
+		if strings.HasSuffix(name, ":diagnostic") || name == "cosmos-star:diagnostic" {
 			continue
 		}
-		if now.Sub(state.lastUsed) < state.spec.IdleTTL {
+		// Resolve it to ensure it is parsed and loaded into state.loaded
+		_, err := m.ResolveSkill(ctx, name)
+		if err != nil {
 			continue
 		}
-		state.loaded = nil
-		state.lastUsed = time.Time{}
-	}
-}
 
-func validateSkillSpec(spec SkillSpec) error {
-	if strings.TrimSpace(spec.Name) == "" {
-		return fmt.Errorf("skill name is required")
-	}
-	if spec.Load == nil {
-		return fmt.Errorf("skill %q loader is required", spec.Name)
-	}
-	return nil
-}
+		m.mu.Lock()
+		state := m.skills[name]
+		loaded := state.loaded
+		m.mu.Unlock()
 
-func normalizeSkillSpec(spec SkillSpec) SkillSpec {
-	spec.Name = strings.TrimSpace(spec.Name)
-	spec.Description = strings.TrimSpace(spec.Description)
-	spec.SourcePath = strings.TrimSpace(spec.SourcePath)
-	spec.Provider = strings.TrimSpace(spec.Provider)
-	spec.Format = strings.TrimSpace(spec.Format)
-	if spec.IdleTTL <= 0 {
-		spec.IdleTTL = defaultIdleTTL
-	}
-	return spec
-}
+		if loaded == nil {
+			continue
+		}
 
-func getSkillBaseName(path string) string {
-	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	if strings.ToLower(base) == "skill" {
-		parent := filepath.Dir(path)
-		if parent != "." && parent != "/" {
-			return filepath.Base(parent)
+		// Check name
+		nameLower := strings.ToLower(loaded.Name)
+		if nameLower != "" && strings.Contains(queryLower, nameLower) {
+			return name
+		}
+
+		// Check intent tags
+		for _, tag := range loaded.IntentTags {
+			tagLower := strings.ToLower(tag)
+			if tagLower != "" && strings.Contains(queryLower, tagLower) {
+				return name
+			}
 		}
 	}
-	return base
+	return ""
 }
 
+// ---------------------------------------------------------------------------
+// Factory helpers
+// ---------------------------------------------------------------------------
+
+// NewFileSkill creates a SkillSpec for a Markdown skill file.
 func NewFileSkill(path string) SkillSpec {
 	path = strings.TrimSpace(path)
 	baseName := getSkillBaseName(path)
@@ -378,6 +515,7 @@ func NewFileSkill(path string) SkillSpec {
 	}
 }
 
+// NewJSONFileSkill creates a SkillSpec for a JSON skill file.
 func NewJSONFileSkill(path string) SkillSpec {
 	path = strings.TrimSpace(path)
 	baseName := getSkillBaseName(path)
@@ -404,6 +542,7 @@ func NewJSONFileSkill(path string) SkillSpec {
 	}
 }
 
+// NewInstructionSkill creates a SkillSpec from a plain instruction file.
 func NewInstructionSkill(path, provider, format, name string) SkillSpec {
 	path = strings.TrimSpace(path)
 	provider = strings.TrimSpace(provider)
@@ -431,6 +570,32 @@ func NewInstructionSkill(path, provider, format, name string) SkillSpec {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+func validateSkillSpec(spec SkillSpec) error {
+	if strings.TrimSpace(spec.Name) == "" {
+		return fmt.Errorf("skill name is required")
+	}
+	if spec.Load == nil {
+		return fmt.Errorf("skill %q loader is required", spec.Name)
+	}
+	return nil
+}
+
+func normalizeSkillSpec(spec SkillSpec) SkillSpec {
+	spec.Name = strings.TrimSpace(spec.Name)
+	spec.Description = strings.TrimSpace(spec.Description)
+	spec.SourcePath = strings.TrimSpace(spec.SourcePath)
+	spec.Provider = strings.TrimSpace(spec.Provider)
+	spec.Format = strings.TrimSpace(spec.Format)
+	if spec.IdleTTL <= 0 {
+		spec.IdleTTL = defaultIdleTTL
+	}
+	return spec
+}
+
 func cloneToolDefinitions(input []skillpkg.ToolDefinition) []skillpkg.ToolDefinition {
 	if len(input) == 0 {
 		return nil
@@ -439,6 +604,54 @@ func cloneToolDefinitions(input []skillpkg.ToolDefinition) []skillpkg.ToolDefini
 	copy(cloned, input)
 	return cloned
 }
+
+func getSkillBaseName(path string) string {
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if strings.ToLower(base) == "skill" {
+		parent := filepath.Dir(path)
+		if parent != "." && parent != "/" {
+			return filepath.Base(parent)
+		}
+	}
+	return base
+}
+
+func humanizeSkillName(value string) string {
+	parts := strings.Split(value, ":")
+	for i, part := range parts {
+		parts[i] = strings.Title(strings.ReplaceAll(part, "-", " "))
+	}
+	return strings.Join(parts, " / ")
+}
+
+func buildProviderSkillName(provider, path string) string {
+	base := getSkillBaseName(path)
+	return strings.Join([]string{normalizeNamePart(provider), normalizeNamePart(base)}, ":")
+}
+
+func normalizeNamePart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	replacer := strings.NewReplacer(" ", "-", "_", "-", ".", "-", "/", "-", "\\", "-")
+	value = replacer.Replace(value)
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "default"
+	}
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// ---------------------------------------------------------------------------
+// Discovery
+// ---------------------------------------------------------------------------
 
 func defaultSkillsDir() string {
 	if value := strings.TrimSpace(os.Getenv("DOMOUR_SKILLS_DIR")); value != "" {
@@ -593,194 +806,4 @@ func dedupeSkillSpecs(specs []SkillSpec) []SkillSpec {
 		return result[i].Provider < result[j].Provider
 	})
 	return result
-}
-
-func buildProviderSkillName(provider, path string) string {
-	base := getSkillBaseName(path)
-	return strings.Join([]string{normalizeNamePart(provider), normalizeNamePart(base)}, ":")
-}
-
-func normalizeNamePart(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	replacer := strings.NewReplacer(" ", "-", "_", "-", ".", "-", "/", "-", "\\", "-")
-	value = replacer.Replace(value)
-	value = strings.Trim(value, "-")
-	if value == "" {
-		return "default"
-	}
-	return value
-}
-
-func humanizeSkillName(value string) string {
-	parts := strings.Split(value, ":")
-	for i, part := range parts {
-		parts[i] = strings.Title(strings.ReplaceAll(part, "-", " "))
-	}
-	return strings.Join(parts, " / ")
-}
-
-// SetActiveSkillPrompt stores the active skill instructions produced by a manual
-// activate_skill tool call. The orchestrator will inject this into the system prompt
-// before the next LLM call. It replaces any previously stored prompt.
-func (m *Manager) SetActiveSkillPrompt(prompt string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.activeSkillPrompt = prompt
-	select {
-	case <-m.activeSkillPromptSet:
-		// already closed
-	default:
-		close(m.activeSkillPromptSet)
-	}
-}
-
-// ActiveSkillPrompt returns the currently active skill instructions, or empty string
-// if no skill has been manually activated.
-func (m *Manager) ActiveSkillPrompt() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.activeSkillPrompt
-}
-
-// ClearActiveSkillPrompt clears any stored active skill prompt.
-func (m *Manager) ClearActiveSkillPrompt() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.activeSkillPrompt = ""
-}
-
-// BuildAvailableSkillsPrompt builds a sorted, deterministic prompt of available skills for injection.
-func (m *Manager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error) {
-	skills := m.ListSkills()
-	if len(skills) == 0 {
-		return "", nil
-	}
-	var builder strings.Builder
-	builder.WriteString("# Available Agent Skills\n\n")
-	builder.WriteString("You have access to the following specialized skills. To activate a skill, call the activate_skill tool with skill_name set to the skill's name.\n")
-	builder.WriteString("IMPORTANT: After calling activate_skill, do NOT describe or repeat the skill's capabilities yourself. The skill details are returned as the tool result and will be shown automatically. Simply acknowledge the activation and ask the user what they'd like to do.\n\n")
-	builder.WriteString("<available_skills>\n")
-	for _, skill := range skills {
-		if strings.HasSuffix(skill.Name, ":diagnostic") || skill.Name == "cosmos-star:diagnostic" {
-			continue
-		}
-		builder.WriteString("  <skill>\n")
-		builder.WriteString("    <name>" + skill.Name + "</name>\n")
-		if skill.Description != "" {
-			builder.WriteString("    <description>" + skill.Description + "</description>\n")
-		}
-		builder.WriteString("  </skill>\n")
-	}
-	builder.WriteString("</available_skills>")
-	return builder.String(), nil
-}
-
-// NewActivateSkillTool creates a tool that lets the AI activate a skill by name.
-// The tool resolves the skill as a side effect and stores the instructions in the
-// Manager for the orchestrator to inject into the system prompt. The tool returns
-// only a minimal confirmation — the full instructions are NOT returned as the tool
-// observation to avoid duplication in the conversation history.
-func (m *Manager) NewActivateSkillTool() ToolSpec {
-	return NewInternalTool("activate_skill", "Activate a registered skill by name. The skill's instructions and tools will be made available after activation.", func(ctx context.Context, command Command) (Result, error) {
-		name, _ := command.Input["skill_name"].(string)
-		if name == "" {
-			return Result{}, fmt.Errorf("skill_name is required")
-		}
-		instructions, err := m.BuildActiveSkillPrompt(ctx, name)
-		if err != nil {
-			return Result{}, err
-		}
-		m.SetActiveSkillPrompt(instructions)
-		return Result{
-			Observation: "✓ Skill activated. Its tools and instructions are now available.",
-			Done:        true,
-			Meta: map[string]string{
-				"skill": name,
-			},
-		}, nil
-	})
-}
-
-// BuildActiveSkillPrompt resolves an active skill and formats it as standard Markdown frontmatter wrapped in active_skill tags.
-func (m *Manager) BuildActiveSkillPrompt(ctx context.Context, name string) (string, error) {
-	snapshot, err := m.ResolveSkill(ctx, name)
-	if err != nil {
-		return "", err
-	}
-
-	var builder strings.Builder
-	builder.WriteString("<active_skill>\n")
-	builder.WriteString("---\n")
-	builder.WriteString("id: " + name + "\n")
-	builder.WriteString("name: " + snapshot.Name + "\n")
-	if snapshot.Description != "" {
-		builder.WriteString("description: " + snapshot.Description + "\n")
-	}
-	if snapshot.Provider != "" {
-		builder.WriteString("provider: " + snapshot.Provider + "\n")
-	}
-	if len(snapshot.Tools) > 0 {
-		builder.WriteString("tools:\n")
-		for _, tool := range snapshot.Tools {
-			builder.WriteString("  - name: " + tool.Name + "\n")
-			if tool.Description != "" {
-				builder.WriteString("    description: " + tool.Description + "\n")
-			}
-		}
-	}
-	builder.WriteString("---\n\n")
-	if snapshot.Instructions != "" {
-		builder.WriteString(snapshot.Instructions + "\n")
-	}
-	builder.WriteString("</active_skill>")
-	return builder.String(), nil
-}
-
-// DetectActiveSkill matches the user query against registered skills' intent tags and name.
-// Returns the matched skill name, or empty string if no match is found.
-func (m *Manager) DetectActiveSkill(ctx context.Context, query string) string {
-	m.mu.Lock()
-	names := make([]string, 0, len(m.skills))
-	for name := range m.skills {
-		names = append(names, name)
-	}
-	m.mu.Unlock()
-
-	sort.Strings(names)
-
-	queryLower := strings.ToLower(query)
-	for _, name := range names {
-		if strings.HasSuffix(name, ":diagnostic") || name == "cosmos-star:diagnostic" {
-			continue
-		}
-		// Resolve it to ensure it is parsed and loaded into state.loaded
-		_, err := m.ResolveSkill(ctx, name)
-		if err != nil {
-			continue
-		}
-
-		m.mu.Lock()
-		state := m.skills[name]
-		loaded := state.loaded
-		m.mu.Unlock()
-
-		if loaded == nil {
-			continue
-		}
-
-		// Check name
-		nameLower := strings.ToLower(loaded.Name)
-		if nameLower != "" && strings.Contains(queryLower, nameLower) {
-			return name
-		}
-
-		// Check intent tags
-		for _, tag := range loaded.IntentTags {
-			tagLower := strings.ToLower(tag)
-			if tagLower != "" && strings.Contains(queryLower, tagLower) {
-				return name
-			}
-		}
-	}
-	return ""
 }

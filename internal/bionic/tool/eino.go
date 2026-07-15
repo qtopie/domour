@@ -50,34 +50,9 @@ func GetEinoToolSchemas(tools []ToolInfo) []*schema.ToolInfo {
 	return schemas
 }
 
-
 // GetEinoToolSchema returns a specific tool's Eino schema with detailed parameter info.
 func GetEinoToolSchema(name string) *schema.ToolInfo {
 	switch name {
-	case "render_d2":
-		return &schema.ToolInfo{
-			Name: "render_d2",
-			Desc: "Render D2 diagrams locally with the built-in renderer",
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"source": {
-					Type:     schema.String,
-					Desc:     "D2 diagram source code",
-					Required: true,
-				},
-				"format": {
-					Type:     schema.String,
-					Desc:     "Output format: 'svg', 'png', or 'html'",
-					Required: false,
-					Enum:     []string{"svg", "png", "html"},
-				},
-				"title": {
-					Type:     schema.String,
-					Desc:     "Optional diagram title",
-					Required: false,
-				},
-			}),
-		}
-
 	case "shell.exec":
 		return &schema.ToolInfo{
 			Name: "shell.exec",

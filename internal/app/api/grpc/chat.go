@@ -23,12 +23,13 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 	defer unlock()
 
 	motorReq := shared.MotorChatRequest{
-		SessionID:   sessionID,
-		Seq:         req.GetSeq(),
-		Workspace:   req.GetWorkspace(),
-		Message:     req.GetMessage(),
-		Attachments: llm.AttachmentsFromProto(req.GetAttachments()),
-		EditorContext: editorContextFromProto(req.GetEditorContext()),
+		SessionID:            sessionID,
+		Seq:                  req.GetSeq(),
+		Workspace:            req.GetWorkspace(),
+		Message:              req.GetMessage(),
+		Attachments:          llm.AttachmentsFromProto(req.GetAttachments()),
+		EditorContext:        editorContextFromProto(req.GetEditorContext()),
+		SystemPromptOverride: req.GetSystemPromptOverride(),
 	}
 
 	err = s.app.Chat(ctx, motorReq, req.GetProvider(), req.GetModel(), func(event shared.MotorStreamEvent) error {

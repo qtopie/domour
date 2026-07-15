@@ -243,8 +243,13 @@ type ChatRequest struct {
 	Provider      string                 `protobuf:"bytes,6,opt,name=provider,proto3" json:"provider,omitempty"`
 	Model         string                 `protobuf:"bytes,7,opt,name=model,proto3" json:"model,omitempty"`
 	EditorContext *EditorContext         `protobuf:"bytes,8,opt,name=editor_context,json=editorContext,proto3" json:"editor_context,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// system_prompt_override replaces the default system prompt entirely when set.
+	// The caller (e.g. cosmos-star / cosmos-assistant) can inject channel-specific
+	// instructions (multimedia formatting, etc.) without relying on gRPC metadata
+	// headers, which have ASCII-only constraints.
+	SystemPromptOverride string `protobuf:"bytes,9,opt,name=system_prompt_override,json=systemPromptOverride,proto3" json:"system_prompt_override,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ChatRequest) Reset() {
@@ -331,6 +336,13 @@ func (x *ChatRequest) GetEditorContext() *EditorContext {
 		return x.EditorContext
 	}
 	return nil
+}
+
+func (x *ChatRequest) GetSystemPromptOverride() string {
+	if x != nil {
+		return x.SystemPromptOverride
+	}
+	return ""
 }
 
 type EditorContext struct {
@@ -857,7 +869,7 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"\x04tags\x18\x04 \x03(\tR\x04tags\x12\x1b\n" +
 	"\tuser_tags\x18\x05 \x03(\tR\buserTags\"G\n" +
 	"\x12ListModelsResponse\x121\n" +
-	"\x06models\x18\x01 \x03(\v2\x19.assistant.chat.ModelInfoR\x06models\"\xb1\x02\n" +
+	"\x06models\x18\x01 \x03(\v2\x19.assistant.chat.ModelInfoR\x06models\"\xe7\x02\n" +
 	"\vChatRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -867,7 +879,8 @@ const file_assistant_chat_service_proto_rawDesc = "" +
 	"\vattachments\x18\x05 \x03(\v2\x1f.assistant.common.v1.AttachmentR\vattachments\x12\x1a\n" +
 	"\bprovider\x18\x06 \x01(\tR\bprovider\x12\x14\n" +
 	"\x05model\x18\a \x01(\tR\x05model\x12D\n" +
-	"\x0eeditor_context\x18\b \x01(\v2\x1d.assistant.chat.EditorContextR\reditorContext\"N\n" +
+	"\x0eeditor_context\x18\b \x01(\v2\x1d.assistant.chat.EditorContextR\reditorContext\x124\n" +
+	"\x16system_prompt_override\x18\t \x01(\tR\x14systemPromptOverride\"N\n" +
 	"\rEditorContext\x12=\n" +
 	"\fpinned_files\x18\x01 \x03(\v2\x1a.assistant.chat.PinnedFileR\vpinnedFiles\"V\n" +
 	"\n" +

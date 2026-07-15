@@ -77,7 +77,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 
 	userMessage := strings.TrimSpace(req.Message)
 	if userMessage == "" {
-		userMessage = "Hello from Domour MVP."
+		userMessage = "Hello from Domour Copilot! How can I assist you today?"
 	}
 	_ = s.AppendHistory(ctx, sessionID, "user", userMessage)
 
@@ -96,93 +96,10 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		chatPrompt = ec + "\n\n" + chatPrompt
 	}
 
-	// Check if this looks like a diagram rendering request
-	if IsDiagramLike(userMessage, "") {
-		format := InferRequestedFormat(userMessage)
-		title := InferDiagramTitle(userMessage)
-
-		messages := []*schema.Message{
-			schema.SystemMessage("You are Domour Brain. Convert the user's request into valid D2 source only. Do not wrap the result in markdown fences. Keep the diagram concise and directly usable by the d2 CLI."),
-		}
-		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
-		userMsg, err := llm.BuildUserInputMessage(
-			BuildDiagramPrompt(userMessage, req.Workspace, "", "", "", format),
-			req.Attachments,
-		)
-		if err != nil {
-			return fmt.Errorf("build diagram prompt: %w", err)
-		}
-		messages = append(messages, userMsg)
-
-		resp, err := brainClient.GenerateText(ctx, messages)
-		var diagram string
-		var summary string
-		var providerName, modelName string
-		if err != nil {
-			fallback := &diagramFallbackBrain{}
-			fbResp, fbErr := fallback.Think(ctx, userMessage)
-			if fbErr != nil {
-				return fmt.Errorf("diagram fallback think: %w", fbErr)
-			}
-			diagram = fbResp.Diagram
-			summary = fbResp.Summary
-			providerName = fbResp.Provider
-			modelName = fbResp.Model
-		} else {
-			diagram = llm.StripCodeFence(resp.Content)
-			summary = fmt.Sprintf("Brain used %s to generate a D2 diagram and selected %s rendering.", resp.Provider, format)
-			providerName = resp.Provider
-			modelName = resp.Model
-		}
-
-		// Safety Interception (Veto)
-		if s.engine.Executor().Veto(ctx, userMessage) || s.engine.Executor().Veto(ctx, diagram) {
-			return yieldRefusal(yield, providerName, modelName)
-		}
-
-		// Send summary to client
-		summaryContent := BuildChatSummaryMessage(userMessage, req.Workspace, "", len(sess.History), summary)
-		if err := yieldWithSeq(shared.MotorStreamEvent{
-			Stage:   "brain",
-			Content: summaryContent,
-			Done:    false,
-			Meta:    map[string]string{"provider": providerName, "model": modelName, "format": format},
-		}); err != nil {
-			return err
-		}
-
-		// Execute physical render command via Motor
-		result, err := s.engine.Executor().Execute(ctx, tool.Command{
-			ID:     fmt.Sprintf("chat-%d-render", req.Seq),
-			Action: "render_d2",
-			Input: map[string]interface{}{
-				"source": diagram,
-				"format": format,
-				"title":  title,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("motor execute render: %w", err)
-		}
-
-		renderedContent := BuildRenderedReply(diagram, result.Observation)
-		if err := yieldWithSeq(shared.MotorStreamEvent{
-			Stage:   "motor",
-			Content: renderedContent,
-			Done:    true,
-			Meta:    map[string]string{"provider": providerName, "model": modelName, "format": result.Meta["format"]},
-		}); err != nil {
-			return err
-		}
-
-		_ = s.AppendHistoryWithMeta(ctx, sessionID, "assistant", renderedContent, providerName, modelName)
-		return nil
-	}
-
 	// Deep Think Mode: pure reasoning without tool calling or workflow
 	if rmeta.Mode == "deep_think" {
 		messages := []*schema.Message{
-			schema.SystemMessage(BuildChatSystemPrompt(ctx, toolMgr, userMessage, req.Attachments, nil)),
+			schema.SystemMessage(BuildChatSystemPrompt(ctx, toolMgr, userMessage, nil, req.SystemPromptOverride)),
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
@@ -233,7 +150,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 	for attempt := 0; attempt < bioniccontext.MaxChatContextRefreshRounds; attempt++ {
 		snapshot := bioniccontext.LatestChatInterception(sessionID, req.Seq, nil)
 		messages := []*schema.Message{
-			schema.SystemMessage(BuildChatSystemPrompt(ctx, toolMgr, userMessage, req.Attachments, snapshot.Interception)),
+			schema.SystemMessage(BuildChatSystemPrompt(ctx, toolMgr, userMessage, snapshot.Interception, req.SystemPromptOverride)),
 		}
 		messages = append(messages, llm.HistoryToSchema(sess.History, sess.MemorySummary)...)
 		userMsg, err := llm.BuildUserInputMessage(
@@ -387,76 +304,3 @@ func splitReplyChunks(content string) []string {
 	}
 	return chunks
 }
-
-type diagramFallbackBrain struct{}
-
-func (b *diagramFallbackBrain) Think(ctx context.Context, prompt string) (shared.BrainDiagramResponse, error) {
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		prompt = "Draw a system architecture diagram"
-	}
-
-	format := inferRequestedFormat(prompt)
-	title := inferDiagramTitle(prompt)
-	diagram := buildFallbackD2Diagram(title, prompt, format)
-
-	return shared.BrainDiagramResponse{
-		Summary:  fmt.Sprintf("Brain inferred a diagram request and chose %s rendering.", format),
-		Route:    "render_d2",
-		Format:   format,
-		Title:    title,
-		Diagram:  diagram,
-		Provider: "mvp-rule-brain",
-	}, nil
-}
-
-func buildFallbackD2Diagram(title, prompt, format string) string {
-	return fmt.Sprintf(`direction: right
-
-title: %q
-
-user: User
-agent: Agent
-brain: Brain
-motor: Motor
-tool: "D2 Render Tool"
-artifact: "%s output"
-
-user -> agent: "chat request"
-agent -> brain: "reason about request"
-brain -> motor: "D2 diagram plan"
-motor -> tool: "render diagram"
-tool -> agent: "artifact"
-agent -> user: "final response"
-
-brain.note: "Prompt: %s"
-`, title, strings.ToUpper(format), escapeFallbackLabel(prompt))
-}
-
-func escapeFallbackLabel(value string) string {
-	value = strings.ReplaceAll(value, `"`, `'`)
-	value = strings.ReplaceAll(value, "\n", " ")
-	return value
-}
-
-func inferRequestedFormat(message string) string {
-	text := strings.ToLower(message)
-	switch {
-	case strings.Contains(text, "网页"), strings.Contains(text, "html"), strings.Contains(text, "web"):
-		return "html"
-	default:
-		return "svg"
-	}
-}
-
-func inferDiagramTitle(message string) string {
-	title := strings.TrimSpace(strings.ReplaceAll(message, "\n", " "))
-	if title == "" {
-		return "System Architecture"
-	}
-	if len(title) > 48 {
-		return title[:48]
-	}
-	return title
-}
-

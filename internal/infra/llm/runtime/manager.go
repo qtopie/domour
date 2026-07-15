@@ -21,6 +21,12 @@ type RequestMetadata struct {
 	SessionID string
 	Workspace string
 	Mode      string
+
+	// SystemPromptExtras is an optional block of instructions injected by the
+	// host (e.g. cosmos-star / wechatclawbot) into the AI's system prompt.
+	// Use this for channel-specific formatting rules that should not be
+	// hardcoded in Domour's core BuildChatSystemPrompt.
+	SystemPromptExtras string
 }
 
 type SessionRuntime struct {

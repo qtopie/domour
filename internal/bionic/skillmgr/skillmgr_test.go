@@ -1,4 +1,4 @@
-package tool
+package skillmgr
 
 import (
 	"context"
@@ -25,14 +25,12 @@ func TestManagerLoadsSkillsFromDir(t *testing.T) {
 		t.Fatalf("write skill file: %v", err)
 	}
 
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
-
-	if err := manager.LoadSkillsFromDir(root); err != nil {
+	mgr := NewSkillManager()
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
 		t.Fatalf("load skills: %v", err)
 	}
 
-	list := manager.ListSkills()
+	list := mgr.ListSkills()
 	if len(list) != 1 {
 		t.Fatalf("expected 1 skill, got %d", len(list))
 	}
@@ -40,7 +38,7 @@ func TestManagerLoadsSkillsFromDir(t *testing.T) {
 		t.Fatalf("unexpected skill name: %s", list[0].Name)
 	}
 
-	snapshot, err := manager.ResolveSkill(context.Background(), "domour:todo")
+	snapshot, err := mgr.ResolveSkill(context.Background(), "domour:todo")
 	if err != nil {
 		t.Fatalf("resolve skill: %v", err)
 	}
@@ -53,17 +51,16 @@ func TestManagerLoadsSkillsFromDir(t *testing.T) {
 }
 
 func TestManagerBuildsSkillInstructionAndUnloadsIdleSkills(t *testing.T) {
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
+	mgr := NewSkillManager()
 
 	spec := NewFileSkill(writeTempSkill(t))
 	spec.Name = "domour:todo"
 	spec.IdleTTL = time.Millisecond
-	if err := manager.RegisterSkill(spec); err != nil {
+	if err := mgr.RegisterSkill(spec); err != nil {
 		t.Fatalf("register skill: %v", err)
 	}
 
-	text, err := manager.BuildSkillInstruction(context.Background(), "domour:todo")
+	text, err := mgr.BuildSkillInstruction(context.Background(), "domour:todo")
 	if err != nil {
 		t.Fatalf("build skill instruction: %v", err)
 	}
@@ -72,9 +69,9 @@ func TestManagerBuildsSkillInstructionAndUnloadsIdleSkills(t *testing.T) {
 	}
 
 	time.Sleep(5 * time.Millisecond)
-	manager.UnloadIdleSkills()
+	mgr.UnloadIdleSkills()
 
-	list := manager.ListSkills()
+	list := mgr.ListSkills()
 	if len(list) != 1 {
 		t.Fatalf("expected 1 skill after unload, got %d", len(list))
 	}
@@ -119,15 +116,14 @@ func TestInstructionSkillDiscoverySupportsProviderFiles(t *testing.T) {
 		t.Fatalf("unexpected claude discovery: %+v", claude)
 	}
 
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
+	mgr := NewSkillManager()
 	for _, spec := range append(append(gemini, copilot...), claude...) {
-		if err := manager.RegisterSkill(spec); err != nil {
+		if err := mgr.RegisterSkill(spec); err != nil {
 			t.Fatalf("register provider skill %s: %v", spec.Name, err)
 		}
 	}
 
-	snapshot, err := manager.ResolveSkill(context.Background(), "gemini:gemini")
+	snapshot, err := mgr.ResolveSkill(context.Background(), "gemini:gemini")
 	if err != nil {
 		t.Fatalf("resolve gemini skill: %v", err)
 	}
@@ -164,14 +160,13 @@ func TestManagerLoadsJSONSkillsFromDir(t *testing.T) {
 		t.Fatalf("write json skill file: %v", err)
 	}
 
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
+	mgr := NewSkillManager()
 
-	if err := manager.LoadSkillsFromDir(root); err != nil {
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
 		t.Fatalf("load skills: %v", err)
 	}
 
-	list := manager.ListSkills()
+	list := mgr.ListSkills()
 	if len(list) != 1 {
 		t.Fatalf("expected 1 skill, got %d", len(list))
 	}
@@ -179,7 +174,7 @@ func TestManagerLoadsJSONSkillsFromDir(t *testing.T) {
 		t.Fatalf("unexpected skill name: %s", list[0].Name)
 	}
 
-	snapshot, err := manager.ResolveSkill(context.Background(), "domour:k8s-pod")
+	snapshot, err := mgr.ResolveSkill(context.Background(), "domour:k8s-pod")
 	if err != nil {
 		t.Fatalf("resolve skill: %v", err)
 	}
@@ -228,14 +223,13 @@ Focus on get and restart in cluster execution.`
 		t.Fatalf("write README.md file: %v", err)
 	}
 
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
+	mgr := NewSkillManager()
 
-	if err := manager.LoadSkillsFromDir(root); err != nil {
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
 		t.Fatalf("load skills: %v", err)
 	}
 
-	list := manager.ListSkills()
+	list := mgr.ListSkills()
 	if len(list) != 1 {
 		t.Fatalf("expected 1 skill (README.md should be ignored), got %d", len(list))
 	}
@@ -243,7 +237,7 @@ Focus on get and restart in cluster execution.`
 		t.Fatalf("unexpected skill name: %s", list[0].Name)
 	}
 
-	snapshot, err := manager.ResolveSkill(context.Background(), "domour:k8s-pod-manager")
+	snapshot, err := mgr.ResolveSkill(context.Background(), "domour:k8s-pod-manager")
 	if err != nil {
 		t.Fatalf("resolve skill: %v", err)
 	}
@@ -275,35 +269,34 @@ func TestManagerReloadSkills(t *testing.T) {
 	skill1Path := filepath.Join(root, "reload-test.md")
 	os.WriteFile(skill1Path, []byte("# Reload Test Skill\n\n## Description\nSkill for reload test\n\n## Instructions\nTest reload\n"), 0o600)
 
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
+	mgr := NewSkillManager()
 
 	// Load initial skill
-	if err := manager.LoadSkillsFromDir(root); err != nil {
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
 		t.Fatalf("initial load: %v", err)
 	}
 
-	list := manager.ListSkills()
+	list := mgr.ListSkills()
 	if len(list) != 1 {
 		t.Fatalf("expected 1 skill before reload, got %d", len(list))
 	}
 
 	// Resolve to get it loaded into cache
-	_, err := manager.ResolveSkill(context.Background(), "domour:reload-test")
+	_, err := mgr.ResolveSkill(context.Background(), "domour:reload-test")
 	if err != nil {
 		t.Fatalf("resolve before reload: %v", err)
 	}
 
 	// Verify it's loaded
-	list = manager.ListSkills()
+	list = mgr.ListSkills()
 	if !list[0].Loaded {
 		t.Fatalf("expected skill to be loaded before reload")
 	}
 
 	// Reload clears skills and reloads from all default sources + configured dir
-	manager.ReloadSkills()
+	mgr.ReloadSkills()
 
-	list = manager.ListSkills()
+	list = mgr.ListSkills()
 	// After ReloadSkills, we should have at least 0 skills (test env has no provider files)
 	// Verify the reloaded skills don't include our temp file anymore since we cleared
 	hasReloadTest := false
@@ -318,11 +311,11 @@ func TestManagerReloadSkills(t *testing.T) {
 	}
 
 	// Now load from dir again to verify reload + load works
-	if err := manager.LoadSkillsFromDir(root); err != nil {
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
 		t.Fatalf("load after reload: %v", err)
 	}
 
-	list = manager.ListSkills()
+	list = mgr.ListSkills()
 	testSkillFound := false
 	for _, s := range list {
 		if s.Name == "domour:reload-test" {
@@ -335,7 +328,7 @@ func TestManagerReloadSkills(t *testing.T) {
 	}
 
 	// Verify the skill is freshly resolved
-	snapshot, err := manager.ResolveSkill(context.Background(), "domour:reload-test")
+	snapshot, err := mgr.ResolveSkill(context.Background(), "domour:reload-test")
 	if err != nil {
 		t.Fatalf("resolve after reload: %v", err)
 	}
@@ -344,71 +337,9 @@ func TestManagerReloadSkills(t *testing.T) {
 	}
 }
 
-func TestActivateSkillTool(t *testing.T) {
-	root := t.TempDir()
-	// Create a skill
-	skillDir := filepath.Join(root, "test-helper")
-	os.MkdirAll(skillDir, 0755)
-	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
-name: Test Helper
-description: A test helper skill
-tools:
-  - name: helper.run
-    description: Run helper
----
-Do test helper things.`), 0o600)
-
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
-
-	// Load the skill
-	if err := manager.LoadSkillsFromDir(root); err != nil {
-		t.Fatalf("load skill: %v", err)
-	}
-
-	// Register the activate_skill tool
-	if err := manager.Register(manager.NewActivateSkillTool()); err != nil {
-		t.Fatalf("register activate_skill: %v", err)
-	}
-
-	// Activate the skill via the tool
-	result, err := manager.Execute(context.Background(), Command{
-		Action: "activate_skill",
-		Input: map[string]interface{}{
-			"skill_name": "domour:test-helper",
-		},
-	})
-	if err != nil {
-		t.Fatalf("activate skill: %v", err)
-	}
-	if !strings.Contains(result.Observation, "activated") {
-		t.Fatalf("expected observation to indicate activation, got: %s", result.Observation)
-	}
-
-	// The full instructions should be stored in the Manager, not in the observation
-	if prompt := manager.ActiveSkillPrompt(); prompt == "" {
-		t.Fatal("expected active skill prompt to be stored")
-	} else if !strings.Contains(prompt, "Test Helper") {
-		t.Fatalf("expected active skill prompt to contain skill name, got: %s", prompt)
-	} else if !strings.Contains(prompt, "Do test helper things") {
-		t.Fatalf("expected active skill prompt to contain instructions, got: %s", prompt)
-	} else if !strings.Contains(prompt, "helper.run") {
-		t.Fatalf("expected active skill prompt to include tool name, got: %s", prompt)
-	}
-
-	// Verify error when skill_name is missing
-	_, err = manager.Execute(context.Background(), Command{
-		Action: "activate_skill",
-		Input:  map[string]interface{}{},
-	})
-	if err == nil {
-		t.Fatalf("expected error when skill_name is missing")
-	}
-}
-
 func TestSkillsPromptBuildingAndAutoDetection(t *testing.T) {
 	root := t.TempDir()
-	
+
 	// Create skill 1: z-pod-manager
 	skill1Dir := filepath.Join(root, "z-pod-manager")
 	os.MkdirAll(skill1Dir, 0755)
@@ -429,15 +360,14 @@ intent_tags: ["sql", "database"]
 ---
 Instructions for A`), 0o600)
 
-	manager := NewManager(WithCleanupInterval(0))
-	defer manager.Close()
+	mgr := NewSkillManager()
 
-	if err := manager.LoadSkillsFromDir(root); err != nil {
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 
 	// 1. Verify sorting of available skills list
-	avail, err := manager.BuildAvailableSkillsPrompt(context.Background())
+	avail, err := mgr.BuildAvailableSkillsPrompt(context.Background())
 	if err != nil {
 		t.Fatalf("available prompt: %v", err)
 	}
@@ -452,24 +382,24 @@ Instructions for A`), 0o600)
 	}
 
 	// 2. Verify auto-detection of active skill by name
-	matchedName := manager.DetectActiveSkill(context.Background(), "I want to run a-database-helper commands")
+	matchedName := mgr.DetectActiveSkill(context.Background(), "I want to run a-database-helper commands")
 	if matchedName != "domour:a-database-helper" {
 		t.Fatalf("expected match 'domour:a-database-helper', got '%s'", matchedName)
 	}
 
 	// 3. Verify auto-detection of active skill by intent tags
-	matchedTag := manager.DetectActiveSkill(context.Background(), "How do I optimize my sql query?")
+	matchedTag := mgr.DetectActiveSkill(context.Background(), "How do I optimize my sql query?")
 	if matchedTag != "domour:a-database-helper" {
 		t.Fatalf("expected match 'domour:a-database-helper' by tag 'sql', got '%s'", matchedTag)
 	}
 
-	matchedTag2 := manager.DetectActiveSkill(context.Background(), "restart that k8s pod please")
+	matchedTag2 := mgr.DetectActiveSkill(context.Background(), "restart that k8s pod please")
 	if matchedTag2 != "domour:z-pod-manager" {
 		t.Fatalf("expected match 'domour:z-pod-manager' by tag 'k8s/pod', got '%s'", matchedTag2)
 	}
 
 	// 4. Verify Active Skill Prompt building format
-	activePrompt, err := manager.BuildActiveSkillPrompt(context.Background(), "domour:z-pod-manager")
+	activePrompt, err := mgr.BuildActiveSkillPrompt(context.Background(), "domour:z-pod-manager")
 	if err != nil {
 		t.Fatalf("active prompt: %v", err)
 	}
@@ -477,4 +407,3 @@ Instructions for A`), 0o600)
 		t.Fatalf("unexpected active prompt content: %s", activePrompt)
 	}
 }
-

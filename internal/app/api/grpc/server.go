@@ -56,15 +56,20 @@ func firstNonEmpty(value, fallback string) string {
 
 func withRuntimeMetadata(ctx context.Context, sessionID, workspace string) context.Context {
 	mode := "balanced"
+	var systemPromptExtras string
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if modes := md.Get("x-domour-mode"); len(modes) > 0 {
 			mode = modes[0]
 		}
+		if extras := md.Get("x-domour-system-extras"); len(extras) > 0 {
+			systemPromptExtras = extras[0]
+		}
 	}
 	return providerruntime.WithRequestMetadata(ctx, providerruntime.RequestMetadata{
-		SessionID: sessionID,
-		Workspace: strings.TrimSpace(workspace),
-		Mode:      mode,
+		SessionID:          sessionID,
+		Workspace:          strings.TrimSpace(workspace),
+		Mode:               mode,
+		SystemPromptExtras: systemPromptExtras,
 	})
 }
 

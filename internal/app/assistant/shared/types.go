@@ -117,13 +117,14 @@ type PinnedFile struct {
 }
 
 type MotorChatRequest struct {
-	SessionID     string
-	Seq           int32
-	Workspace     string
-	Message       string
-	Attachments   []BrainAttachment
-	History       []Message
-	EditorContext *EditorContext
+	SessionID            string
+	Seq                  int32
+	Workspace            string
+	Message              string
+	Attachments          []BrainAttachment
+	History              []Message
+	EditorContext        *EditorContext
+	SystemPromptOverride string // replaces the default system prompt when non-empty
 }
 
 type MotorAutopilotRequest struct {

@@ -16,7 +16,6 @@
   * Qoder：`QODER.md`、`.qoder/**/*.md`
 * `motor` 只保存 tool manifest 与 loader，不要求所有 tool 在进程启动时常驻。
 * 本地内建工具默认包括：
-  * `render_d2`：Internal Go tool
   * `shell.exec`：CLI tool
   * `search.grep`：Internal Go tool (powered by sniphunt)
   * `file.edit_lines`：Internal Go tool (line-range replacement)

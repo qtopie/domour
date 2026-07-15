@@ -13,6 +13,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	publictool "github.com/qtopie/domour/ark/tool"
+	"github.com/qtopie/domour/internal/bionic/skillmgr"
 )
 
 type ToolKind string
@@ -63,13 +64,11 @@ type toolState struct {
 }
 
 type Manager struct {
-	mu                   sync.Mutex
-	tools                map[string]*toolState
-	skills               map[string]*skillState
-	activeSkillPrompt    string // stored by activate_skill tool, injected into system prompt by orchestrator
-	activeSkillPromptSet chan struct{} // closed when activeSkillPrompt is set for the first time
-	cleanupInterval      time.Duration
-	cancel               context.CancelFunc
+	mu              sync.Mutex
+	tools           map[string]*toolState
+	SkillMgr        *skillmgr.SkillManager
+	cleanupInterval time.Duration
+	cancel          context.CancelFunc
 }
 
 type ManagerOption func(*Manager)
@@ -82,10 +81,9 @@ func WithCleanupInterval(interval time.Duration) ManagerOption {
 
 func NewManager(opts ...ManagerOption) *Manager {
 	manager := &Manager{
-		tools:                make(map[string]*toolState),
-		skills:               make(map[string]*skillState),
-		cleanupInterval:      defaultCleanupPeriod,
-		activeSkillPromptSet: make(chan struct{}),
+		tools:           make(map[string]*toolState),
+		SkillMgr:        skillmgr.NewSkillManager(),
+		cleanupInterval: defaultCleanupPeriod,
 	}
 	for _, opt := range opts {
 		opt(manager)
@@ -101,10 +99,6 @@ func NewManager(opts ...ManagerOption) *Manager {
 
 func NewDefaultManager() (*Manager, error) {
 	manager := NewManager()
-	if err := manager.Register(NewInternalTool("render_d2", "Render D2 diagrams locally with the built-in renderer", NewD2Renderer().Act)); err != nil {
-		manager.Close()
-		return nil, err
-	}
 	if err := manager.Register(NewShellTool("shell.exec", "Execute a local shell command through the motor-managed CLI runtime")); err != nil {
 		manager.Close()
 		return nil, err
@@ -155,7 +149,7 @@ func NewDefaultManager() (*Manager, error) {
 			return nil, err
 		}
 	}
-	if err := manager.LoadDefaultSkillSources(); err != nil {
+	if err := manager.SkillMgr.LoadDefaultSkillSources(); err != nil {
 		manager.Close()
 		return nil, err
 	}
@@ -266,10 +260,6 @@ func (m *Manager) Close() error {
 			state.lastUsed = time.Time{}
 		}
 	}
-	for _, state := range m.skills {
-		state.loaded = nil
-		state.lastUsed = time.Time{}
-	}
 	m.mu.Unlock()
 
 	var firstErr error
@@ -376,7 +366,7 @@ func (m *Manager) runJanitor(ctx context.Context) {
 			return
 		case <-ticker.C:
 			_ = m.UnloadIdle(context.Background())
-			m.UnloadIdleSkills()
+			m.SkillMgr.UnloadIdleSkills()
 		}
 	}
 }
