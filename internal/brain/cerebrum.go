@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -96,7 +97,20 @@ func (c *CerebrumNode) startThinkingLoop(ctx context.Context) {
 			}
 
 			intent := "execute_workflow"
-			if strings.Contains(task.Prompt, "Observation:") || strings.Contains(task.Prompt, "verify_result_status") {
+			if strings.Contains(task.Prompt, "delegate_to_copilot:") {
+				// Cerebellum requested Copilot delegation. Extract the task
+				// summary and re-plan using the delegate.copilot tool.
+				intent = "execute_workflow"
+				// Extract the remaining work description from the delegation request
+				taskDesc := task.Prompt
+				if idx := strings.Index(taskDesc, "Remaining work:"); idx != -1 {
+					taskDesc = strings.TrimSpace(taskDesc[idx+14:])
+				}
+				plan = []string{
+					fmt.Sprintf("delegate.copilot: %s", taskDesc),
+					"respond: Copilot delegation completed",
+				}
+			} else if strings.Contains(task.Prompt, "Observation:") || strings.Contains(task.Prompt, "verify_result_status") {
 				intent = "respond"
 				plan = []string{"respond"}
 			} else if strings.Contains(task.Prompt, "correction:") {

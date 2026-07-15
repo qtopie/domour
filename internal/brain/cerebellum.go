@@ -4,11 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/qtopie/domour/internal/bionic/tool"
 )
+
+// maxToolCallsPerPage is the maximum number of tool calls the Cerebellum
+// will execute within a single cognitive page (寻呼). When exceeded, the
+// Cerebellum delegates remaining work to the Copilot CLI if available.
+const maxToolCallsPerPage = 10
 
 // TaskGraph represents the directed acyclic graph (DAG) task execution flow orchestrated by the Cerebellum.
 type TaskGraph struct {
@@ -72,6 +78,19 @@ type CerebellumNode struct {
 	SignalCallback func(sessionID string, eventType string, desc string, payload any)
 }
 
+// isCopilotAvailable checks whether the GitHub Copilot CLI binary is
+// installed on the system PATH. This is used by the delegation logic to
+// decide whether to redirect excess tool calls to the Copilot agent.
+func (c *CerebellumNode) isCopilotAvailable() bool {
+	candidates := []string{"github-copilot-cli", "copilot"}
+	for _, name := range candidates {
+		if _, err := exec.LookPath(name); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func NewCerebellumNode(executor ToolExecutor, model ModelClient) *CerebellumNode {
 	return &CerebellumNode{
 		CognitiveIn:   make(chan CognitiveResult, 10),
@@ -100,6 +119,9 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 			return
 		case cognitive := <-c.CognitiveIn:
 			log.Printf("[Cerebellum] (Eavesdropped) Translating cognitive plan into tactical steps for Goal: %s", cognitive.GoalID)
+			pageToolCalls := 0
+			delegateRequested := false
+			delegateAtStep := 0
 			for i, step := range cognitive.Plan {
 				toolName := "calculator"
 				if step == "respond" {
@@ -128,6 +150,12 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 								Input:  map[string]interface{}{"expression": "2 + 2"},
 							}
 							res, subErr := c.Executor.Execute(ctx, subCmd)
+							pageToolCalls++
+							if pageToolCalls > maxToolCallsPerPage && c.isCopilotAvailable() {
+								delegateRequested = true
+								delegateAtStep = i
+								log.Printf("[Cerebellum] Page tool calls (%d) exceeded limit, delegating to Copilot", pageToolCalls)
+							}
 							var observation string
 							if subErr != nil {
 								observation = fmt.Sprintf("tool error: %v", subErr)
@@ -135,6 +163,9 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 								observation = res.Observation
 							}
 							log.Printf("[Cerebellum] Fixed tool result: %q", observation)
+							if delegateRequested {
+								break
+							}
 							corr := CognitiveResult{
 								GoalID: cmd.ID,
 								Intent: "correction",
@@ -217,6 +248,12 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 								c.SignalCallback(cognitive.GoalID, "tool_call_start", "Running ReAct sub-tool call (calculator)", subCmd)
 							}
 							res, subErr := c.Executor.Execute(ctx, subCmd)
+							pageToolCalls++
+							if pageToolCalls > maxToolCallsPerPage && c.isCopilotAvailable() {
+								delegateRequested = true
+								delegateAtStep = i
+								log.Printf("[Cerebellum] Page tool calls (%d) exceeded limit in ReAct loop, delegating to Copilot", pageToolCalls)
+							}
 							if subErr != nil {
 								observation = fmt.Sprintf("tool error: %v", subErr)
 							} else {
@@ -226,6 +263,9 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 								c.SignalCallback(cognitive.GoalID, "tool_call_end", "ReAct sub-tool call completed", res)
 							}
 							log.Printf("[Cerebellum] Local tool result: %q", observation)
+							if delegateRequested {
+								break
+							}
 						} else if strings.HasPrefix(llmResp, "respond:") {
 							lastAnswer = strings.TrimSpace(strings.TrimPrefix(llmResp, "respond:"))
 							break
@@ -240,6 +280,43 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 						GoalID: cmd.ID,
 						Intent: "refined_action",
 						Plan:   []string{lastAnswer},
+					}
+					select {
+					case c.CorrectionOut <- corr:
+					case <-ctx.Done():
+						return
+					}
+					if delegateRequested {
+						break
+					}
+					continue
+				}
+
+				// If the step is a Copilot delegation task, execute via delegate.copilot tool
+				if strings.HasPrefix(step, "delegate.copilot:") {
+					taskDesc := strings.TrimSpace(strings.TrimPrefix(step, "delegate.copilot:"))
+					log.Printf("[Cerebellum] Delegating to Copilot CLI: %s", taskDesc)
+					cliCmd := tool.Command{
+						ID:     fmt.Sprintf("%s-copilot-%d", cognitive.GoalID, i),
+						Action: "delegate.copilot",
+						Input:  map[string]interface{}{"task": taskDesc, "allow_all_tools": true},
+					}
+					if c.SignalCallback != nil {
+						c.SignalCallback(cognitive.GoalID, "tool_call_start", "Delegating to Copilot CLI", cliCmd)
+					}
+					res, cliErr := c.Executor.Execute(ctx, cliCmd)
+					if cliErr != nil {
+						log.Printf("[Cerebellum] Copilot delegation failed: %v", cliErr)
+					} else {
+						log.Printf("[Cerebellum] Copilot delegation result: %s", res.Observation)
+					}
+					if c.SignalCallback != nil {
+						c.SignalCallback(cognitive.GoalID, "tool_call_end", "Copilot delegation completed", res)
+					}
+					corr := CognitiveResult{
+						GoalID: cmd.ID,
+						Intent: "refined_action",
+						Plan:   []string{fmt.Sprintf("Copilot result: %s", res.Observation)},
 					}
 					select {
 					case c.CorrectionOut <- corr:
@@ -270,6 +347,12 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 					c.SignalCallback(cognitive.GoalID, "tool_call_start", fmt.Sprintf("Calling tool %s", cmd.Action), cmd)
 				}
 				res, err := c.Executor.Execute(ctx, cmd)
+				pageToolCalls++
+				if pageToolCalls > maxToolCallsPerPage && c.isCopilotAvailable() {
+					delegateRequested = true
+					delegateAtStep = i
+					log.Printf("[Cerebellum] Page tool calls (%d) exceeded limit, delegating to Copilot", pageToolCalls)
+				}
 
 				success := err == nil
 				output := ""
@@ -281,12 +364,43 @@ func (c *CerebellumNode) startOrchestrationLoop(ctx context.Context) {
 				}
 				log.Printf("[Cerebellum] Local execution feedback for Action %s. Success: %t, Output: %q", cmd.ID, success, output)
 
+				if delegateRequested {
+					break
+				}
+
 				// Small Cerebellar correction calculation loop
 				// Send a correction report upward through Thalamus (Diencephalon)
 				corr := CognitiveResult{
 					GoalID: cmd.ID,
 					Intent: "refined_action",
 					Plan:   []string{"verify_result_status"},
+				}
+				select {
+				case c.CorrectionOut <- corr:
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			// Post-loop delegation: if the Cerebellum exceeded the per-page
+			// tool call limit, send a delegate_to_copilot intent upward to the
+			// Diencephalon so the Cerebrum can re-plan using the Copilot CLI.
+			if delegateRequested {
+				completed := cognitive.Plan[:delegateAtStep]
+				remaining := cognitive.Plan[delegateAtStep:]
+				summary := fmt.Sprintf(
+					"delegate_to_copilot: Cerebellum exceeded %d tool calls on this page. "+
+						"Completed %d/%d steps. "+
+						"Completed work: %v. "+
+						"Remaining work: %v. "+
+						"Please re-plan using the agentic_cli(cli=copilot) or delegate.copilot tool "+
+						"to complete the remaining steps efficiently.",
+					maxToolCallsPerPage, delegateAtStep, len(cognitive.Plan), completed, remaining)
+				log.Printf("[Cerebellum] Sending delegation request: %s", summary)
+				corr := CognitiveResult{
+					GoalID: cognitive.GoalID,
+					Intent: "delegate_to_copilot",
+					Plan:   []string{summary},
 				}
 				select {
 				case c.CorrectionOut <- corr:

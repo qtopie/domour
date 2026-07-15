@@ -3,6 +3,7 @@ package react
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/qtopie/domour/internal/brain"
@@ -79,6 +80,19 @@ func (r *CerebrumReActReasoner) Decide(ctx context.Context, state *brain.State, 
 	case brain.EventExecResult:
 		// Step 3: Tool observation returned from Cerebellum.
 		obsText := event.Payload.(string)
+
+		// Cerebellum delegation: when the Cerebellum exceeds its per-page
+		// tool call limit and Copilot CLI is available, it sends a
+		// delegate_to_copilot intent. We route this directly to the Cerebrum
+		// for re-planning without counting it toward the ReAct guard.
+		if strings.HasPrefix(obsText, "delegate_to_copilot:") {
+			log.Printf("[ReAct] Cerebellum requested Copilot delegation: %.200s", obsText)
+			state.ToolCallCount = 0 // reset for the new execution plan
+			return brain.NextStep{
+				Action:  brain.ActionCallLLM,
+				Payload: obsText,
+			}, nil
+		}
 
 		// ReAct loop guard: increment counter, check against max
 		state.ToolCallCount++
