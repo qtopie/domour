@@ -38,18 +38,30 @@ type localCognitorClient struct {
 }
 
 // NewLocalCognitorClient constructs a new local CognitorClient.
+// Chat model is required; copilot and autopilot are optional — they degrade
+// gracefully when unavailable (e.g. copilot CLI not installed on device).
 func NewLocalCognitorClient() (CognitorClient, error) {
+	// Log resolved config for debugging — helps diagnose provider resolution issues
+	// on remote devices where env vars or config may differ from expected.
+	if cfg, err := appconfig.LoadDomourConfig(); err == nil {
+		resolved := proxy.ResolveConfig("chat", cfg)
+		log.Printf("[Cognitor] resolved chat config — provider=%q model=%q baseURL=%q",
+			resolved.Provider, resolved.Model, resolved.BaseURL)
+	}
+
 	chatModel, err := proxy.NewForEntry(context.Background(), "chat")
 	if err != nil {
 		return nil, fmt.Errorf("init chat model: %w", err)
 	}
 	copilotModel, err := proxy.NewForEntry(context.Background(), "copilot")
 	if err != nil {
-		return nil, fmt.Errorf("init copilot model: %w", err)
+		log.Printf("[Cognitor] copilot model unavailable (degraded): %v", err)
+		copilotModel = nil
 	}
 	autopilotModel, err := proxy.NewForEntry(context.Background(), "autopilot")
 	if err != nil {
-		return nil, fmt.Errorf("init autopilot model: %w", err)
+		log.Printf("[Cognitor] autopilot model unavailable (degraded): %v", err)
+		autopilotModel = nil
 	}
 
 	return &localCognitorClient{
@@ -65,8 +77,14 @@ func (b *localCognitorClient) GetClient(ctx context.Context, entry string) (*pro
 	case "chat":
 		return b.chatModel, nil
 	case "copilot":
+		if b.copilotModel == nil {
+			return nil, fmt.Errorf("copilot model is not available (degraded)")
+		}
 		return b.copilotModel, nil
 	case "autopilot":
+		if b.autopilotModel == nil {
+			return nil, fmt.Errorf("autopilot model is not available (degraded)")
+		}
 		return b.autopilotModel, nil
 	default:
 		return nil, fmt.Errorf("unsupported brain entry %q", entry)
