@@ -204,10 +204,13 @@ type reloadableCognitorClient struct {
 }
 
 // NewReloadableCognitorClient constructs a new reloadable CognitorClient.
-func NewReloadableCognitorClient() (CognitorClient, error) {
+// It never fails — if the initial client cannot be created (e.g. provider not
+// yet running), it defers initialization until the first use via lazy init.
+func NewReloadableCognitorClient() CognitorClient {
 	inner, err := NewConfiguredCognitorClient()
 	if err != nil {
-		return nil, err
+		log.Printf("[Cognitor] Warning: initial cognitor client init failed (will retry on first use): %v", err)
+		inner = nil
 	}
 
 	b := &reloadableCognitorClient{
@@ -227,21 +230,7 @@ func NewReloadableCognitorClient() (CognitorClient, error) {
 		log.Printf("[Agent] Cognitor client reloaded successfully.")
 	})
 
-	return b, nil
-}
-
-func (b *reloadableCognitorClient) getInner() CognitorClient {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.inner
-}
-
-func (b *reloadableCognitorClient) GetClient(ctx context.Context, entry string) (*proxy.Client, error) {
-	return b.getInner().GetClient(ctx, entry)
-}
-
-func (b *reloadableCognitorClient) GetClientWithOverride(ctx context.Context, entry string, provider, model string) (*proxy.Client, error) {
-	return b.getInner().GetClientWithOverride(ctx, entry, provider, model)
+	return b
 }
 
 // NewConfiguredCognitorClient constructs CognitorClient configured via env and config.
@@ -259,6 +248,62 @@ func NewConfiguredCognitorClient() (CognitorClient, error) {
 		fmt.Println("[Proxy] Dapr brain mode requested. Dapr client has been moved out of engine runtime.")
 	}
 	return NewLocalCognitorClient()
+}
+
+func (b *reloadableCognitorClient) getInner() CognitorClient {
+	b.mu.RLock()
+	inner := b.inner
+	b.mu.RUnlock()
+	if inner != nil {
+		return inner
+	}
+	// Lazy init: try to create the client now (provider may have started).
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.inner != nil {
+		return b.inner
+	}
+	newInner, err := NewConfiguredCognitorClient()
+	if err != nil {
+		log.Printf("[Cognitor] Lazy init failed (will retry on next call): %v", err)
+		return nil
+	}
+	b.inner = newInner
+	return b.inner
+}
+
+func (b *reloadableCognitorClient) GetClient(ctx context.Context, entry string) (*proxy.Client, error) {
+	inner := b.getInner()
+	if inner == nil {
+		return nil, fmt.Errorf("cognitor client not initialized (provider may be unavailable)")
+	}
+	return inner.GetClient(ctx, entry)
+}
+
+func (b *reloadableCognitorClient) GetClientWithOverride(ctx context.Context, entry string, provider, model string) (*proxy.Client, error) {
+	// GetClientWithOverride can always create a fresh client from config even
+	// when inner is nil — provider-specific overrides bypass the cached clients.
+	inner := b.getInner()
+	if inner != nil {
+		return inner.GetClientWithOverride(ctx, entry, provider, model)
+	}
+	// Inner still nil — build a one-shot client from config + overrides.
+	cfg, err := appconfig.LoadDomourConfig()
+	if err != nil {
+		return nil, fmt.Errorf("cognitor nil: failed to load config: %w", err)
+	}
+	resolved := proxy.ResolveConfig(entry, cfg)
+	if provider != "" {
+		resolved.Provider = provider
+		resolved.APIKey = cfg.APIKeyForProvider(provider)
+		resolved.BaseURL = cfg.BaseURLForProvider(provider)
+		resolved.ProxyURL = cfg.ProxyForProvider(provider)
+		resolved.Model = cfg.ProviderModel(provider)
+	}
+	if model != "" {
+		resolved.Model = model
+	}
+	return proxy.New(ctx, resolved)
 }
 
 // NewConfiguredExecutorClient constructs ExecutorClient configured via env and config.

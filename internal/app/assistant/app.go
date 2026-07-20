@@ -73,10 +73,9 @@ func (a *App) GRPCAddr() string { return a.grpcAddr }
 func (a *App) HTTPAddr() string { return a.httpAddr }
 
 func (a *App) RegisterGRPC(s *grpc.Server) error {
-	cognitorClient, err := engine.NewReloadableCognitorClient()
-	if err != nil {
-		return fmt.Errorf("failed to init cognitor client: %w", err)
-	}
+	// NewReloadableCognitorClient never fails — if the provider is not yet
+	// running, it defers initialization until the first use (lazy init).
+	cognitorClient := engine.NewReloadableCognitorClient()
 	executorClient, err := engine.NewConfiguredExecutorClient()
 	if err != nil {
 		return fmt.Errorf("failed to init executor client: %w", err)
@@ -115,7 +114,7 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) RunBackground(ctx context.Context) error {
-	cognitorClient, _ := engine.NewReloadableCognitorClient()
+	cognitorClient := engine.NewReloadableCognitorClient()
 	executorClient, _ := engine.NewConfiguredExecutorClient()
 	eng := engine.NewEngine(cognitorClient, executorClient)
 
@@ -156,8 +155,11 @@ func (a *App) RunWithNotify(ctx context.Context, ready chan<- struct{}) error {
 		return err
 	}
 
-	cognitorClient, _ := engine.NewReloadableCognitorClient()
-	executorClient, _ := engine.NewConfiguredExecutorClient()
+	cognitorClient := engine.NewReloadableCognitorClient()
+	executorClient, err := engine.NewConfiguredExecutorClient()
+	if err != nil {
+		return fmt.Errorf("failed to init executor client: %w", err)
+	}
 	eng := engine.NewEngine(cognitorClient, executorClient)
 
 	internalMux, err := internalhttp.NewInternalBrainMux(eng.Cognitor())

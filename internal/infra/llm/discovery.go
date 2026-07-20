@@ -70,7 +70,7 @@ func discoverLlamaCppModels(ctx context.Context, cfg Config) (DiscoveryResult, e
 	provider := normalizeDiscoveryProvider(cfg.Provider)
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	if baseURL == "" {
-		baseURL = "http://127.0.0.1:8080/v1"
+		baseURL = "http://127.0.0.1:8082/v1"
 	}
 	endpoint := ensureModelsEndpoint(baseURL)
 	models, err := fetchOpenAIModels(ctx, endpoint, cfg)

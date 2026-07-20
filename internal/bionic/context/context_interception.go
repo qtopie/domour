@@ -338,7 +338,7 @@ func resolveExplicitOCRConfig(cfg appconfig.DomourConfig) (proxy.Config, bool) {
 		ocBaseURL := "http://127.0.0.1:11434/v1"
 		if strings.EqualFold(resolved.Provider, "llamacpp") {
 			ocAPIKey = "llamacpp"
-			ocBaseURL = "http://127.0.0.1:8080/v1"
+			ocBaseURL = "http://127.0.0.1:8082/v1"
 		}
 		resolved.APIKey = pickFirstNonEmpty(resolved.APIKey, ocAPIKey)
 		resolved.BaseURL = pickFirstNonEmpty(resolved.BaseURL, ocBaseURL)

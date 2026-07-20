@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/qwen"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/qtopie/domour/internal/infra/llm/cli"
+	"github.com/qtopie/domour/internal/infra/llm/runtime"
 	// homa "github.com/qtopie/domour/internal/assistant/llm"
 	"google.golang.org/genai"
 )
@@ -23,6 +24,26 @@ type Config struct {
 	Model    string // e.g. "gpt-4", "gemini-pro"
 	ProxyURL string // Optional, supports "http://", "https://", "socks5://", "socks5h://"
 	Debug    bool
+}
+
+type sessionHeaderTransport struct {
+	inner http.RoundTripper
+}
+
+func (s *sessionHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rmeta := runtime.RequestMetadataFromContext(req.Context())
+	if rmeta.SessionID != "" {
+		// Clone request to avoid mutating original request in RoundTripper
+		req2 := new(http.Request)
+		*req2 = *req
+		req2.Header = make(http.Header, len(req.Header))
+		for k, s := range req.Header {
+			req2.Header[k] = append([]string(nil), s...)
+		}
+		req2.Header.Set("X-Session-ID", rmeta.SessionID)
+		req = req2
+	}
+	return s.inner.RoundTrip(req)
 }
 
 // NewChatModel creates a new LLM instance based on the provider config.
@@ -119,11 +140,29 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 	case "llamacpp", "llama.cpp", "llama_cpp":
 		llamacppCfg := *cfg
 		if strings.TrimSpace(llamacppCfg.BaseURL) == "" {
-			llamacppCfg.BaseURL = "http://127.0.0.1:8080/v1"
+			llamacppCfg.BaseURL = "http://127.0.0.1:8082/v1"
 		}
 		if strings.TrimSpace(llamacppCfg.APIKey) == "" {
 			llamacppCfg.APIKey = "llamacpp"
 		}
+		// Handle remote node routing if model has @peerID suffix
+		if idx := strings.Index(llamacppCfg.Model, "@"); idx >= 0 {
+			targetPeerID := llamacppCfg.Model[idx+1:]
+			llamacppCfg.Model = llamacppCfg.Model[:idx]
+			if targetPeerID != "" && targetPeerID != "local-node" && targetPeerID != "auto" {
+				llamacppCfg.BaseURL = fmt.Sprintf("http://localhost:3500/v1.0/invoke/%s/method/v1", targetPeerID)
+			}
+		}
+		// Wrap client transport only for llamacpp
+		if httpClient == nil {
+			httpClient = &http.Client{}
+		}
+		innerTrans := httpClient.Transport
+		if innerTrans == nil {
+			innerTrans = http.DefaultTransport
+		}
+		httpClient.Transport = &sessionHeaderTransport{inner: innerTrans}
+
 		return newOpenAICompatibleChatModel(ctx, httpClient, llamacppCfg)
 	case "gemini":
 		client, err := genai.NewClient(ctx, &genai.ClientConfig{
