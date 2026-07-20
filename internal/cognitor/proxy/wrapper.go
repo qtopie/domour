@@ -502,6 +502,10 @@ func (c *Client) Model() string {
 	return c.model
 }
 
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
 func (c *Client) IsReady(ctx context.Context) (bool, error) {
 	// If it's a CLI-based model, use its specialized IsReady check
 	if cliModel, ok := c.Chat.(interface {

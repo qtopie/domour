@@ -281,8 +281,8 @@ func resolveOCRInterceptionConfig() (proxy.Config, bool, error) {
 
 	chatCfg := proxy.ResolveConfig("chat", cfg)
 	if (strings.EqualFold(strings.TrimSpace(chatCfg.Provider), "ollama") || strings.EqualFold(strings.TrimSpace(chatCfg.Provider), "llamacpp")) && supportsImageInterceptionProvider(chatCfg.Provider) {
-		chatCfg.APIKey = pickFirstNonEmpty(chatCfg.APIKey, "ollama")
-		chatCfg.BaseURL = pickFirstNonEmpty(chatCfg.BaseURL, "http://127.0.0.1:11434/v1")
+		chatCfg.APIKey = pickFirstNonEmpty(chatCfg.APIKey, "llamacpp")
+		chatCfg.BaseURL = pickFirstNonEmpty(chatCfg.BaseURL, "http://127.0.0.1:38082/v1")
 		return chatCfg, true, nil
 	}
 
@@ -293,8 +293,8 @@ func resolveOCRInterceptionConfig() (proxy.Config, bool, error) {
 		}
 		return proxy.Config{
 			Provider: ocProvider,
-			APIKey:   pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_API_KEY")), cfg.APIKeyForProvider(ocProvider), "ollama"),
-			BaseURL:  pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_BASE_URL")), cfg.BaseURLForProvider(ocProvider), "http://127.0.0.1:11434/v1"),
+			APIKey:   pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_API_KEY")), cfg.APIKeyForProvider(ocProvider), "llamacpp"),
+			BaseURL:  pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_BASE_URL")), cfg.BaseURLForProvider(ocProvider), "http://127.0.0.1:38082/v1"),
 			Model: pickFirstNonEmpty(
 				strings.TrimSpace(os.Getenv("DOMOUR_OCR_MODEL")),
 				cfg.EntryModel("ocr"),
@@ -334,11 +334,11 @@ func resolveExplicitOCRConfig(cfg appconfig.DomourConfig) (proxy.Config, bool) {
 		return proxy.Config{}, false
 	}
 	if strings.EqualFold(resolved.Provider, "ollama") || strings.EqualFold(resolved.Provider, "llamacpp") {
-		ocAPIKey := "ollama"
-		ocBaseURL := "http://127.0.0.1:11434/v1"
+		ocAPIKey := "llamacpp"
+		ocBaseURL := "http://127.0.0.1:38082/v1"
 		if strings.EqualFold(resolved.Provider, "llamacpp") {
 			ocAPIKey = "llamacpp"
-			ocBaseURL = "http://127.0.0.1:8082/v1"
+			ocBaseURL = "http://127.0.0.1:38082/v1"
 		}
 		resolved.APIKey = pickFirstNonEmpty(resolved.APIKey, ocAPIKey)
 		resolved.BaseURL = pickFirstNonEmpty(resolved.BaseURL, ocBaseURL)

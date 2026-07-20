@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,8 @@ import (
 	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/eventbus"
 )
+
+var orchLog = slog.Default().With(slog.String("component", "LocalOrchestrator"))
 
 // LocalOrchestrator implements the DurableAgentOrchestrator interface locally.
 type LocalOrchestrator struct {
@@ -46,6 +49,14 @@ func (o *LocalOrchestrator) StartWorkflow(ctx context.Context, workflowID string
 		wfInput = *wfInputPtr
 	}
 
+	orchLog.Info("StartWorkflow",
+		"workflow_id", workflowID,
+		"provider", wfInput.Provider,
+		"model", wfInput.Model,
+		"stage", wfInput.Stage,
+		"message_count", len(wfInput.Messages),
+	)
+
 	o.mu.Lock()
 	o.states[workflowID] = &dapr.WorkflowState{Status: "running"}
 	done := make(chan struct{})
@@ -61,9 +72,11 @@ func (o *LocalOrchestrator) StartWorkflow(ctx context.Context, workflowID string
 		if err != nil {
 			state.Status = "failed"
 			state.Err = err
+			orchLog.Error("Workflow failed", "workflow_id", workflowID, "error", err)
 		} else {
 			state.Status = "completed"
 			state.Result = res
+			orchLog.Info("Workflow completed", "workflow_id", workflowID)
 		}
 		o.mu.Unlock()
 
@@ -101,17 +114,33 @@ func (o *LocalOrchestrator) GetWorkflowStatus(ctx context.Context, workflowID st
 }
 
 func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string, input dapr.AgentWorkflowInput) (*schema.Message, error) {
+	orchLog.Info("runReActLoop: resolving brain client",
+		"workflow_id", workflowID,
+		"requested_provider", input.Provider,
+		"requested_model", input.Model,
+	)
 	brainClient, err := o.eng.Cognitor().GetClientWithOverride(ctx, input.Stage, input.Provider, input.Model)
 	if err != nil {
+		orchLog.Error("runReActLoop: failed to get brain client", "workflow_id", workflowID, "error", err)
 		return nil, fmt.Errorf("get brain client: %w", err)
 	}
 
+	orchLog.Info("runReActLoop: brain client resolved",
+		"workflow_id", workflowID,
+		"resolved_provider", brainClient.Provider(),
+		"resolved_model", brainClient.Model(),
+		"base_url", brainClient.BaseURL(),
+	)
+
 	if ready, readyErr := brainClient.IsReady(ctx); !ready || readyErr != nil {
 		if readyErr != nil {
+			orchLog.Error("runReActLoop: brain client not ready", "workflow_id", workflowID, "error", readyErr, "provider", brainClient.Provider())
 			return nil, readyErr
 		}
+		orchLog.Error("runReActLoop: brain client not ready", "workflow_id", workflowID, "provider", brainClient.Provider())
 		return nil, fmt.Errorf("provider %s is not ready", brainClient.Provider())
 	}
+	orchLog.Info("runReActLoop: brain client ready, starting stream", "workflow_id", workflowID)
 
 	yield := func(event shared.MotorStreamEvent) error {
 		data, err := json.Marshal(event)
@@ -153,13 +182,21 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			}
 		}
 
+		orchLog.Info("runReActLoop: calling Stream", "workflow_id", workflowID, "loop", loop, "message_count", len(messages))
 		sr, err := brainClient.Chat.Stream(ctx, messages)
 		if err != nil {
+			orchLog.Error("runReActLoop: Stream call failed", "workflow_id", workflowID, "loop", loop, "error", err)
+			// Detect eino's validation error for empty model output (common with small local models
+			// like SmolLM2 that occasionally return empty responses).
+			if strings.Contains(err.Error(), "model output must contain either output text or tool calls") {
+				return nil, fmt.Errorf("本地模型返回了空响应，这通常发生在模型正在加载或上下文过长时。请稍后再试。(model=%s)", brainClient.Model())
+			}
 			return nil, err
 		}
 		if sr == nil {
 			return nil, fmt.Errorf("model client returned nil StreamReader")
 		}
+		orchLog.Info("runReActLoop: Stream started, receiving chunks", "workflow_id", workflowID, "loop", loop)
 
 		var chunks []*schema.Message
 		isToolCall := false
@@ -172,6 +209,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 				break
 			}
 			if recvErr != nil {
+				orchLog.Error("runReActLoop: recv error during streaming", "workflow_id", workflowID, "loop", loop, "error", recvErr)
 				sr.Close()
 				return nil, recvErr
 			}
@@ -211,6 +249,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 			}
 		}
 		sr.Close()
+		orchLog.Info("runReActLoop: stream done", "workflow_id", workflowID, "loop", loop, "chunks_received", len(chunks), "is_tool_call", isToolCall)
 
 		respMsg, err := schema.ConcatMessages(chunks)
 		if err != nil {

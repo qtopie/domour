@@ -52,11 +52,7 @@ func runACPServer() {
 	}
 
 	// Initialize Brain/Engine
-	cognitorClient, err := engine.NewReloadableCognitorClient()
-	if err != nil {
-		slog.Error("Failed to initialize cognitor client", "error", err)
-		os.Exit(1)
-	}
+	cognitorClient := engine.NewReloadableCognitorClient()
 	executorClient, err := engine.NewConfiguredExecutorClient()
 	if err != nil {
 		slog.Error("Failed to initialize executor client", "error", err)
