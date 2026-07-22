@@ -287,10 +287,7 @@ func resolveOCRInterceptionConfig() (proxy.Config, bool, error) {
 	}
 
 	if hasConfiguredProvider(cfg, "ollama") || hasConfiguredProvider(cfg, "llamacpp") {
-		ocProvider := "ollama"
-		if hasConfiguredProvider(cfg, "llamacpp") {
-			ocProvider = "llamacpp"
-		}
+		ocProvider := "llamacpp"
 		return proxy.Config{
 			Provider: ocProvider,
 			APIKey:   pickFirstNonEmpty(strings.TrimSpace(os.Getenv("DOMOUR_OCR_API_KEY")), cfg.APIKeyForProvider(ocProvider), "llamacpp"),

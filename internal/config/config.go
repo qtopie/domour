@@ -681,7 +681,7 @@ func normalizeProviderKey(provider string) string {
 		return "agy-sdk"
 	case "agy-cli", "agy_cli", "agy":
 		return "agy-cli"
-	case "llamacpp", "llama.cpp", "llama_cpp":
+	case "llamacpp", "llama.cpp", "llama_cpp", "ollama":
 		return "llamacpp"
 	case "github-copilot-cli", "copilot-cli", "github-copilot":
 		return "github-copilot-cli"
