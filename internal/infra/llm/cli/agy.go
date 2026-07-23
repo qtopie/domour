@@ -61,6 +61,34 @@ func (p *agyProvider) HealthCheck(ctx context.Context) (string, error) {
 	return fmt.Sprintf("RT: %v, Authenticated: %v, Network: %v", health.AvgRT, health.Authenticated, health.NetworkOK), nil
 }
 
+type GeminiOAuthCreds struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiryDate   int64  `json:"expiry_date"`
+	TokenType    string `json:"token_type"`
+}
+
+type GeminiQuotaBucket struct {
+	Model          string  `json:"model"`
+	RemainingQuota int     `json:"remainingQuota"`
+	ResetTime      string  `json:"resetTime"`
+	QuotaLimit     int     `json:"quotaLimit"`
+	UsagePercentage float64 `json:"usagePercentage"`
+}
+
+type GeminiAPIHealth struct {
+	LastCheck     time.Time           `json:"last_check"`
+	AvgRT         time.Duration       `json:"avg_rt"`
+	Authenticated bool                `json:"authenticated"`
+	NetworkOK     bool                `json:"network_ok"`
+	ProjectID     string              `json:"project_id"`
+	TierName      string              `json:"tier_name"`
+	TierID        string              `json:"tier_id"`
+	Quotas        []GeminiQuotaBucket `json:"quotas"`
+	RawLoadAssist []byte              `json:"raw_load_assist"`
+	RawUserQuota  []byte              `json:"raw_user_quota"`
+}
+
 func (p *agyProvider) GetQuotas(ctx context.Context) (*GeminiAPIHealth, error) {
 	creds, err := loadAgyOAuthCreds()
 	if err != nil {

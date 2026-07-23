@@ -7,14 +7,11 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/cloudwego/eino-ext/components/model/gemini"
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino-ext/components/model/qwen"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/qtopie/domour/internal/infra/llm/cli"
 	"github.com/qtopie/domour/internal/infra/llm/runtime"
-	// homa "github.com/qtopie/domour/internal/assistant/llm"
-	"google.golang.org/genai"
 )
 
 type Config struct {
@@ -164,19 +161,6 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ChatModel, error) {
 		httpClient.Transport = &sessionHeaderTransport{inner: innerTrans}
 
 		return newOpenAICompatibleChatModel(ctx, httpClient, llamacppCfg)
-	case "gemini":
-		client, err := genai.NewClient(ctx, &genai.ClientConfig{
-			APIKey:     cfg.APIKey,
-			HTTPClient: httpClient,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gemini client: %w", err)
-		}
-		c := &gemini.Config{
-			Client: client,
-			Model:  cfg.Model,
-		}
-		return gemini.NewChatModel(ctx, c)
 	case "qwen":
 		c := &qwen.ChatModelConfig{
 			APIKey: cfg.APIKey,

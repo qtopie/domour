@@ -1,4 +1,4 @@
-package storage
+package db
 
 import (
 	"context"
@@ -97,7 +97,7 @@ func (s *SurrealDB) Update(ctx context.Context, thing string, data interface{}) 
 	return *res, nil
 }
 
-// Upsert creates or replaces a record using a RecordID (properly handles hyphens in IDs)
+// Upsert creates or replaces a record using a RecordID
 func (s *SurrealDB) Upsert(ctx context.Context, rid models.RecordID, data interface{}) (interface{}, error) {
 	res, err := surrealdb.Upsert[any](ctx, s.db, rid, data)
 	if err != nil {
@@ -158,9 +158,7 @@ func (s *SurrealDB) Select(ctx context.Context, thing string) (interface{}, erro
 }
 
 func resolveEndpointViaDapr(ctx context.Context, daprAddr string) (string, error) {
-	// Use Dapr State Store API: GET http://localhost:<daprPort>/v1.0/state/<storeName>/<key>
 	url := fmt.Sprintf("http://%s/v1.0/state/db-topology/active-surreal-endpoint", daprAddr)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -185,12 +183,8 @@ func resolveEndpointViaDapr(ctx context.Context, daprAddr string) (string, error
 		return "", err
 	}
 
-	// Dapr State Store returns the raw value (or JSON if it was an object)
-	// If we saved it as a string, it might be quoted JSON or raw.
-	// We'll try to unmarshal as string first.
 	var endpoint string
 	if err := json.Unmarshal(body, &endpoint); err != nil {
-		// If not a JSON string, try raw string
 		endpoint = string(body)
 	}
 

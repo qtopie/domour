@@ -41,7 +41,7 @@ func runACPServer() {
 	// Initialize LLM ChatModel for Proxy Mode
 	cfg := &llm.Config{
 		Provider: "agy-cli",
-		Model:    "gemini-3.5-flash",
+		Model:    "default",
 		ProxyURL: "vproxy", // Use default system vproxy
 		Debug:    true,
 	}

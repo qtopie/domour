@@ -1,4 +1,4 @@
-package multimodal
+package cognitor
 
 import (
 	"context"
@@ -10,10 +10,9 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
-	"github.com/qtopie/domour/internal/infra/llm"
 )
 
-// Attachment defines a multimodal file or image attachment for LLM requests.
+// Attachment defines a multimodal file or image attachment for Cognitor requests.
 type Attachment struct {
 	ID         string         `json:"id,omitempty"`
 	Filename   string         `json:"filename,omitempty"`
@@ -22,15 +21,6 @@ type Attachment struct {
 	DataBase64 string         `json:"data_base64,omitempty"`
 	SizeBytes  int64          `json:"size_bytes,omitempty"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
-}
-
-// LLMConfig defines connection parameters for Domour LLM vision models.
-type LLMConfig struct {
-	Provider string `json:"provider"` // "openai", "gemini", "qwen", "llamacpp", "deepseek"
-	APIKey   string `json:"api_key"`
-	BaseURL  string `json:"base_url"`
-	Model    string `json:"model"`
-	ProxyURL string `json:"proxy_url,omitempty"`
 }
 
 // NewImageAttachmentFromFile loads an image file from disk and encodes it into a Base64 data attachment.
@@ -56,16 +46,18 @@ func NewImageAttachmentFromFile(path string) (*Attachment, error) {
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(data)
+	absPath, _ := filepath.Abs(path)
 	return &Attachment{
 		Filename:   filepath.Base(path),
 		MIMEType:   mimeType,
+		URL:        "file://" + absPath,
 		DataBase64: fmt.Sprintf("data:%s;base64,%s", mimeType, b64),
 		SizeBytes:  int64(len(data)),
 	}, nil
 }
 
-// BuildMessage constructs a multimodal schema.Message containing text and image attachments.
-func BuildMessage(text string, attachments []*Attachment) (*schema.Message, error) {
+// BuildMultimodalMessage constructs a schema.Message containing text and image attachments.
+func BuildMultimodalMessage(text string, attachments []*Attachment) (*schema.Message, error) {
 	text = strings.TrimSpace(text)
 	if len(attachments) == 0 {
 		return schema.UserMessage(text), nil
@@ -100,12 +92,8 @@ func BuildMessage(text string, attachments []*Attachment) (*schema.Message, erro
 	}, nil
 }
 
-// AnalyzeImage calls the Domour LLM engine to perform vision inference on local image files.
-func AnalyzeImage(ctx context.Context, cfg *LLMConfig, prompt string, imagePaths ...string) (string, error) {
-	if cfg == nil {
-		return "", fmt.Errorf("llm config is required")
-	}
-
+// AnalyzeImage performs vision inference on local image files using Cognitor.
+func (c *Client) AnalyzeImage(ctx context.Context, prompt string, imagePaths ...string) (string, error) {
 	attachments := make([]*Attachment, 0, len(imagePaths))
 	for _, p := range imagePaths {
 		att, err := NewImageAttachmentFromFile(p)
@@ -115,28 +103,17 @@ func AnalyzeImage(ctx context.Context, cfg *LLMConfig, prompt string, imagePaths
 		attachments = append(attachments, att)
 	}
 
-	msg, err := BuildMessage(prompt, attachments)
-	if err != nil {
-		return "", fmt.Errorf("failed to build multimodal message: %w", err)
+	req := &Request{
+		Message:     prompt,
+		Attachments: attachments,
 	}
 
-	chatModel, err := llm.NewChatModel(ctx, &llm.Config{
-		Provider: cfg.Provider,
-		APIKey:   cfg.APIKey,
-		BaseURL:  cfg.BaseURL,
-		Model:    cfg.Model,
-		ProxyURL: cfg.ProxyURL,
-	})
+	resp, err := c.Generate(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize domour llm model (%s/%s): %w", cfg.Provider, cfg.Model, err)
+		return "", fmt.Errorf("cognitor image analysis failed: %w", err)
 	}
 
-	res, err := chatModel.Generate(ctx, []*schema.Message{msg})
-	if err != nil {
-		return "", fmt.Errorf("llm vision inference failed: %w", err)
-	}
-
-	return res.Content, nil
+	return resp.Content, nil
 }
 
 func attachmentToInputPart(att *Attachment) (schema.MessageInputPart, error) {
@@ -164,7 +141,8 @@ func attachmentToInputPart(att *Attachment) (schema.MessageInputPart, error) {
 
 	if base64Data != "" {
 		partImage.Base64Data = &base64Data
-	} else {
+	}
+	if rawURL != "" {
 		partImage.URL = &rawURL
 	}
 

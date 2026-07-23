@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qtopie/domour/internal/infra/storage"
+	"github.com/qtopie/domour/internal/infra/db"
 	"github.com/qtopie/domour/ark/session"
 )
 
@@ -20,7 +20,7 @@ func TestQuerySessions_MemoryAndFilter(t *testing.T) {
 	os.Setenv("DOMOUR_TEST_CLI_ROOTS", tempDir)
 	defer os.Unsetenv("DOMOUR_TEST_CLI_ROOTS")
 
-	store := storage.NewMemoryStore()
+	store := db.NewMemoryStore()
 	defer store.Close()
 
 	ctx := context.Background()

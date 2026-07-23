@@ -1,4 +1,4 @@
-package storage
+package db
 
 import (
 	"context"
@@ -56,23 +56,13 @@ func openBadgerDB(path string) (*badger.DB, error) {
 	opts.Logger = nil
 
 	// Reduce value log file size from default 1GB to 128MB.
-	// Smaller mmap regions reduce the risk of SIGBUS when the underlying
-	// file is truncated or damaged from a prior crash.
 	opts = opts.WithValueLogFileSize(128 << 20) // 128MB
-
-	// Limit memtable to 32MB to reduce in-memory mmap pressure.
-	opts = opts.WithMemTableSize(32 << 20) // 32MB
-
-	// Sync writes to disk before returning, reducing corruption window.
+	opts = opts.WithMemTableSize(32 << 20)      // 32MB
 	opts = opts.WithSyncWrites(true)
-
-	// Keep only the latest version of each key to reduce compaction overhead.
 	opts = opts.WithNumVersionsToKeep(1)
 
 	db, err := safeBadgerOpen(opts)
 	if err != nil {
-		// CRITICAL FIX: Do not delete directory if it's a lock contention issue!
-		// Deleting the lock file while another process is running leads to concurrent writes and fatal SIGBUS.
 		if strings.Contains(err.Error(), "lock") || strings.Contains(err.Error(), "resource temporarily unavailable") {
 			return nil, fmt.Errorf("database is locked by another process: %w", err)
 		}
@@ -94,7 +84,6 @@ func safeBadgerOpen(opts badger.Options) (db *badger.DB, err error) {
 		}
 	}()
 	
-	// Retry up to 3 seconds for lock acquisition (useful during Wails hot reloads)
 	for i := 0; i < 30; i++ {
 		db, err = badger.Open(opts)
 		if err == nil {
@@ -131,7 +120,6 @@ func isBadgerCorrupted(dir string) bool {
 	return false
 }
 
-// sessionKey returns the Badger key for a given session ID.
 func sessionKey(sessionID string) []byte {
 	return append([]byte("sess:"), []byte(sessionID)...)
 }
@@ -269,45 +257,6 @@ func (s *BadgerStore) Close() error {
 		return nil
 	}
 	return s.db.Close()
-}
-
-// RunGC periodically runs Badger value log GC to reclaim disk space and reduce
-// the likelihood of file corruption. Should be called as a goroutine.
-func (s *BadgerStore) RunGC(ctx context.Context) {
-	if s == nil || s.db == nil {
-		return
-	}
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// Keep running GC until no more space can be reclaimed.
-			for {
-				err := s.db.RunValueLogGC(0.5)
-				if err != nil {
-					break
-				}
-			}
-		}
-	}
-}
-
-// Recover attempts to reopen the database after a crash, discarding corrupted data.
-// This is useful when a panic recovery hook wants to restore the store to a usable state.
-func (s *BadgerStore) Recover(path string) error {
-	if s.db != nil {
-		_ = s.db.Close()
-		s.db = nil
-	}
-	db, err := openBadgerDB(path)
-	if err != nil {
-		return err
-	}
-	s.db = db
-	return nil
 }
 
 func emptySession(sessionID string) session.Session {

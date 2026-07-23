@@ -9,6 +9,7 @@ domour/
 ├── ark/                        # 【SDK】Agent Runtime Kit (Public SDK)
 │   ├── ark.go                  # Unified gateway aggregating Hub and Governor
 │   ├── bootstrap/              # Dependency Injection and Application Startup
+│   ├── cognitor/               # 🧠 Reasoning Engine (LLM gateway & paradigms)
 │   ├── hub/                    # Resource Registration Hub (Tools/Skills/Providers)
 │   ├── governor/               # Global Governance Center (State/Mode/Policy)
 │   └── telemetry/              # Telemetry and Observability Configuration

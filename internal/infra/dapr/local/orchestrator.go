@@ -38,6 +38,10 @@ func NewLocalOrchestrator(eng engine.Engine, eb eventbus.EventBus) *LocalOrchest
 	}
 }
 
+func (o *LocalOrchestrator) EventBus() eventbus.EventBus {
+	return o.eb
+}
+
 // StartWorkflow starts a local workflow instance running the ReAct loop.
 func (o *LocalOrchestrator) StartWorkflow(ctx context.Context, workflowID string, input any) (string, error) {
 	wfInput, ok := input.(dapr.AgentWorkflowInput)
@@ -111,6 +115,22 @@ func (o *LocalOrchestrator) GetWorkflowStatus(ctx context.Context, workflowID st
 	}
 
 	return state, nil
+}
+
+// WaitForWorkflow blocks until the specified local workflow completes.
+func (o *LocalOrchestrator) WaitForWorkflow(ctx context.Context, workflowID string) (*dapr.WorkflowState, error) {
+	o.mu.RLock()
+	done, ok := o.doneChan[workflowID]
+	o.mu.RUnlock()
+
+	if ok && done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return o.GetWorkflowStatus(ctx, workflowID)
 }
 
 func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string, input dapr.AgentWorkflowInput) (*schema.Message, error) {

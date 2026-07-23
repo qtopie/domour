@@ -17,7 +17,7 @@ import (
 	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
 	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
-	"github.com/qtopie/domour/internal/infra/storage"
+	"github.com/qtopie/domour/internal/infra/db"
 	"google.golang.org/grpc"
 )
 

@@ -18,7 +18,7 @@ import (
 	"github.com/qtopie/domour/internal/engine"
 	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
 	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
-	db "github.com/qtopie/domour/internal/infra/storage"
+	db "github.com/qtopie/domour/internal/infra/db"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )

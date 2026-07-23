@@ -81,8 +81,6 @@ func New(cfg *Config) (model.ChatModel, error) {
 	}
 
 	switch provider {
-	case "gemini":
-		m.providerImpl = &geminiProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
 	case "agy-cli", "agy":
 		m.providerImpl = &agyProvider{command: resolvedCmd, model: m.model, proxyURL: m.proxyURL}
 	case "agy-sdk":
@@ -363,11 +361,7 @@ func (m *CLIChatModel) IsReady(ctx context.Context) (bool, error) {
 	return m.ready, m.lastCheckErr
 }
 
-func (m *CLIChatModel) GetAPIHealth() *GeminiAPIHealth {
-	if gp, ok := m.providerImpl.(*geminiProvider); ok {
-		health, _ := gp.GetQuotas(context.Background())
-		return health
-	}
+func (m *CLIChatModel) GetAPIHealth() any {
 	return nil
 }
 
@@ -406,6 +400,10 @@ func (m *CLIChatModel) invoke(ctx context.Context, prompt string, attachments []
 	if err != nil {
 		span.RecordError(err)
 		return "", err
+	}
+
+	if len(assetPaths) > 0 {
+		prompt = fmt.Sprintf("%s\n\nImage files:\n%s", prompt, strings.Join(assetPaths, "\n"))
 	}
 
 	args, err := m.providerImpl.GetGenerateArgs(ctx, prompt, assetPaths, runtime)
@@ -630,8 +628,6 @@ func resolveCLICommand(command string) (string, error) {
 
 func normalizeCLIProvider(provider, command string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "gemini", "gemini-cli", "gemini_cli":
-		return "gemini"
 	case "agy", "agy-cli", "agy_cli":
 		return "agy-cli"
 	case "github-copilot-cli", "copilot-cli", "github-copilot":
@@ -642,8 +638,6 @@ func normalizeCLIProvider(provider, command string) string {
 		return "claude"
 	default:
 		switch strings.ToLower(strings.TrimSpace(command)) {
-		case "gemini":
-			return "gemini"
 		case "agy":
 			return "agy-cli"
 		case "copilot":

@@ -1,4 +1,4 @@
-package storage
+package db
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
 
-// sessionRID creates a models.RecordID for the session table.
 func sessionRID(id string) models.RecordID {
 	return models.NewRecordID("session", id)
 }
@@ -39,13 +38,11 @@ func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (sessio
 		return session.Session{}, err
 	}
 
-	// Direct unmarshal as session.Session (v1.x SDK returns the record directly)
 	var sess session.Session
 	if err := json.Unmarshal(bytes, &sess); err == nil && sess.ID != "" {
 		return sess, nil
 	}
 
-	// Fallback: unwrap from QueryResult array (legacy v0.x format)
 	var queryResults []surrealdb.QueryResult[any]
 	if err := json.Unmarshal(bytes, &queryResults); err == nil && len(queryResults) > 0 {
 		resultBytes, _ := json.Marshal(queryResults[0].Result)
@@ -56,7 +53,6 @@ func (s *SurrealStore) GetSession(ctx context.Context, sessionID string) (sessio
 		}
 	}
 
-	// Return a fresh session if nothing found
 	return session.Session{
 		ID:        sessionID,
 		CreatedAt: time.Now(),
@@ -81,7 +77,6 @@ func (s *SurrealStore) AppendHistory(ctx context.Context, sessionID string, msg 
 		return err
 	}
 
-	// Auto-assign sequence number if not set
 	if msg.Seq == 0 {
 		var maxSeq int32 = 0
 		for _, m := range sess.History {

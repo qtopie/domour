@@ -6,7 +6,7 @@ import (
 
 	chatpb "github.com/qtopie/domour/gen/assistant/chat"
 	appconfig "github.com/qtopie/domour/internal/config"
-	domourmodel "github.com/qtopie/domour/ark/model"
+	domourmodel "github.com/qtopie/domour/ark/cognitor"
 )
 
 // ListModels returns a combined list of models from:
@@ -110,8 +110,6 @@ func inferProviderTags(provider string) []string {
 	case "deepseek":
 		return []string{"cloud", "flash", "pro"}
 	case "openai":
-		return []string{"cloud", "pro"}
-	case "gemini", "gemini-cli", "gemini_cli":
 		return []string{"cloud", "pro"}
 	case "claude":
 		return []string{"cloud", "pro"}

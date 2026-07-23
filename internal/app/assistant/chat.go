@@ -15,7 +15,7 @@ import (
 	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
-	domourmodel "github.com/qtopie/domour/ark/model"
+	domourmodel "github.com/qtopie/domour/ark/cognitor"
 )
 
 func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest, provider, model string, yield func(event shared.MotorStreamEvent) error) error {

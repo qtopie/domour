@@ -1,16 +1,11 @@
-// Package model provides a public API for the Domour model registry.
-//
-// Extensions (e.g. cosmos-star ext.llamacpp) use this package to register
-// available models with their capability tags. The brain then uses these tags
-// to select the best model for the current system mode.
-package model
+package cognitor
 
 import (
 	"github.com/qtopie/domour/internal/infra/model"
 )
 
-// Registration describes a model's identity and capability tags.
-type Registration struct {
+// ModelRegistration describes a model's identity and capability tags.
+type ModelRegistration struct {
 	ID        string   // Unique identifier, e.g. "gemma4-e4b"
 	Provider  string   // Provider name, e.g. "llamacpp"
 	ModelName string   // Model name for the provider, e.g. "gemma4:e4b"
@@ -18,18 +13,24 @@ type Registration struct {
 	UserTags  []string // User-defined tags, e.g. ["gemma-family"]
 }
 
-// DefaultRegistry returns the singleton model registry used by the brain.
-func DefaultRegistry() *internalRegistry { return internalRegistrySingleton }
+// Registration is an alias to ModelRegistration for backward compatibility.
+type Registration = ModelRegistration
 
-// internalRegistry wraps the internal registry to expose only the public API.
-type internalRegistry struct {
+// ModelRegistry wraps the model registry to expose only the public API.
+type ModelRegistry struct {
 	inner *model.Registry
 }
 
-var internalRegistrySingleton = &internalRegistry{inner: model.NewRegistry()}
+var defaultModelRegistrySingleton = &ModelRegistry{inner: model.NewRegistry()}
+
+// DefaultModelRegistry returns the singleton model registry used by the reasoning engine.
+func DefaultModelRegistry() *ModelRegistry { return defaultModelRegistrySingleton }
+
+// DefaultRegistry is an alias for DefaultModelRegistry.
+func DefaultRegistry() *ModelRegistry { return defaultModelRegistrySingleton }
 
 // Register adds or updates a model in the registry.
-func (r *internalRegistry) Register(reg Registration) error {
+func (r *ModelRegistry) Register(reg ModelRegistration) error {
 	return r.inner.Register(model.Registration{
 		ID:        reg.ID,
 		Provider:  reg.Provider,
@@ -40,16 +41,16 @@ func (r *internalRegistry) Register(reg Registration) error {
 }
 
 // Unregister removes a model from the registry.
-func (r *internalRegistry) Unregister(id string) {
+func (r *ModelRegistry) Unregister(id string) {
 	r.inner.Unregister(id)
 }
 
 // List returns all registered models.
-func (r *internalRegistry) List() []Registration {
+func (r *ModelRegistry) List() []ModelRegistration {
 	inner := r.inner.List()
-	out := make([]Registration, len(inner))
+	out := make([]ModelRegistration, len(inner))
 	for i, reg := range inner {
-		out[i] = Registration{
+		out[i] = ModelRegistration{
 			ID:        reg.ID,
 			Provider:  reg.Provider,
 			ModelName: reg.ModelName,
@@ -62,6 +63,6 @@ func (r *internalRegistry) List() []Registration {
 
 // QueryBestModel selects the best matching model based on tag rules.
 // Returns ("", "", nil) if no model matches.
-func (r *internalRegistry) QueryBestModel(require, prefer, exclude []string) (provider, modelName string, err error) {
+func (r *ModelRegistry) QueryBestModel(require, prefer, exclude []string) (provider, modelName string, err error) {
 	return r.inner.QueryBestModel(require, prefer, exclude)
 }
