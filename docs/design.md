@@ -91,8 +91,67 @@ Runtime 负责管理智能体的“灵魂碎片”：
 
 ---
 
-## 7. 下一步演进
+## 7. 核心模块与暴露的能力设计 (Modular Capabilities)
 
-1. **Runtime 接口标准化**: 进一步抽象 `CognitorClient` 和 `ExecutorClient` 的远程协议。
-2. **轻量化脑干**: 优化在嵌入式设备上的资源占用。
+`domour` 提供的 `ark` (Agent Runtime Kit) SDK 被拆解为 9 个核心模块。这些模块不仅在内部高度解耦，同时也会根据需要向开发者暴露相应的 API：
+
+### 7.1 推理引擎 (Reasoning Engine)
+负责 Agent 的“思考”过程，将任务转化为具体的动作。
+* **模型适配与路由 (Model Adapters & Routing)**：统一接入 Gemini, DeepSeek 等模型接口，支持回退机制（Fallback）。
+* **思维范式 (Reasoning Paradigms)**：内置 ReAct, Plan-and-Solve 等范式。
+* **提示词管理 (Prompt Management)**：系统提示词的动态注入与模板渲染。
+
+### 7.2 记忆系统 (Memory System)
+Agent 的上下文与经验管理。
+* **短期记忆 (Short-term / Working Memory)**：当前 Session 的多轮对话上下文管理，包括自动截断与滑动窗口。
+* **长期记忆 (Long-term Memory)**：事实提取与向量化存储，支持通过 RAG 检索历史经验。
+* **记忆抽象接口**：对外暴露 `MemoryBackend` 接口，允许开发者挂载不同的存储实现。
+
+### 7.3 编排 (Orchestration)
+负责任务生命周期与多 Agent 协同。
+* **任务调度 (Task Scheduling)**：管理 Agent 状态（启动、休眠、唤醒、停止）。
+* **工作流编排 (Workflow Orchestration)**：支持将复杂任务拆解为子任务（Sub-tasks），并交由不同的 Agent 或 Worker 执行。
+* **事件总线 (Event Bus)**：基于发布/订阅模型的内部事件分发。
+
+### 7.4 工具 (Tools)
+让 Agent 具备与物理世界交互的能力。
+* **工具注册中心 (Tool Registry)**：通过强类型的 Go 接口注册本地函数作为工具。
+* **工具调用协议 (Tool Call Protocol)**：标准化大模型的 Function Calling 输出，转化为 Go 的函数调用并捕获执行结果。
+* **技能组管理 (Skill Groups)**：支持按领域（如：Desktop Control, File System）挂载工具集合。
+
+### 7.5 质量评估 (Quality Evaluation)
+保障 Agent 输出结果的可靠性。
+* **幻觉检测 (Hallucination Detection)**：在返回结果前进行自我一致性检查或事实核查。
+* **护栏策略 (Guardrails)**：定义输出格式校验规则，确保输出的 JSON 或数据结构符合预期。
+* **结果自省 (Self-Reflection)**：当执行失败时，由引擎触发自动反思并重试。
+
+### 7.6 认证授权 (Authentication & Authorization)
+多租户和多用户环境下的身份标识。
+* **Session 鉴权 (Session Auth)**：验证当前会话的合法性，绑定对应的 User ID 和 Tenant ID。
+* **访问控制 (Access Control)**：基于角色的权限控制 (RBAC)，限制特定 Agent 访问敏感服务或数据。
+
+### 7.7 安全与隐私 (Security & Privacy)
+将非确定性的模型输出关在笼子里。
+* **零信任沙箱 (Zero-Trust Execution)**：工具执行的环境隔离与超时控制。
+* **操作审批/否决 (Veto System)**：危险指令（如文件删除、系统命令）的自动拦截与人工确认（Human-in-the-loop）机制。
+* **数据脱敏 (Data Masking/PII Redaction)**：在将上下文发送给大模型前，自动擦除敏感信息。
+
+### 7.8 可观测性 (Observability)
+让 Agent 的黑盒过程白盒化。
+* **思维轨迹追踪 (Traceability)**：使用 OpenTelemetry 记录每一步的思考链路、耗时和工具调用明细。
+* **运行指标监控 (Metrics)**：监控 Token 消耗速率、工具调用成功率、任务执行耗时等。
+* **事件钩子 (Event Hooks)**：对外暴露 `OnThink`, `OnAct`, `OnError` 等回调，方便业务层实现 UI 状态同步。
+
+### 7.9 基础设施 (Infrastructure)
+底层的支撑组件，为上述模块提供物理存储。
+* **数据库 (DB)**：默认内置轻量级数据库（SQLite 适用于嵌入式/边缘计算，BadgerDB 适用于桌面端），存储 Session、配置和任务元数据。
+* **缓存 (Cache)**：提供多级缓存（L1 内存缓存 / L2 磁盘缓存），用于缓存高频提示词或重复查询的结果。
+* **文件存储 (Storage)**：管理 Agent 执行过程中的产物（Artifacts），如生成的文档、日志、图片等。
+
+---
+
+## 8. 下一步演进
+
+1. **核心模块重构落地**: 基于上述 9 大模块，梳理 `ark` 库的代码结构，剥离复杂的内部仿生概念。
+2. **Runtime 接口标准化**: 进一步抽象 `CognitorClient` 和 `ExecutorClient` 的远程协议。
 3. **多智能体协同协议**: 定义节点间基于意图的交互协议，实现真正的“蜂群”协同。

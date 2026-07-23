@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qtopie/domour/pkg/infra/cache/l1"
+	"github.com/qtopie/domour/ark/infra/cache"
 )
 
 // ---------------------------------------------------------------------------
@@ -59,8 +59,8 @@ var (
 //   - ctx:* entries are keyed by session+agent → naturally isolated, short-lived
 //   - Otter handles automatic TTL expiration for both caches independently
 type ContextCache struct {
-	longCache  *l1.Cache[string, string] // 30min TTL: Tier 1 + Tier 2
-	shortCache *l1.Cache[string, string] // 5min TTL:  Tier 3 + ctx:*
+	longCache  *cache.Cache[string, string] // 30min TTL: Tier 1 + Tier 2
+	shortCache *cache.Cache[string, string] // 5min TTL:  Tier 3 + ctx:*
 	mu         sync.RWMutex
 	stats      CacheStats
 }
@@ -88,11 +88,11 @@ func NewContextCache(capacity int) *ContextCache {
 		shortBudget = 64
 	}
 
-	longCache, err := l1.NewCache[string, string](longBudget, 30*time.Minute)
+	longCache, err := cache.NewCache[string, string](longBudget, 30*time.Minute)
 	if err != nil {
 		longCache = nil
 	}
-	shortCache, err := l1.NewCache[string, string](shortBudget, 5*time.Minute)
+	shortCache, err := cache.NewCache[string, string](shortBudget, 5*time.Minute)
 	if err != nil {
 		shortCache = nil
 	}

@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/qtopie/domour/internal/app/assistant/shared"
 )
 
 type SessionInfo struct {
@@ -21,7 +19,7 @@ type SessionInfo struct {
 	Model       string           `json:"model"`
 	LastMessage string           `json:"last_message"`
 	UpdatedAt   time.Time        `json:"updated_at"`
-	History     []shared.Message `json:"history,omitempty"`
+	History     []Message `json:"history,omitempty"`
 }
 
 type QueryFilter struct {
@@ -31,7 +29,7 @@ type QueryFilter struct {
 
 // QuerySessions provides a unified query service to retrieve sessions across all LLM providers,
 // combining SurrealDB/Memory store sessions and local CLI log files.
-func QuerySessions(ctx context.Context, store Store, filter QueryFilter) ([]SessionInfo, error) {
+func QuerySessions(ctx context.Context, store SessionStore, filter QueryFilter) ([]SessionInfo, error) {
 	sessionMap := make(map[string]SessionInfo)
 
 	// 1. Fetch sessions from the active session store (SurrealDB/Memory)
@@ -168,7 +166,7 @@ func parseCliSession(filePath string) (*SessionInfo, error) {
 		info.Model = "gemini-3.1-flash"
 	}
 
-	var history []shared.Message
+	var history []Message
 	var seq int32 = 1
 
 	for scanner.Scan() {
@@ -221,7 +219,7 @@ func parseCliSession(filePath string) (*SessionInfo, error) {
 			}
 			userText = strings.TrimSpace(userText)
 			if userText != "" {
-				history = append(history, shared.Message{
+				history = append(history, Message{
 					Role:    "user",
 					Content: userText,
 					Time:    msgTime,
@@ -239,7 +237,7 @@ func parseCliSession(filePath string) (*SessionInfo, error) {
 			}
 			assistantText = strings.TrimSpace(assistantText)
 			if assistantText != "" {
-				history = append(history, shared.Message{
+				history = append(history, Message{
 					Role:     "assistant",
 					Content:  assistantText,
 					Time:     msgTime,

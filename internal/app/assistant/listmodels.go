@@ -6,7 +6,7 @@ import (
 
 	chatpb "github.com/qtopie/domour/gen/assistant/chat"
 	appconfig "github.com/qtopie/domour/internal/config"
-	domourmodel "github.com/qtopie/domour/pkg/model"
+	domourmodel "github.com/qtopie/domour/ark/model"
 )
 
 // ListModels returns a combined list of models from:

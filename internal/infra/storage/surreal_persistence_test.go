@@ -11,9 +11,8 @@ import (
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/ark/session"
-	"github.com/qtopie/domour/pkg/infra/cache"
-	"github.com/qtopie/domour/pkg/infra/cache/l1"
-	"github.com/qtopie/domour/pkg/infra/eventbus"
+	"github.com/qtopie/domour/ark/infra/cache"
+	"github.com/qtopie/domour/ark/infra/eventbus"
 	"github.com/surrealdb/surrealdb.go"
 	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
@@ -345,10 +344,10 @@ func TestSessionManager_SurrealDB(t *testing.T) {
 	surrealDB := NewSurrealDBStore(db)
 	defer surrealDB.Close()
 
-	// L1 cache (in-memory — cleared on "restart")
-	l1Cache, err := l1.NewCache[string, session.Session](1024, 15*time.Minute)
+	// In-memory Cache (cleared on "restart")
+	memCache, err := cache.NewCache[string, session.Session](1024, 15*time.Minute)
 	if err != nil {
-		t.Fatalf("L1 cache: %v", err)
+		t.Fatalf("Cache: %v", err)
 	}
 
 	eventBus := NewNoopEventBus()
@@ -356,7 +355,7 @@ func TestSessionManager_SurrealDB(t *testing.T) {
 
 	// ─── First Manager (save data) ─────────────────────────────────
 	t.Log("=== First Manager instance ===")
-	mgr1 := session.NewManager(l1Cache, surrealCache, surrealDB, eventBus)
+	mgr1 := session.NewManager(memCache, surrealDB, eventBus)
 
 	// Test GetSession first (expect error since session doesn't exist)
 	t.Logf("Testing GetSession for %q (expecting error)", sessionID)
@@ -391,16 +390,16 @@ func TestSessionManager_SurrealDB(t *testing.T) {
 	mgr1.Close()
 	t.Log("First Manager closed (simulating restart)")
 
-	// ─── Second Manager (new L1 + same SurrealDB) ────────────────
+	// ─── Second Manager (new Cache + same SurrealDB) ────────────────
 	t.Log("=== Second Manager instance (simulating restart) ===")
-	l1Cache2, err := l1.NewCache[string, session.Session](1024, 15*time.Minute)
+	memCache2, err := cache.NewCache[string, session.Session](1024, 15*time.Minute)
 	if err != nil {
-		t.Fatalf("L1 cache 2: %v", err)
+		t.Fatalf("Cache 2: %v", err)
 	}
 	eventBus2 := NewNoopEventBus()
 	defer eventBus2.Close()
 
-	mgr2 := session.NewManager(l1Cache2, surrealCache, surrealDB, eventBus2)
+	mgr2 := session.NewManager(memCache2, surrealDB, eventBus2)
 
 	hist2, err := mgr2.GetHistory(ctx, sessionID)
 	if err != nil {
@@ -426,14 +425,14 @@ func TestSessionManager_SurrealDB(t *testing.T) {
 
 	// ─── Third Manager (verify append persisted) ─────────────────
 	t.Log("=== Third Manager instance ===")
-	l1Cache3, err := l1.NewCache[string, session.Session](1024, 15*time.Minute)
+	memCache3, err := cache.NewCache[string, session.Session](1024, 15*time.Minute)
 	if err != nil {
-		t.Fatalf("L1 cache 3: %v", err)
+		t.Fatalf("Cache 3: %v", err)
 	}
 	eventBus3 := NewNoopEventBus()
 	defer eventBus3.Close()
 
-	mgr3 := session.NewManager(l1Cache3, surrealCache, surrealDB, eventBus3)
+	mgr3 := session.NewManager(memCache3, surrealDB, eventBus3)
 	hist3, err := mgr3.GetHistory(ctx, sessionID)
 	if err != nil {
 		t.Fatalf("mgr3 GetHistory: %v", err)

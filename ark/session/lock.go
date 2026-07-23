@@ -3,12 +3,10 @@ package session
 import (
 	"context"
 	"sync"
-
-	"github.com/qtopie/domour/ark/storage"
 )
 
-// Locker is an alias to storage.SessionLocker to keep internal usages clean.
-type Locker = storage.SessionLocker
+// Locker is an alias to SessionLocker to keep internal usages clean.
+type Locker = SessionLocker
 
 // LocalLocker is an in-memory, thread-safe session locker that serializes requests
 // based on SessionID. It cleans up unused resources dynamically.

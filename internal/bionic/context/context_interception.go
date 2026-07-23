@@ -13,7 +13,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	appconfig "github.com/qtopie/domour/internal/config"
-	"github.com/qtopie/domour/pkg/infra/cache/l1"
+	"github.com/qtopie/domour/ark/infra/cache"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 )
 
@@ -45,7 +45,7 @@ type chatContextState struct {
 
 type chatContextWorkingSet struct {
 	mu    sync.Mutex
-	cache *l1.Cache[string, chatContextState]
+	cache *cache.Cache[string, chatContextState]
 	data  map[string]chatContextState
 }
 
@@ -54,7 +54,7 @@ func NewChatContextInterceptor() ChatContextInterceptor {
 }
 
 func newChatContextWorkingSet(capacity int, ttl time.Duration) *chatContextWorkingSet {
-	cache, err := l1.NewCache[string, chatContextState](capacity, ttl)
+	cache, err := cache.NewCache[string, chatContextState](capacity, ttl)
 	if err != nil {
 		return &chatContextWorkingSet{data: map[string]chatContextState{}}
 	}

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/qtopie/domour/ark/storage"
+	"github.com/qtopie/domour/ark/session"
 )
 
 type UserRequest struct {
@@ -22,8 +22,8 @@ type ChunkData struct {
 	IsLast  bool
 }
 
-// Message is an alias to storage.Message to keep internal usages clean.
-type Message = storage.Message
+// Message is an alias to session.Message to keep internal usages clean.
+type Message = session.Message
 
 type BrainChatRequest struct {
 	SessionID     string

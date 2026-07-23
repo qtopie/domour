@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/storage"
 	"github.com/qtopie/domour/ark/session"
 )
@@ -32,7 +31,7 @@ func TestQuerySessions_MemoryAndFilter(t *testing.T) {
 		ActiveProvider: "openai",
 		ActiveModel:    "gpt-4",
 		UpdatedAt:      time.Now().Add(-10 * time.Minute),
-		History: []shared.Message{
+		History: []session.Message{
 			{Role: "user", Content: "Hello OpenAI", Time: time.Now().Unix(), Seq: 1},
 			{Role: "assistant", Content: "Hello user", Time: time.Now().Unix(), Seq: 2},
 		},
@@ -45,7 +44,7 @@ func TestQuerySessions_MemoryAndFilter(t *testing.T) {
 		ActiveProvider: "gemini",
 		ActiveModel:    "gemini-1.5-pro",
 		UpdatedAt:      time.Now(),
-		History: []shared.Message{
+		History: []session.Message{
 			{Role: "user", Content: "Hello Gemini", Time: time.Now().Unix(), Seq: 1},
 			{Role: "assistant", Content: "Hello user from Gemini", Time: time.Now().Unix(), Seq: 2},
 		},

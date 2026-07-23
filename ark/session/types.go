@@ -1,4 +1,4 @@
-package storage
+package session
 
 import (
 	"context"
@@ -45,6 +45,9 @@ type SessionStore interface {
 	ListSessions(ctx context.Context) ([]Session, error)
 	Close() error
 }
+
+// Store is an alias for SessionStore to keep usages clean.
+type Store = SessionStore
 
 // SessionLocker provides a lock interface for session-based request serialization.
 type SessionLocker interface {

@@ -1,11 +1,11 @@
 package shared
 
 import (
-	"github.com/qtopie/domour/ark/storage"
+	"github.com/qtopie/domour/ark/session"
 )
 
 // Session represents a conversation session, including its history and metadata.
-type Session = storage.Session
+type Session = session.Session
 
 // ProviderStat tracks per-provider usage metrics for a session.
-type ProviderStat = storage.ProviderStat
+type ProviderStat = session.ProviderStat

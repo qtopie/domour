@@ -1,4 +1,4 @@
-package l1
+package cache
 
 import (
 	"fmt"
@@ -7,11 +7,13 @@ import (
 	"github.com/maypok86/otter"
 )
 
+// Cache provides an in-memory TTL-based cache.
 type Cache[K comparable, V any] struct {
 	cache otter.Cache[K, V]
 }
 
-func NewCache[K comparable, V any](capacity int, ttl time.Duration) (*Cache[K, V], error) {
+// New creates a new Cache instance with the specified capacity and TTL.
+func New[K comparable, V any](capacity int, ttl time.Duration) (*Cache[K, V], error) {
 	builder, err := otter.NewBuilder[K, V](capacity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache builder: %w", err)
@@ -25,6 +27,11 @@ func NewCache[K comparable, V any](capacity int, ttl time.Duration) (*Cache[K, V
 	}
 
 	return &Cache[K, V]{cache: c}, nil
+}
+
+// NewCache is an alias for New to maintain compatibility.
+func NewCache[K comparable, V any](capacity int, ttl time.Duration) (*Cache[K, V], error) {
+	return New[K, V](capacity, ttl)
 }
 
 func (c *Cache[K, V]) Get(key K) (V, bool) {

@@ -1,51 +1,53 @@
 # Config Directories for Local MCP and Skills
 
-This document details the design for introducing modular configuration directories for local MCP servers and Agent skills in Domour.
+This document details the design for introducing modular configuration directories for local MCP servers, Agent skills, and default prompt file hierarchy in Domour.
 
 ---
 
-## 1. Motivation
-Currently, MCP servers are declared in a single `config.json` under `mcp_servers`, and skills are loaded from a few hardcoded directory paths. 
-To support modular configuration (e.g., dropping a JSON or Markdown file into a folder to add an MCP server or a new skill):
-1. We introduce two directory configuration fields in `DomourConfig`: `mcp_dir` and `skills_dir`.
-2. Any JSON file in `mcp_dir` (e.g. `mcp_dir/git.json`) is parsed as an individual `MCPServerConfig` and loaded.
-3. Any JSON or Markdown file in `skills_dir` is parsed and loaded into the skill registry.
+## 1. Directory Structure and Precedence
+
+### User-Level Configuration (`~/.domour/`)
+- **MCP Config File**: `~/.domour/mcp_config.json`
+- **Skills Directory**: `~/.domour/skills/`
+
+### Project-Level Configuration (`.agents/` in workspace root)
+- **MCP Config File**: `.agents/mcp_config.json`
+- **Skills Directory**: `.agents/skills/`
+
+### Precedence Rules:
+1. **MCP Configuration**: 
+   - Load `~/.domour/mcp_config.json` (user-level defaults).
+   - Load `.agents/mcp_config.json` (project-level overrides/additions).
+   - Any server defined in project config overrides the server definition from user config.
+
+2. **Skills Directory**:
+   - Discover skills from `~/.domour/skills/` (user-level skills).
+   - Discover skills from `.agents/skills/` (project-level skills).
+   - Project-level skills override user-level skills if there are name collisions.
 
 ---
 
-## 2. Configuration Schema Changes
+## 2. Default System/Instruction Prompt Priority
 
-We extend `DomourConfig` in `internal/config/config.go` with two fields:
+When discovering project-level prompt / instruction files, `AGENTS.md` is given top priority:
 
-```go
-type DomourConfig struct {
-	...
-	MCPDir     string                     `json:"mcp_dir,omitempty"`
-	SkillsDir  string                     `json:"skills_dir,omitempty"`
-	MCPServers map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
-	...
-}
-```
-
-- **Default Paths**:
-  - `mcp_dir` defaults to `~/.domour/mcp`
-  - `skills_dir` defaults to `~/.domour/skills` (or the existing default `skills` directory)
+1. `AGENTS.md` (Workspace root)
+2. `.agents/AGENTS.md`
+3. `GEMINI.md` / `CLAUDE.md` / `QODER.md` / `copilot-instructions.md` (and legacy tool-specific paths)
 
 ---
 
 ## 3. Loader Mechanisms
 
-### A. Modular MCP Loader
+### A. MCP Loader
 In `internal/bionic/tool/mcp_loader.go`:
-1. Resolve the `mcp_dir` path.
-2. If the directory exists:
-   - Walk the directory to find `.json` files.
-   - For each JSON file (e.g., `git.json`), parse its content into an `MCPServerConfig`.
-   - Add it to the list of servers to initialize.
-3. Proceed with initialization and tool registration.
+1. Load `~/.domour/mcp_config.json` (or `mcp_servers` section within it).
+2. Load project-level `.agents/mcp_config.json` if present in current workspace/CWD.
+3. Merge MCP server definitions into the active MCP client registry.
 
-### B. Modular Skills Loader
-In `internal/bionic/tool/skills.go` (and the `FileRegistry`):
-1. Instantiate the `FileRegistry` pointing to the resolved `skills_dir`.
-2. List and load all Markdown/JSON skills from that folder dynamically.
-3. Integrate this into the `Manager`'s default skill loading lifecycle.
+### B. Skills Loader
+In `internal/bionic/skillmgr/skillmgr.go`:
+1. Scan `~/.domour/skills/` for `.md` / `.json` skill specifications.
+2. Scan `.agents/skills/` for project-specific `.md` / `.json` skill specifications.
+3. Priority ordering ensures `AGENTS.md` instructions take precedence as default instruction skills over legacy files.
+

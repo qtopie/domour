@@ -663,17 +663,29 @@ func defaultSkillsDir() string {
 func discoverDefaultSkillSources() []SkillSpec {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
+	domourHome := config.DomourHomeDir()
 
 	var specs []SkillSpec
-	specs = append(specs, discoverMarkdownFiles(defaultSkillsDir(), "domour", "skill-md", "", true)...)
+	// 1. Project-level AGENTS.md instructions (Top Priority)
+	if cwd != "" {
+		specs = append(specs, discoverMarkdownFiles(cwd, "agents", "instruction-md", "AGENTS.md", false)...)
+		specs = append(specs, discoverMarkdownFiles(filepath.Join(cwd, ".agents"), "agents", "instruction-md", "AGENTS.md", false)...)
+	}
 
+	// 2. Load skills from user-level and project-level skills directories
+	specs = append(specs, discoverMarkdownFiles(filepath.Join(domourHome, "skills"), "domour", "skill-md", "", true)...)
+	specs = append(specs, discoverMarkdownFiles(defaultSkillsDir(), "domour", "skill-md", "", true)...)
+	if cwd != "" {
+		specs = append(specs, discoverMarkdownFiles(filepath.Join(cwd, ".agents", "skills"), "domour", "skill-md", "", true)...)
+	}
+
+	// 3. Additional provider instruction files
 	if cwd != "" {
 		specs = append(specs, discoverMarkdownFiles(cwd, "gemini", "instruction-md", "GEMINI.md", false)...)
 		specs = append(specs, discoverMarkdownFiles(cwd, "claude-code", "instruction-md", "CLAUDE.md", false)...)
 		specs = append(specs, discoverMarkdownFiles(filepath.Join(cwd, ".claude"), "claude-code", "instruction-md", "CLAUDE.md", true)...)
 		specs = append(specs, discoverMarkdownFiles(cwd, "claude-code", "instruction-md", "CLAUDE.local.md", false)...)
 		specs = append(specs, discoverMarkdownFiles(filepath.Join(cwd, ".claude", "rules"), "claude-code", "instruction-md", "", true)...)
-		specs = append(specs, discoverMarkdownFiles(cwd, "github-copilot", "instruction-md", "AGENTS.md", false)...)
 		specs = append(specs, discoverMarkdownFiles(filepath.Join(cwd, ".github"), "github-copilot", "instruction-md", "copilot-instructions.md", false)...)
 		specs = append(specs, discoverInstructionTree(filepath.Join(cwd, ".github", "instructions"), "github-copilot", "instruction-md", ".instructions.md")...)
 		specs = append(specs, discoverMarkdownFiles(cwd, "qoder", "instruction-md", "QODER.md", false)...)

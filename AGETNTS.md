@@ -33,6 +33,7 @@ Domour defines its state based on the balance between "Cognitive Power (LLM)" an
 - **Observability**: Use `slog` for logging and `otel.Tracer` for tracing significant operations.
 - **Safety**: The Brainstem MUST veto any unsafe commands proposed by the Brain.
 - **Modularity**: Maintain strict separation between the cognitive (Brain) and physical (Motor) layers.
+- **Directory Layout**: Strictly follow the structure defined in `docs/project-layout.md`. Do NOT create or use a `pkg/` directory; all public SDK components must be placed under the `ark/` directory.
 
 ## Development Guide
 

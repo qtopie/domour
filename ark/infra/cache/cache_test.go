@@ -1,11 +1,11 @@
-package l1
+package cache
 
 import (
 	"testing"
 	"time"
 )
 
-func TestL1CacheRoundTrip(t *testing.T) {
+func TestCacheRoundTrip(t *testing.T) {
 	c, err := NewCache[string, string](100, 10*time.Second)
 	if err != nil {
 		t.Fatalf("NewCache() error = %v", err)
@@ -21,7 +21,7 @@ func TestL1CacheRoundTrip(t *testing.T) {
 	}
 }
 
-func TestL1CacheGetNonExistent(t *testing.T) {
+func TestCacheGetNonExistent(t *testing.T) {
 	c, err := NewCache[string, string](100, 10*time.Second)
 	if err != nil {
 		t.Fatalf("NewCache() error = %v", err)
@@ -33,7 +33,7 @@ func TestL1CacheGetNonExistent(t *testing.T) {
 	}
 }
 
-func TestL1CacheDelete(t *testing.T) {
+func TestCacheDelete(t *testing.T) {
 	c, err := NewCache[string, string](100, 10*time.Second)
 	if err != nil {
 		t.Fatalf("NewCache() error = %v", err)
@@ -48,7 +48,7 @@ func TestL1CacheDelete(t *testing.T) {
 	}
 }
 
-func TestL1CacheClear(t *testing.T) {
+func TestCacheClear(t *testing.T) {
 	c, err := NewCache[string, string](100, 10*time.Second)
 	if err != nil {
 		t.Fatalf("NewCache() error = %v", err)
@@ -65,7 +65,7 @@ func TestL1CacheClear(t *testing.T) {
 	}
 }
 
-func TestL1CacheOverwrite(t *testing.T) {
+func TestCacheOverwrite(t *testing.T) {
 	c, err := NewCache[string, string](100, 10*time.Second)
 	if err != nil {
 		t.Fatalf("NewCache() error = %v", err)
@@ -80,7 +80,7 @@ func TestL1CacheOverwrite(t *testing.T) {
 	}
 }
 
-func TestL1CacheIntKey(t *testing.T) {
+func TestCacheIntKey(t *testing.T) {
 	c, err := NewCache[int, string](100, 10*time.Second)
 	if err != nil {
 		t.Fatalf("NewCache() error = %v", err)
@@ -93,7 +93,7 @@ func TestL1CacheIntKey(t *testing.T) {
 	}
 }
 
-func TestL1CacheZeroCapacity(t *testing.T) {
+func TestCacheZeroCapacity(t *testing.T) {
 	_, err := NewCache[string, string](0, 10*time.Second)
 	if err == nil {
 		t.Fatal("expected error for zero capacity")
