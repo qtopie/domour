@@ -1,10 +1,9 @@
-package local
+package proxy
 
 import (
 	"strings"
 
 	"github.com/qtopie/domour/internal/app/assistant/shared"
-	"github.com/qtopie/domour/internal/cognitor/proxy"
 )
 
 // ThinkTagParser is a stateful parser that handles <think>...</think> blocks
@@ -20,6 +19,7 @@ type ThinkTagParser struct {
 	closeTag string // "</think>"
 }
 
+// NewThinkTagParser creates a new ThinkTagParser instance.
 func NewThinkTagParser() *ThinkTagParser {
 	return &ThinkTagParser{
 		openTag:  "<think>",
@@ -31,10 +31,13 @@ func NewThinkTagParser() *ThinkTagParser {
 func (p *ThinkTagParser) Feed(
 	chunk string,
 	stage string,
-	brainClient *proxy.Client,
+	brainClient *Client,
 	yield func(event shared.MotorStreamEvent) error,
 ) error {
-	meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
+	var meta map[string]string
+	if brainClient != nil {
+		meta = map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
+	}
 
 	p.buf.WriteString(chunk)
 	content := p.buf.String()
@@ -79,11 +82,15 @@ func (p *ThinkTagParser) Feed(
 
 			// Emit thinking-start marker
 			p.isThinking = true
+			var engine string
+			if brainClient != nil {
+				engine = brainClient.Provider()
+			}
 			if err := yield(shared.MotorStreamEvent{
 				Stage: stage,
 				Type:  1, // CHUNK_THINKING
 				Thinking: &shared.ThinkingDetail{
-					Engine: brainClient.Provider(),
+					Engine: engine,
 					Stage:  "thought",
 				},
 				Meta: meta,
@@ -91,7 +98,6 @@ func (p *ThinkTagParser) Feed(
 				return err
 			}
 			content = content[idx+len(tag):]
-
 		} else {
 			// Inside <think> block - look for </think>
 			tag := p.closeTag
@@ -100,11 +106,19 @@ func (p *ThinkTagParser) Feed(
 			if idx == -1 {
 				safeEnd := safeFlushEnd(content, tag)
 				if safeEnd > 0 {
+					var engine string
+					if brainClient != nil {
+						engine = brainClient.Provider()
+					}
 					if err := yield(shared.MotorStreamEvent{
 						Stage:   stage,
 						Type:    1, // CHUNK_THINKING
 						Content: content[:safeEnd],
-						Meta:    meta,
+						Thinking: &shared.ThinkingDetail{
+							Engine: engine,
+							Stage:  "thought",
+						},
+						Meta: meta,
 					}); err != nil {
 						return err
 					}
@@ -113,72 +127,76 @@ func (p *ThinkTagParser) Feed(
 				break
 			}
 
-			// Thinking content before </think>
+			// Thinking text before closing tag
 			if idx > 0 {
+				var engine string
+				if brainClient != nil {
+					engine = brainClient.Provider()
+				}
 				if err := yield(shared.MotorStreamEvent{
 					Stage:   stage,
 					Type:    1, // CHUNK_THINKING
 					Content: content[:idx],
-					Meta:    meta,
+					Thinking: &shared.ThinkingDetail{
+						Engine: engine,
+						Stage:  "thought",
+					},
+					Meta: meta,
 				}); err != nil {
 					return err
 				}
 			}
+
 			p.isThinking = false
 			content = content[idx+len(tag):]
 		}
 	}
-
 	return nil
 }
 
-// Flush emits any remaining buffered content as text (or thinking if still inside a block).
-// Call this after the last chunk.
+// Flush emits any remaining buffered text when stream ends.
 func (p *ThinkTagParser) Flush(
 	stage string,
-	brainClient *proxy.Client,
+	brainClient *Client,
 	yield func(event shared.MotorStreamEvent) error,
 ) error {
-	remaining := p.buf.String()
-	if remaining == "" {
+	rem := p.buf.String()
+	p.buf.Reset()
+	if rem == "" {
 		return nil
 	}
-	p.buf.Reset()
-
-	meta := map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
-	var chunkType int32 = 0 // CHUNK_TEXT
+	var meta map[string]string
+	var engine string
+	if brainClient != nil {
+		meta = map[string]string{"provider": brainClient.Provider(), "model": brainClient.Model()}
+		engine = brainClient.Provider()
+	}
+	chunkType := int32(0)
+	var thinking *shared.ThinkingDetail
 	if p.isThinking {
-		chunkType = 1 // CHUNK_THINKING
+		chunkType = 1
+		thinking = &shared.ThinkingDetail{
+			Engine: engine,
+			Stage:  "thought",
+		}
 	}
 	return yield(shared.MotorStreamEvent{
-		Stage:   stage,
-		Type:    chunkType,
-		Content: remaining,
-		Meta:    meta,
+		Stage:    stage,
+		Type:     chunkType,
+		Content:  rem,
+		Thinking: thinking,
+		Meta:     meta,
 	})
 }
 
-// safeFlushEnd returns the index up to which content can be safely flushed
-// without risk of cutting into a partial `tag`. Characters near the end that
-// could be the beginning of `tag` are held back in the buffer.
-func safeFlushEnd(content, tag string) int {
-	maxHold := len(tag) - 1
-	if maxHold <= 0 || len(content) <= maxHold {
-		// Hold everything if it could all be a partial tag prefix
-		for i := len(content); i >= 1; i-- {
-			if strings.HasPrefix(tag, content[len(content)-i:]) {
-				return len(content) - i
-			}
-		}
-		return len(content)
-	}
-
-	// Walk backwards to find the longest suffix of `content` that is a prefix of `tag`
-	for holdBack := maxHold; holdBack >= 1; holdBack-- {
-		suffix := content[len(content)-holdBack:]
-		if strings.HasPrefix(tag, suffix) {
-			return len(content) - holdBack
+// safeFlushEnd calculates how many bytes at the start of s can safely be flushed,
+// preserving any trailing suffix that matches a prefix of tag.
+func safeFlushEnd(s, tag string) int {
+	maxMatch := 0
+	for i := 1; i <= len(s) && i <= len(tag); i++ {
+		if strings.HasSuffix(s, tag[:i]) {
+			maxMatch = i
 		}
 	}
-	return len(content)
+	return len(s) - maxMatch
 }

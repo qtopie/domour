@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/config"
 )
@@ -89,96 +88,74 @@ type ArkHub interface {
 	ProviderManager
 }
 
-type arkHub struct {
-	toolManager *tool.Manager
+// ToolResolver provides methods for retrieving tool and skill manifests.
+type ToolResolver interface {
+	ListTools(ctx context.Context) ([]*ToolManifest, error)
+	GetTool(ctx context.Context, id string) (*ToolManifest, error)
+	ListSkills(ctx context.Context) ([]*SkillManifest, error)
+	GetSkill(ctx context.Context, id string) (*SkillManifest, error)
 }
 
-// NewArkHub constructs a new ArkHub instance.
-func NewArkHub(tm *tool.Manager) ArkHub {
-	return &arkHub{toolManager: tm}
+type arkHub struct {
+	resolver ToolResolver
+}
+
+// Option configures an ArkHub instance.
+type Option func(*arkHub)
+
+// WithToolResolver attaches a custom ToolResolver to the Hub.
+func WithToolResolver(tr ToolResolver) Option {
+	return func(h *arkHub) {
+		h.resolver = tr
+	}
+}
+
+// NewArkHub constructs a new ArkHub instance with optional functional configurations.
+func NewArkHub(opts ...Option) ArkHub {
+	h := &arkHub{}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// NewArkHubWithResolver constructs an ArkHub with a specified ToolResolver.
+func NewArkHubWithResolver(tr ToolResolver) ArkHub {
+	return &arkHub{resolver: tr}
 }
 
 // ListTools lists all registered tools.
 func (h *arkHub) ListTools(ctx context.Context) ([]*ToolManifest, error) {
-	tools := h.toolManager.List()
-	manifests := make([]*ToolManifest, len(tools))
-	for i, t := range tools {
-		manifests[i] = &ToolManifest{
-			Name:        t.Name,
-			Kind:        string(t.Kind),
-			Description: t.Description,
-			Loaded:      t.Loaded,
-			Meta:        t.Meta,
-		}
+	if h.resolver == nil {
+		return []*ToolManifest{}, nil
 	}
-	return manifests, nil
+	return h.resolver.ListTools(ctx)
 }
 
 // GetTool retrieves a tool by ID.
 func (h *arkHub) GetTool(ctx context.Context, id string) (*ToolManifest, error) {
-	tools := h.toolManager.List()
-	for _, t := range tools {
-		if t.Name == id {
-			return &ToolManifest{
-				Name:        t.Name,
-				Kind:        string(t.Kind),
-				Description: t.Description,
-				Loaded:      t.Loaded,
-				Meta:        t.Meta,
-			}, nil
-		}
+	if h.resolver == nil {
+		return nil, fmt.Errorf("tool %q not found", id)
 	}
-	return nil, fmt.Errorf("tool %q not found", id)
+	return h.resolver.GetTool(ctx, id)
 }
 
 // ListSkills lists all registered skills.
 func (h *arkHub) ListSkills(ctx context.Context) ([]*SkillManifest, error) {
-	skills := h.toolManager.ListSkills()
-	manifests := make([]*SkillManifest, len(skills))
-	for i, s := range skills {
-		tools := make([]ToolDefinition, len(s.Tools))
-		for j, td := range s.Tools {
-			tools[j] = ToolDefinition{
-				Name:        td.Name,
-				Description: td.Description,
-			}
-		}
-		manifests[i] = &SkillManifest{
-			Name:        s.Name,
-			Description: s.Description,
-			SourcePath:  s.SourcePath,
-			Provider:    s.Provider,
-			Format:      s.Format,
-			Loaded:      s.Loaded,
-			Tools:       tools,
-		}
+	if h.resolver == nil {
+		return []*SkillManifest{}, nil
 	}
-	return manifests, nil
+	return h.resolver.ListSkills(ctx)
 }
 
 // GetSkill retrieves a skill by ID.
 func (h *arkHub) GetSkill(ctx context.Context, id string) (*SkillManifest, error) {
-	s, err := h.toolManager.ResolveSkill(ctx, id)
-	if err != nil {
-		return nil, err
+	if h.resolver == nil {
+		return nil, fmt.Errorf("skill %q not found", id)
 	}
-	tools := make([]ToolDefinition, len(s.Tools))
-	for j, td := range s.Tools {
-		tools[j] = ToolDefinition{
-			Name:        td.Name,
-			Description: td.Description,
-		}
-	}
-	return &SkillManifest{
-		Name:        s.Name,
-		Description: s.Description,
-		SourcePath:  s.SourcePath,
-		Provider:    s.Provider,
-		Format:      s.Format,
-		Loaded:      true,
-		Tools:       tools,
-	}, nil
+	return h.resolver.GetSkill(ctx, id)
 }
+
 
 // ListProviders lists all configured providers.
 func (h *arkHub) ListProviders(ctx context.Context) ([]*ProviderInfo, error) {

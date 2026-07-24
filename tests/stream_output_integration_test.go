@@ -14,8 +14,6 @@ import (
 	"github.com/qtopie/domour/internal/brain"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/engine"
-	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
-	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 )
 
 // streamTestDiencephalonClient mocks the LLM streaming responses to test the tag parser.
@@ -94,21 +92,6 @@ func (m *streamTestExecutorClient) ListTools(ctx context.Context) ([]tool.ToolIn
 func (m *streamTestExecutorClient) ToolManager() *tool.Manager {
 	return m.manager
 }
-
-type streamTestEngine struct {
-	cognitor engine.CognitorClient
-	executor engine.ExecutorClient
-}
-
-func (e *streamTestEngine) Cognitor() engine.CognitorClient { return e.cognitor }
-func (e *streamTestEngine) Executor() engine.ExecutorClient { return e.executor }
-func (e *streamTestEngine) Start(ctx context.Context) error { return nil }
-func (e *streamTestEngine) Submit(ctx context.Context, signal brain.SensorySignal) error { return nil }
-func (e *streamTestEngine) Results() <-chan brain.MotorFeedback { return nil }
-func (e *streamTestEngine) AddObserver(sessionID string, obs engine.SignalObserver) {}
-func (e *streamTestEngine) RemoveObserver(sessionID string) {}
-func (e *streamTestEngine) Diencephalon() *brain.DiencephalonNode { return nil }
-
 func TestStreamOutputReActTagAndToolClassification(t *testing.T) {
 	ctx := context.Background()
 
@@ -128,12 +111,10 @@ func TestStreamOutputReActTagAndToolClassification(t *testing.T) {
 	_ = manager.Register(searchTool)
 
 	executor := &streamTestExecutorClient{manager: manager}
-	eng := &streamTestEngine{cognitor: cognitor, executor: executor}
+	eng := engine.NewEngine(cognitor, executor)
 
 	// 2. Initialize AssistantService
-	eb := localbus.NewEventBus()
-	orch := localorch.NewLocalOrchestrator(eng, eb)
-	service := assistant.NewAssistantService(eng, nil, eb, orch)
+	service := assistant.NewAssistantService(eng, nil)
 
 	// Create and persist a session history
 	sess, err := service.GetSession(ctx, "stream-test-session")

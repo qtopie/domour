@@ -16,8 +16,6 @@ import (
 	"github.com/qtopie/domour/ark/session"
 	"github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
-	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
-	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 	db "github.com/qtopie/domour/internal/infra/db"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -81,11 +79,7 @@ func (a *App) RegisterGRPC(s *grpc.Server) error {
 		return fmt.Errorf("failed to init executor client: %w", err)
 	}
 	eng := engine.NewEngine(cognitorClient, executorClient)
-
-	eb := localbus.NewEventBus()
-	orch := localorch.NewLocalOrchestrator(eng, eb)
-
-	appService := NewAssistantService(eng, a.store, eb, orch)
+	appService := NewAssistantService(eng, a.store)
 
 	service, err := internalgrpc.NewServer(appService)
 	if err != nil {

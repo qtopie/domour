@@ -3,8 +3,6 @@ package governor
 import (
 	"context"
 	"testing"
-
-	"github.com/qtopie/domour/internal/brain"
 )
 
 func TestGovernor(t *testing.T) {
@@ -16,7 +14,7 @@ func TestGovernor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetMode failed: %v", err)
 		}
-		if mode != brain.ModeBalanced {
+		if mode != ModeBalanced {
 			t.Errorf("expected initial mode to be Balanced, got %q", mode)
 		}
 
@@ -24,27 +22,27 @@ func TestGovernor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetState failed: %v", err)
 		}
-		if state.Mode != brain.ModeBalanced {
+		if state.Mode != ModeBalanced {
 			t.Errorf("expected state mode to be Balanced, got %q", state.Mode)
 		}
 	})
 
 	t.Run("Switch Mode", func(t *testing.T) {
-		err := g.SwitchMode(ctx, brain.ModePerformance)
+		err := g.SwitchMode(ctx, ModePerformance)
 		if err != nil {
 			t.Fatalf("SwitchMode failed: %v", err)
 		}
 
 		mode, _ := g.GetMode(ctx)
-		if mode != brain.ModePerformance {
+		if mode != ModePerformance {
 			t.Errorf("expected mode to be Performance, got %q", mode)
 		}
 	})
 
 	t.Run("Update State", func(t *testing.T) {
-		newState := &brain.State{
+		newState := &State{
 			GlobalGoal: "Solve world hunger",
-			Mode:       brain.ModeDeepThink,
+			Mode:       ModeDeepThink,
 		}
 		err := g.UpdateState(ctx, newState)
 		if err != nil {
@@ -52,7 +50,7 @@ func TestGovernor(t *testing.T) {
 		}
 
 		state, _ := g.GetState(ctx)
-		if state.GlobalGoal != "Solve world hunger" || state.Mode != brain.ModeDeepThink {
+		if state.GlobalGoal != "Solve world hunger" || state.Mode != ModeDeepThink {
 			t.Errorf("unexpected state: %+v", state)
 		}
 	})
@@ -69,3 +67,4 @@ func TestGovernor(t *testing.T) {
 		}
 	})
 }
+

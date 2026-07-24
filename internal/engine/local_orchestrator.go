@@ -1,4 +1,4 @@
-package local
+package engine
 
 import (
 	"context"
@@ -13,27 +13,29 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/bionic/tool"
-	"github.com/qtopie/domour/internal/engine"
-	"github.com/qtopie/domour/internal/infra/dapr"
+	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/infra/eventbus"
 )
 
 var orchLog = slog.Default().With(slog.String("component", "LocalOrchestrator"))
 
-// LocalOrchestrator implements the DurableAgentOrchestrator interface locally.
+// LocalOrchestrator implements the AgentOrchestrator interface locally in memory.
 type LocalOrchestrator struct {
-	eng      engine.Engine
+	cognitor CognitorClient
+	executor ExecutorClient
 	eb       eventbus.EventBus
 	mu       sync.RWMutex
-	states   map[string]*dapr.WorkflowState
+	states   map[string]*WorkflowState
 	doneChan map[string]chan struct{}
 }
 
-func NewLocalOrchestrator(eng engine.Engine, eb eventbus.EventBus) *LocalOrchestrator {
+// NewLocalOrchestrator creates a new local in-process orchestrator.
+func NewLocalOrchestrator(cognitor CognitorClient, executor ExecutorClient, eb eventbus.EventBus) *LocalOrchestrator {
 	return &LocalOrchestrator{
-		eng:      eng,
+		cognitor: cognitor,
+		executor: executor,
 		eb:       eb,
-		states:   make(map[string]*dapr.WorkflowState),
+		states:   make(map[string]*WorkflowState),
 		doneChan: make(map[string]chan struct{}),
 	}
 }
@@ -42,11 +44,11 @@ func (o *LocalOrchestrator) EventBus() eventbus.EventBus {
 	return o.eb
 }
 
-// StartWorkflow starts a local workflow instance running the ReAct loop.
+// StartWorkflow starts a local workflow instance running the specified reasoning strategy.
 func (o *LocalOrchestrator) StartWorkflow(ctx context.Context, workflowID string, input any) (string, error) {
-	wfInput, ok := input.(dapr.AgentWorkflowInput)
+	wfInput, ok := input.(AgentWorkflowInput)
 	if !ok {
-		wfInputPtr, okPtr := input.(*dapr.AgentWorkflowInput)
+		wfInputPtr, okPtr := input.(*AgentWorkflowInput)
 		if !okPtr {
 			return "", fmt.Errorf("invalid workflow input type: %T", input)
 		}
@@ -58,18 +60,19 @@ func (o *LocalOrchestrator) StartWorkflow(ctx context.Context, workflowID string
 		"provider", wfInput.Provider,
 		"model", wfInput.Model,
 		"stage", wfInput.Stage,
+		"reasoning", wfInput.Reasoning,
 		"message_count", len(wfInput.Messages),
 	)
 
 	o.mu.Lock()
-	o.states[workflowID] = &dapr.WorkflowState{Status: "running"}
+	o.states[workflowID] = &WorkflowState{Status: "running"}
 	done := make(chan struct{})
 	o.doneChan[workflowID] = done
 	o.mu.Unlock()
 
 	go func() {
 		defer close(done)
-		res, err := o.runReActLoop(context.Background(), workflowID, wfInput)
+		res, err := o.runReasoningLoop(context.Background(), workflowID, wfInput)
 
 		o.mu.Lock()
 		state := o.states[workflowID]
@@ -105,7 +108,7 @@ func (o *LocalOrchestrator) StartWorkflow(ctx context.Context, workflowID string
 }
 
 // GetWorkflowStatus retrieves the status and result of a local workflow.
-func (o *LocalOrchestrator) GetWorkflowStatus(ctx context.Context, workflowID string) (*dapr.WorkflowState, error) {
+func (o *LocalOrchestrator) GetWorkflowStatus(ctx context.Context, workflowID string) (*WorkflowState, error) {
 	o.mu.RLock()
 	state, ok := o.states[workflowID]
 	o.mu.RUnlock()
@@ -118,7 +121,7 @@ func (o *LocalOrchestrator) GetWorkflowStatus(ctx context.Context, workflowID st
 }
 
 // WaitForWorkflow blocks until the specified local workflow completes.
-func (o *LocalOrchestrator) WaitForWorkflow(ctx context.Context, workflowID string) (*dapr.WorkflowState, error) {
+func (o *LocalOrchestrator) WaitForWorkflow(ctx context.Context, workflowID string) (*WorkflowState, error) {
 	o.mu.RLock()
 	done, ok := o.doneChan[workflowID]
 	o.mu.RUnlock()
@@ -133,13 +136,50 @@ func (o *LocalOrchestrator) WaitForWorkflow(ctx context.Context, workflowID stri
 	return o.GetWorkflowStatus(ctx, workflowID)
 }
 
-func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string, input dapr.AgentWorkflowInput) (*schema.Message, error) {
+// runReasoningLoop dispatches workflow execution to the configured reasoning strategy.
+func (o *LocalOrchestrator) runReasoningLoop(ctx context.Context, workflowID string, input AgentWorkflowInput) (*schema.Message, error) {
+	reasoningMode := strings.ToLower(strings.TrimSpace(input.Reasoning))
+	switch reasoningMode {
+	case "simple":
+		return o.runSimpleLoop(ctx, workflowID, input)
+	case "planner":
+		return o.runPlannerLoop(ctx, workflowID, input)
+	case "react", "":
+		return o.runReActLoop(ctx, workflowID, input)
+	default:
+		orchLog.Info("runReasoningLoop: using default ReAct loop for reasoning mode", "mode", input.Reasoning)
+		return o.runReActLoop(ctx, workflowID, input)
+	}
+}
+
+// runSimpleLoop executes a single-turn reasoning strategy without ReAct tool loops.
+func (o *LocalOrchestrator) runSimpleLoop(ctx context.Context, workflowID string, input AgentWorkflowInput) (*schema.Message, error) {
+	if o.cognitor == nil {
+		return nil, fmt.Errorf("cognitor client unavailable")
+	}
+	brainClient, err := o.cognitor.GetClientWithOverride(ctx, input.Stage, input.Provider, input.Model)
+	if err != nil {
+		return nil, fmt.Errorf("get brain client: %w", err)
+	}
+	return brainClient.Chat.Generate(ctx, input.Messages)
+}
+
+// runPlannerLoop executes a multi-step DAG planner reasoning strategy.
+func (o *LocalOrchestrator) runPlannerLoop(ctx context.Context, workflowID string, input AgentWorkflowInput) (*schema.Message, error) {
+	return o.runReActLoop(ctx, workflowID, input)
+}
+
+// runReActLoop executes the standard Reasoning + Acting (ReAct) tool-calling loop.
+func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string, input AgentWorkflowInput) (*schema.Message, error) {
 	orchLog.Info("runReActLoop: resolving brain client",
 		"workflow_id", workflowID,
 		"requested_provider", input.Provider,
 		"requested_model", input.Model,
 	)
-	brainClient, err := o.eng.Cognitor().GetClientWithOverride(ctx, input.Stage, input.Provider, input.Model)
+	if o.cognitor == nil {
+		return nil, fmt.Errorf("cognitor client unavailable")
+	}
+	brainClient, err := o.cognitor.GetClientWithOverride(ctx, input.Stage, input.Provider, input.Model)
 	if err != nil {
 		orchLog.Error("runReActLoop: failed to get brain client", "workflow_id", workflowID, "error", err)
 		return nil, fmt.Errorf("get brain client: %w", err)
@@ -172,9 +212,12 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 	messages := input.Messages
 
-	tools, err := o.eng.Executor().ListTools(ctx)
+	var tools []tool.ToolInfo
+	if o.executor != nil {
+		tools, _ = o.executor.ListTools(ctx)
+	}
 	toolMapping := make(map[string]string)
-	if err == nil && len(tools) > 0 && modelSupportsTools(brainClient.Provider(), brainClient.Model()) {
+	if len(tools) > 0 && modelSupportsTools(brainClient.Provider(), brainClient.Model()) {
 		for _, t := range tools {
 			sanitized := tool.SanitizeToolName(t.Name)
 			toolMapping[sanitized] = t.Name
@@ -187,18 +230,17 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 	const maxLoops = 25
 	for loop := 0; loop < maxLoops; loop++ {
-		// Inject active skill instructions into system prompt if a skill was
-		// manually activated via the activate_skill tool. Injected once only,
-		// then cleared from the Manager to avoid repeated injection.
-		if toolMgr := o.eng.Executor().ToolManager(); toolMgr != nil {
-			if activePrompt := toolMgr.ActiveSkillPrompt(); activePrompt != "" {
-				for i, msg := range messages {
-					if msg.Role == schema.System {
-						messages[i] = schema.SystemMessage(msg.Content + "\n\n" + activePrompt)
-						break
+		if o.executor != nil {
+			if toolMgr := o.executor.ToolManager(); toolMgr != nil {
+				if activePrompt := toolMgr.ActiveSkillPrompt(); activePrompt != "" {
+					for i, msg := range messages {
+						if msg.Role == schema.System {
+							messages[i] = schema.SystemMessage(msg.Content + "\n\n" + activePrompt)
+							break
+						}
 					}
+					toolMgr.ClearActiveSkillPrompt()
 				}
-				toolMgr.ClearActiveSkillPrompt()
 			}
 		}
 
@@ -206,8 +248,6 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 		sr, err := brainClient.Chat.Stream(ctx, messages)
 		if err != nil {
 			orchLog.Error("runReActLoop: Stream call failed", "workflow_id", workflowID, "loop", loop, "error", err)
-			// Detect eino's validation error for empty model output (common with small local models
-			// like SmolLM2 that occasionally return empty responses).
 			if strings.Contains(err.Error(), "model output must contain either output text or tool calls") {
 				return nil, fmt.Errorf("本地模型返回了空响应，这通常发生在模型正在加载或上下文过长时。请稍后再试。(model=%s)", brainClient.Model())
 			}
@@ -221,7 +261,7 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 		var chunks []*schema.Message
 		isToolCall := false
 
-		thinkParser := NewThinkTagParser()
+		thinkParser := proxy.NewThinkTagParser()
 
 		for {
 			chunk, recvErr := sr.Recv()
@@ -314,7 +354,12 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 					Action: originalName,
 					Input:  args,
 				}
-				res, err := o.eng.Executor().Execute(ctx, cmd)
+				var res tool.Result
+				if o.executor != nil {
+					res, err = o.executor.Execute(ctx, cmd)
+				} else {
+					err = fmt.Errorf("executor client unavailable")
+				}
 				if err != nil {
 					observation = fmt.Sprintf("Tool execution failed: %v", err)
 				} else {
@@ -367,4 +412,3 @@ func modelSupportsTools(provider, model string) bool {
 	}
 	return true
 }
-

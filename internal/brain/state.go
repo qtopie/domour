@@ -1,5 +1,7 @@
 package brain
 
+import "github.com/qtopie/domour/ark/governor"
+
 // TaskStatus defines the lifecycle of a task
 type TaskStatus string
 
@@ -51,30 +53,18 @@ const (
 )
 
 // SystemMode defines the system operating mode, balancing cognitive power (LLM) and bionic energy (I/O)
-type SystemMode string
+type SystemMode = governor.SystemMode
 
 const (
-	// ModeHibernate Hibernate Mode: Zero energy consumption, cognitive layer shut down, only scheduled wakeup remains.
-	ModeHibernate SystemMode = "hibernate"
-	// ModeCasual Casual/Daily Mode: Heartbeat and basic response, low frequency LLM and I/O usage.
-	ModeCasual SystemMode = "casual"
-	// ModeBalanced Balanced Mode: Optimal balance between experience and energy consumption.
-	ModeBalanced SystemMode = "balanced"
-	// ModePerformance Performance Mode: Maximum throughput and minimum latency, parallel execution, io_uring enabled.
-	ModePerformance SystemMode = "performance"
-
-	// Advanced Bionic / Edge Scenarios
-
-	// ModeVigilant Vigilant Mode: Edge perception and reflex arcs. Cognitive layer suspended, bionic layer highly sensitive.
-	ModeVigilant SystemMode = "vigilant"
-	// ModeSurvival Survival Mode: Offline autonomy. Local-only small models, ensuring basic execution without cloud connectivity.
-	ModeSurvival SystemMode = "survival"
-	// ModeDeepThink Deep Think Mode: Offline self-evolution. Body still, full compute dedicated to long-chain reasoning/reflection.
-	ModeDeepThink SystemMode = "deep_think"
-	// ModeStealth Stealth Mode: Absolute privacy and compliance. Local encryption, strict I/O de-sensitization.
-	ModeStealth SystemMode = "stealth"
-	// ModeDiagnostic Diagnostic Mode: Traceability and debugging. Normal cognition, but I/O goes to Sandbox/Mock.
-	ModeDiagnostic SystemMode = "diagnostic"
+	ModeHibernate   SystemMode = governor.ModeHibernate
+	ModeCasual      SystemMode = governor.ModeCasual
+	ModeBalanced    SystemMode = governor.ModeBalanced
+	ModePerformance SystemMode = governor.ModePerformance
+	ModeVigilant    SystemMode = governor.ModeVigilant
+	ModeSurvival    SystemMode = governor.ModeSurvival
+	ModeDeepThink   SystemMode = governor.ModeDeepThink
+	ModeStealth     SystemMode = governor.ModeStealth
+	ModeDiagnostic  SystemMode = governor.ModeDiagnostic
 )
 
 // PowerLevel represents the intensity of energy or compute allocated to a component

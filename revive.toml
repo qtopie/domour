@@ -1,0 +1,38 @@
+# revive.toml - Configuration for revive code smells linter
+ignoreGeneratedHeader = false
+severity = "warning"
+confidence = 0.8
+
+[rule.blank-imports]
+[rule.context-as-argument]
+[rule.context-keys-type]
+[rule.dot-imports]
+[rule.empty-block]
+[rule.error-naming]
+[rule.error-return]
+[rule.error-strings]
+[rule.errorf]
+[rule.increment-decrement]
+[rule.indent-error-flow]
+[rule.range]
+[rule.receiver-naming]
+[rule.redefines-builtin-id]
+[rule.superfluous-else]
+[rule.time-naming]
+[rule.unreachable-code]
+[rule.early-return]
+[rule.deep-exit]
+[rule.modifies-parameter]
+[rule.unchecked-type-assertion]
+
+[rule.cognitive-complexity]
+  arguments = [30]
+
+[rule.cyclomatic]
+  arguments = [20]
+
+[rule.argument-limit]
+  arguments = [6]
+
+[rule.function-length]
+  arguments = [100, 0]

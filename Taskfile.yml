@@ -37,6 +37,14 @@ tasks:
     cmds:
       - go test -v ./...
 
+  codesmells:
+    desc: Scan codebase for code smells using revive
+    aliases: [lint, code-smells]
+    cmds:
+      - cmd: command -v revive >/dev/null 2>&1 || { echo "revive is missing. Install it via 'go install github.com/mgechev/revive@latest'."; exit 1; }
+        silent: true
+      - revive -config revive.toml ./...
+
   clean:
     desc: Clean generated files and compiled binaries
     cmds:

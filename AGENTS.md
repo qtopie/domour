@@ -32,14 +32,18 @@ Domour defines its state based on the balance between "Cognitive Power (LLM)" an
 - **Language**: All code (identifiers, comments) and commit messages MUST be in **English**.
 - **Observability**: Use `slog` for logging and `otel.Tracer` for tracing significant operations.
 - **Safety**: The Brainstem MUST veto any unsafe commands proposed by the Brain.
-- **Modularity**: Maintain strict separation between the cognitive (Brain) and physical (Motor) layers.
-- **Directory Layout**: Strictly follow the structure defined in `docs/project-layout.md`. Do NOT create or use a `pkg/` directory; all public SDK components must be placed under the `ark/` directory.
+- **Modularity & Encapsulation**: Maintain strict separation between cognitive (Brain) and physical (Motor) layers.
+- **Directory Layout & SDK Rules**: Strictly follow the layout and architectural rules defined in [`docs/project-layout.md`](docs/project-layout.md).
+  - All public SDK components MUST be under `ark/`.
+  - **Zero Leakage Rule**: Exported API signatures in `ark/` MUST NEVER import or expose any types from `internal/`.
+  - **Open-Closed Principle (OCP)**: Use interfaces and Option patterns in `ark/`, keeping internal engines and adapters hidden inside `internal/`. Do not clutter `ark/` with internal execution mechanics.
 
 ## Development Guide
 
 Three Steps Must Follow:
 
-Design First(Documentation), Implement Next, Evaluate and Review Finnaly
+Design First (Documentation), Implement Next, Evaluate and Review Finally
+
 
 
 ## Documentation Index

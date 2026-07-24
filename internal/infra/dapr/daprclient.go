@@ -13,13 +13,12 @@ type WorkflowState struct {
 	Err    error           `json:"error"`
 }
 
-// DurableAgentOrchestrator defines the engine interface for orchestrating durable agent workflows.
 type DurableAgentOrchestrator interface {
 	StartWorkflow(ctx context.Context, agentID string, input any) (string, error)
 	GetWorkflowStatus(ctx context.Context, workflowID string) (*WorkflowState, error)
 }
 
-// AgentWorkflowInput contains all necessary fields to run the ReAct tool calling loop.
+// AgentWorkflowInput contains all necessary fields to run an agent workflow loop.
 type AgentWorkflowInput struct {
 	SessionID   string            `json:"session_id"`
 	Messages    []*schema.Message `json:"messages"`
@@ -27,4 +26,5 @@ type AgentWorkflowInput struct {
 	Model       string            `json:"model"`
 	StreamFinal bool              `json:"stream_final"`
 	Stage       string            `json:"stage"`
+	Reasoning   string            `json:"reasoning,omitempty"`
 }

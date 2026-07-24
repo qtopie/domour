@@ -9,6 +9,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/brain"
+	"github.com/qtopie/domour/internal/infra/eventbus"
+	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 	_ "github.com/qtopie/domour/internal/reasoning/planner"
 	_ "github.com/qtopie/domour/internal/reasoning/react"
 	_ "github.com/qtopie/domour/internal/reasoning/simple"
@@ -37,6 +39,12 @@ type Engine interface {
 	AddObserver(sessionID string, obs SignalObserver)
 	RemoveObserver(sessionID string)
 	Diencephalon() *brain.DiencephalonNode
+
+	// Orchestrator returns the agent workflow orchestrator.
+	Orchestrator() AgentOrchestrator
+
+	// EventBus returns the neural event bus.
+	EventBus() eventbus.EventBus
 }
 
 type SignalEvent struct {
@@ -81,6 +89,9 @@ type coreEngine struct {
 	cerebellum   *brain.CerebellumNode
 	brainstem    *brain.BrainstemNode
 
+	eb           eventbus.EventBus
+	orchestrator AgentOrchestrator
+
 	observers map[string]SignalObserver
 	obsMu     sync.RWMutex
 }
@@ -91,6 +102,7 @@ func NewEngine(brainClient CognitorClient, motor ExecutorClient) Engine {
 	if brainClient != nil {
 		modelClient = &engineModelClient{client: brainClient}
 	}
+	eb := localbus.NewEventBus()
 	e := &coreEngine{
 		brain:        brainClient,
 		motor:        motor,
@@ -98,8 +110,11 @@ func NewEngine(brainClient CognitorClient, motor ExecutorClient) Engine {
 		cerebrum:     brain.NewCerebrumNode(),
 		cerebellum:   brain.NewCerebellumNode(motor, modelClient),
 		brainstem:    brain.NewBrainstemNode(),
+		eb:           eb,
 		observers:    make(map[string]SignalObserver),
 	}
+	e.orchestrator = NewLocalOrchestrator(e.brain, e.motor, eb)
+
 	e.cerebellum.SignalCallback = func(sessionID string, eventType string, desc string, payload any) {
 		e.notifyObservers(sessionID, SignalEvent{
 			SessionID:   sessionID,
@@ -145,6 +160,14 @@ func (e *coreEngine) Diencephalon() *brain.DiencephalonNode {
 
 func (e *coreEngine) Executor() ExecutorClient {
 	return e.motor
+}
+
+func (e *coreEngine) Orchestrator() AgentOrchestrator {
+	return e.orchestrator
+}
+
+func (e *coreEngine) EventBus() eventbus.EventBus {
+	return e.eb
 }
 
 // Start launches all neural event loop goroutines. Non-blocking.

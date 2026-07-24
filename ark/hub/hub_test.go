@@ -29,7 +29,8 @@ func TestArkHubToolsAndSkills(t *testing.T) {
 		t.Fatalf("register test tool: %v", err)
 	}
 
-	h := NewArkHub(tm)
+	resolver := &bionicToolResolver{tm: tm}
+	h := NewArkHubWithResolver(resolver)
 	ctx := context.Background()
 
 	t.Run("List and Get Tools", func(t *testing.T) {
@@ -89,7 +90,7 @@ func TestArkHubProviderManager(t *testing.T) {
 	tm := tool.NewManager(tool.WithCleanupInterval(0))
 	defer tm.Close()
 
-	h := NewArkHub(tm)
+	h := NewArkHub()
 	ctx := context.Background()
 
 	t.Run("Save, Get, and List Providers", func(t *testing.T) {
@@ -176,3 +177,62 @@ func TestArkHubProviderManager(t *testing.T) {
 		}
 	})
 }
+
+type bionicToolResolver struct {
+	tm *tool.Manager
+}
+
+func (r *bionicToolResolver) ListTools(ctx context.Context) ([]*ToolManifest, error) {
+	tools := r.tm.List()
+	manifests := make([]*ToolManifest, len(tools))
+	for i, t := range tools {
+		manifests[i] = &ToolManifest{
+			Name:        t.Name,
+			Kind:        string(t.Kind),
+			Description: t.Description,
+			Loaded:      t.Loaded,
+			Meta:        t.Meta,
+		}
+	}
+	return manifests, nil
+}
+
+func (r *bionicToolResolver) GetTool(ctx context.Context, id string) (*ToolManifest, error) {
+	tools := r.tm.List()
+	for _, t := range tools {
+		if t.Name == id {
+			return &ToolManifest{
+				Name:        t.Name,
+				Kind:        string(t.Kind),
+				Description: t.Description,
+				Loaded:      t.Loaded,
+				Meta:        t.Meta,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("tool %q not found", id)
+}
+
+func (r *bionicToolResolver) ListSkills(ctx context.Context) ([]*SkillManifest, error) {
+	skills := r.tm.ListSkills()
+	manifests := make([]*SkillManifest, len(skills))
+	for i, s := range skills {
+		manifests[i] = &SkillManifest{
+			Name:        s.Name,
+			Description: s.Description,
+		}
+	}
+	return manifests, nil
+}
+
+func (r *bionicToolResolver) GetSkill(ctx context.Context, id string) (*SkillManifest, error) {
+	s, err := r.tm.ResolveSkill(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &SkillManifest{
+		Name:        s.Name,
+		Description: s.Description,
+	}, nil
+}
+

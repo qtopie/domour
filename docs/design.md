@@ -155,3 +155,11 @@ Agent 的上下文与经验管理。
 1. **核心模块重构落地**: 基于上述 9 大模块，梳理 `ark` 库的代码结构，剥离复杂的内部仿生概念。
 2. **Runtime 接口标准化**: 进一步抽象 `CognitorClient` 和 `ExecutorClient` 的远程协议。
 3. **多智能体协同协议**: 定义节点间基于意图的交互协议，实现真正的“蜂群”协同。
+
+---
+
+## 9. 架构演进与经验教训
+
+关于 `adk-go` 风格 SDK 拆分、`internal/engine` 编排细节收拢、开闭原则 (OCP) 落地以及循环依赖规避的具体经验教训，详见：
+- [Architectural Lessons Learned](file:///home/qtopierw/workspace/projects/domour/docs/design/architectural_lessons.md)
+

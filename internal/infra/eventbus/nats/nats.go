@@ -1,4 +1,4 @@
-package bus
+package nats
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/qtopie/domour/internal/infra/eventbus"
 )
 
 type Config struct {
@@ -14,13 +15,24 @@ type Config struct {
 	SubjectPrefix string
 }
 
-type EventBus struct {
-	nc *nats.Conn
-	js jetstream.JetStream
+type natsSubscription struct {
+	consContext jetstream.ConsumeContext
+}
+
+func (s *natsSubscription) Unsubscribe() error {
+	if s.consContext != nil {
+		s.consContext.Stop()
+	}
+	return nil
+}
+
+type NatsEventBus struct {
+	nc  *nats.Conn
+	js  jetstream.JetStream
 	cfg Config
 }
 
-func NewEventBus(cfg Config) (*EventBus, error) {
+func NewEventBus(cfg Config) (*NatsEventBus, error) {
 	nc, err := nats.Connect(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to nats: %w", err)
@@ -42,31 +54,30 @@ func NewEventBus(cfg Config) (*EventBus, error) {
 		return nil, fmt.Errorf("failed to create stream: %w", err)
 	}
 
-	return &EventBus{
+	return &NatsEventBus{
 		nc:  nc,
 		js:  js,
 		cfg: cfg,
 	}, nil
 }
 
-func (eb *EventBus) Close() {
-	eb.nc.Close()
+func (eb *NatsEventBus) Close() error {
+	if eb.nc != nil {
+		eb.nc.Close()
+	}
+	return nil
 }
 
-func (eb *EventBus) Publish(ctx context.Context, subject string, data []byte) error {
+func (eb *NatsEventBus) Publish(ctx context.Context, subject string, data []byte) error {
 	fullSubject := fmt.Sprintf("%s.%s", eb.cfg.SubjectPrefix, subject)
 	_, err := eb.js.Publish(ctx, fullSubject, data)
 	return err
 }
 
-func (eb *EventBus) Subscribe(ctx context.Context, subject string, handler func(jetstream.Msg)) (jetstream.ConsumeContext, error) {
+func (eb *NatsEventBus) Subscribe(ctx context.Context, subject string, handler func(data []byte)) (eventbus.Subscription, error) {
 	fullSubject := fmt.Sprintf("%s.%s", eb.cfg.SubjectPrefix, subject)
-	
-	// Create a consumer
-	// Note: Durable name is fixed here, meaning all instances will share the workload for this subject.
-	// If you want broadcast, you need unique durable names or ephemeral consumers.
 	durableName := fmt.Sprintf("consumer_%s", subject)
-	
+
 	consumer, err := eb.js.CreateOrUpdateConsumer(ctx, eb.cfg.StreamName, jetstream.ConsumerConfig{
 		Durable:       durableName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
@@ -75,14 +86,17 @@ func (eb *EventBus) Subscribe(ctx context.Context, subject string, handler func(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
-	
-	cons, err := consumer.Consume(func(msg jetstream.Msg) {
-		handler(msg)
-		msg.Ack()
-	})
-    if err != nil {
-        return nil, fmt.Errorf("failed to consume: %w", err)
-    }
 
-	return cons, nil
+	cons, err := consumer.Consume(func(msg jetstream.Msg) {
+		handler(msg.Data())
+		_ = msg.Ack()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to consume: %w", err)
+	}
+
+	return &natsSubscription{consContext: cons}, nil
 }
+
+// Ensure NatsEventBus satisfies eventbus.EventBus interface
+var _ eventbus.EventBus = (*NatsEventBus)(nil)

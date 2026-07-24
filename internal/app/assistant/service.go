@@ -12,7 +12,6 @@ import (
 	"github.com/qtopie/domour/ark/session"
 	appconfig "github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
-	"github.com/qtopie/domour/internal/infra/dapr"
 	"github.com/qtopie/domour/internal/infra/eventbus"
 )
 
@@ -22,22 +21,26 @@ type AssistantService struct {
 	locker       session.Locker
 	interceptor  bioniccontext.ChatContextInterceptor
 	eb           eventbus.EventBus
-	orchestrator dapr.DurableAgentOrchestrator
+	orchestrator engine.AgentOrchestrator
 }
 
 func NewAssistantService(
-	engine engine.Engine,
+	eng engine.Engine,
 	store session.Store,
-	eb eventbus.EventBus,
-	orchestrator dapr.DurableAgentOrchestrator,
 ) *AssistantService {
+	var eb eventbus.EventBus
+	var orch engine.AgentOrchestrator
+	if eng != nil {
+		eb = eng.EventBus()
+		orch = eng.Orchestrator()
+	}
 	return &AssistantService{
-		engine:       engine,
+		engine:       eng,
 		store:        store,
 		locker:       session.NewLocalLocker(),
 		interceptor:  bioniccontext.NewChatContextInterceptor(),
 		eb:           eb,
-		orchestrator: orchestrator,
+		orchestrator: orch,
 	}
 }
 

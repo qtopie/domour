@@ -42,7 +42,7 @@
   - [x] 定义多级神经分流机制 (Layered Routing)
 - [ ] **依赖注入与通信设施**
   - [ ] 打通 `domour` 向下对 `cosmos-star` 组件注入的生命周期
-  - [x] 对接 NATS / MQTT 事件总线 (`internal/infra/bus`)
+  - [x] 对接 NATS / MQTT 事件总线 (`internal/infra/eventbus`)
 - [ ] **任务下发队列**
   - [ ] 在 `cosmos-star` 侧实现 `TaskDispatcher`：将包装好的长任务下发给边缘节点执行
 
@@ -54,6 +54,12 @@
 ## 阶段六：测试、观测与打磨
 - [x] **集成测试沙箱 (`docs/architecture/vproxy_integration.md`)**
   - [x] 实现 vproxy 透明代理集成测试，验证 Agent 复杂网络环境适应力
+- [x] **架构规范与 SDK 拆分 (adk-go 模式对齐)**
+  - [x] `ark/` 公开 SDK 按领域拆分为子包 (`ark/agent`, `ark/cognitor`, `ark/governor`, `ark/hub`, `ark/orchestrator`, `ark/session`, `ark/telemetry`)
+  - [x] 消除 `ark/` SDK 中的所有 `internal/` 类型泄漏，通过接口与工厂函数封装
+  - [x] 收拢 Orchestrator、ReAct Loop、EventBus 至 `internal/engine`，驱动层 `internal/app/assistant` 实现极简依赖
+  - [x] 解决消费端接口定义与包循环依赖 (`Import Cycle`) 问题
+  - [x] 编写经验教训与设计规范文档 (`docs/design/architectural_lessons.md`)
 - [ ] **全链路可观测性 (Observability)**
   - [ ] 接入 `slog` + `otel.Tracer` 对每一此脑路反思进行分布式追踪
 - [ ] **边缘部署适配**：将整个项目连带底层的 `cosmos-star` 交叉编译发布至 RISC-V/ARM64 终端设备

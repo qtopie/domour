@@ -11,11 +11,8 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/bionic/tool"
-	"github.com/qtopie/domour/internal/brain"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/engine"
-	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
-	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 )
 
 type mockAssistantDiencephalonClient struct {
@@ -119,21 +116,6 @@ func (m *mockAssistantExecutorClient) ListTools(ctx context.Context) ([]tool.Too
 func (m *mockAssistantExecutorClient) ToolManager() *tool.Manager {
 	return m.manager
 }
-
-type mockAssistantEngine struct {
-	cognitor engine.CognitorClient
-	executor engine.ExecutorClient
-}
-
-func (e *mockAssistantEngine) Cognitor() engine.CognitorClient { return e.cognitor }
-func (e *mockAssistantEngine) Executor() engine.ExecutorClient { return e.executor }
-func (e *mockAssistantEngine) Start(ctx context.Context) error { return nil }
-func (e *mockAssistantEngine) Submit(ctx context.Context, signal brain.SensorySignal) error { return nil }
-func (e *mockAssistantEngine) Results() <-chan brain.MotorFeedback { return nil }
-func (e *mockAssistantEngine) AddObserver(sessionID string, obs engine.SignalObserver) {}
-func (e *mockAssistantEngine) RemoveObserver(sessionID string) {}
-func (e *mockAssistantEngine) Diencephalon() *brain.DiencephalonNode { return nil }
-
 func TestAssistantServiceToolCallingLoop(t *testing.T) {
 	ctx := context.Background()
 
@@ -142,7 +124,9 @@ func TestAssistantServiceToolCallingLoop(t *testing.T) {
 	cognitor := &mockAssistantCognitorClient{client: mockLLM}
 
 	manager := tool.NewManager()
-	grepTool := tool.NewInternalTool("search.grep", "Search files", func(ctx context.Context, cmd tool.Command) (tool.Result, error) {
+	defer manager.Close()
+
+	grepTool := tool.NewInternalTool("search.grep", "grep search in workspace", func(ctx context.Context, cmd tool.Command) (tool.Result, error) {
 		pattern, _ := cmd.Input["pattern"].(string)
 		dir, _ := cmd.Input["dir"].(string)
 		return tool.Result{
@@ -154,12 +138,10 @@ func TestAssistantServiceToolCallingLoop(t *testing.T) {
 	_ = manager.Register(grepTool)
 
 	executor := &mockAssistantExecutorClient{manager: manager}
-	eng := &mockAssistantEngine{cognitor: cognitor, executor: executor}
+	eng := engine.NewEngine(cognitor, executor)
 
 	// 2. Initialize AssistantService
-	eb := localbus.NewEventBus()
-	orch := localorch.NewLocalOrchestrator(eng, eb)
-	service := assistant.NewAssistantService(eng, nil, eb, orch)
+	service := assistant.NewAssistantService(eng, nil)
 
 	// 3. Call Chat and verify streaming and results
 	req := shared.MotorChatRequest{

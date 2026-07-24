@@ -14,10 +14,8 @@ import (
 	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	"github.com/qtopie/domour/internal/engine"
-	localorch "github.com/qtopie/domour/internal/infra/dapr/local"
-	localbus "github.com/qtopie/domour/internal/infra/eventbus/local"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
-	"github.com/qtopie/domour/internal/infra/db"
+	db "github.com/qtopie/domour/internal/infra/db"
 	"google.golang.org/grpc"
 )
 
@@ -111,13 +109,11 @@ func (m *mockServerStreamingServer) Send(resp *chatpb.ChatResponse) error {
 }
 
 func TestServer_SessionLocking(t *testing.T) {
-	store := storage.NewMemoryStore()
+	store := db.NewMemoryStore()
 	chatClient := &mockDiencephalonClient{}
 	brain := &mockCognitorClient{chat: chatClient}
 	eng := engine.NewEngine(brain, &mockExecutorClient{})
-	eb := localbus.NewEventBus()
-	orch := localorch.NewLocalOrchestrator(eng, eb)
-	appService := assistant.NewAssistantService(eng, store, eb, orch)
+	appService := assistant.NewAssistantService(eng, store)
 
 	srv, err := appgrpc.NewServer(appService)
 	if err != nil {
