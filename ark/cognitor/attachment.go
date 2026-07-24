@@ -92,7 +92,21 @@ func BuildMultimodalMessage(text string, attachments []*Attachment) (*schema.Mes
 	}, nil
 }
 
+// LLMConfig is an alias for Config for backward compatibility with multimodal requests.
+type LLMConfig = Config
+
 // AnalyzeImage performs vision inference on local image files using Cognitor.
+func AnalyzeImage(ctx context.Context, cfg *Config, prompt string, imagePaths ...string) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("config cannot be nil")
+	}
+	client, err := NewClient(ctx, *cfg)
+	if err != nil {
+		return "", fmt.Errorf("create cognitor client: %w", err)
+	}
+	return client.AnalyzeImage(ctx, prompt, imagePaths...)
+}
+
 func (c *Client) AnalyzeImage(ctx context.Context, prompt string, imagePaths ...string) (string, error) {
 	attachments := make([]*Attachment, 0, len(imagePaths))
 	for _, p := range imagePaths {
