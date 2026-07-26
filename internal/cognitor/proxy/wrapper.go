@@ -643,7 +643,7 @@ func firstNonEmpty(values ...string) string {
 
 func sanitizeMessages(messages []*schema.Message) {
 	for _, m := range messages {
-		if m.Content == "" {
+		if m.Content == "" && len(m.UserInputMultiContent) == 0 {
 			m.Content = " "
 		}
 	}
