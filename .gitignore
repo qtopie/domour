@@ -5,3 +5,5 @@ build/
 bin/
 .logs/
 data.db*
+
+.agents/TASK.md

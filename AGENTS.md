@@ -1,53 +1,31 @@
-# Domour Project Instructions (GEMINI.md)
+# AGENTS.md - System Operating Guidelines
 
-## Project Overview
-Domour is a modular, bio-inspired AI agent framework designed for high-performance orchestration across Cloud, Edge, and Physical environments.
+Welcome Agent! You are a core collaborator in this repository. You MUST strictly adhere to these operational rules.
 
-## Core Architecture (Biological Analogy)
+## 1. Context Loading & Memory Rule
+- **Always Check `.agents/TASK.md` First:** Before taking any action, read `.agents/TASK.md` to restore context.
+- **Maintain `.agents/TASK.md`:** Update `.agents/TASK.md` checklist items as you progress. If interrupted, write the current status under `Current Context`.
 
-We use a biological metaphor to separate cognitive reasoning from physical execution:
+## 2. Spec-First Gate (Strict Enforcement)
+- **SSOT (Single Source of Truth):** All behavioral contracts belong in `specs/`. Never implement feature logic without an approved Spec.
+- **No Spec, No Code:** 
+  1. Draft/Update files in `specs/` or `docs/rfcs/`.
+  2. Wait for explicit user approval (`APPROVE`).
+  3. Generate or update test harness fixtures (`harness/`) and test stubs (`testings/`).
+  4. Only then implement business logic code.
 
-1.  **Brain (Cerebrum)**: The cognitive and inference center. Responsible for high-level semantic understanding, task planning (Planning), and self-correction (Reflection). It is the "System 2" slow thinker.
-2.  **Cerebellum**: The logic orchestrator. It receives plans from the Cerebrum and manages tactical execution, such as the ReAct (Think-Act-Observe) loop and tool-calling sequences.
-3.  **Brainstem (Motor)**: The foundation and physical layer. It handles "Survival and Instinct," including safety interception (Veto), concrete system calls (Shell, File I/O), and rendering. The Brainstem has final authority over execution.
-4.  **Diencephalon**: The sensory relay and LLM adapter layer. It acts as a unified gateway to various LLM providers (DeepSeek, Gemini, OpenAI, CLI-based agents).
+## 3. Harness Engineering & Testing Gate
+- **Harness-Driven Development:** Maintain fixtures, mocks, and runners in `harness/`.
+- **Structured Diagnostic Feedback:** When tests fail, read the `Harness Failure Report` automatically written to `.agents/TASK.md` to perform targeted fixes instead of guessing logs.
+- **No Shallow Tests:** Never write trivial Getter/Setter tests; tests must cover real boundary conditions and error scenarios.
+- **Mock External Dependencies:** Always mock databases, network I/O, external RPCs, and hardware APIs in unit tests and harness mocks (`harness/mocks/`).
 
-## System Operating Modes
+## 4. Grounding & Code Rules
+- **Read Before Write:** Read target files and their dependencies before editing.
+- **Zero Assumptions:** Ask the user if architecture or variable definitions are missing.
+- **Minimal Diff:** Modify only what is required. Do not refactor unrelated code.
 
-Domour defines its state based on the balance between "Cognitive Power (LLM)" and "Bionic/Body Energy (I/O)":
-
-| Mode | Cognitive (LLM) | Bionic (I/O) | Focus |
-| :--- | :--- | :--- | :--- |
-| **Hibernate** | ❌ Off | ❌ Off | Zero energy consumption, persistence. |
-| **Vigilant** | 💤 Low (Suspended) | ⚡ High (eBPF/Sensor) | Edge perception and reflex arcs. |
-| **Casual** | ⬇️ Low | ⬇️ Low | Heartbeat and basic responsiveness. |
-| **Survival** | 🔄 Local-Only | ➡️ Normal | Offline autonomy for edge/remote scenarios. |
-| **Balanced** | ➡️ Normal | ➡️ Normal | Optimal balance for daily interaction. |
-| **Performance** | ⚡ High (Parallel) | ⚡ High (io_uring) | Maximum throughput and minimum latency. |
-| **Deep Think** | ⚡ High (Reasoning) | ❌ Still | Long-chain reasoning and self-evolution. |
-| **Stealth** | ➡️ Normal (Encrypted) | 🔒 Encrypted I/O | Privacy, compliance, and zero-telemetry. |
-| **Diagnostic** | ➡️ Normal | 🧪 Sandbox/Mock | Tracing, debugging, and risk-free testing. |
-
-## Development Standards
-- **Language**: All code (identifiers, comments) and commit messages MUST be in **English**.
-- **Observability**: Use `slog` for logging and `otel.Tracer` for tracing significant operations.
-- **Safety**: The Brainstem MUST veto any unsafe commands proposed by the Brain.
-- **Modularity & Encapsulation**: Maintain strict separation between cognitive (Brain) and physical (Motor) layers.
-- **Directory Layout & SDK Rules**: Strictly follow the layout and architectural rules defined in [`docs/project-layout.md`](docs/project-layout.md).
-  - All public SDK components MUST be under `ark/`.
-  - **Zero Leakage Rule**: Exported API signatures in `ark/` MUST NEVER import or expose any types from `internal/`.
-  - **Open-Closed Principle (OCP)**: Use interfaces and Option patterns in `ark/`, keeping internal engines and adapters hidden inside `internal/`. Do not clutter `ark/` with internal execution mechanics.
-
-## Development Guide
-
-Three Steps Must Follow:
-
-Design First (Documentation), Implement Next, Evaluate and Review Finally
-
-
-
-## Documentation Index
-- `docs/brain.md`: Detailed Brain/Thinking layer design.
-- `docs/architecture/target.md`: Evolution strategy.
-- `docs/features/plugins/skill-schema.md`: Definition for custom Agent skills.
-- `docs/ai-agent-acp.md`: Introduction to AI Agent ACP Protocol and IDE collaboration.
+## 5. Execution & Safety Red Lines
+- **Prohibited Commands:** Never run `git push --force`, `rm -rf /`, or alter external systems.
+- **Mandatory Self-Validation:** Run `./scripts/check.sh` (or `./scripts/check-harness.sh`) before marking a task complete.
+- **Error Limit:** If test/compile fixes fail > 3 times, stop and ask the user for guidance.
