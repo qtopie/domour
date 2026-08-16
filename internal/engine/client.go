@@ -94,54 +94,49 @@ func (b *localCognitorClient) GetClient(ctx context.Context, entry string) (*pro
 func (b *localCognitorClient) GetClientWithOverride(ctx context.Context, entry string, provider, model string) (*proxy.Client, error) {
 	entry = strings.ToLower(strings.TrimSpace(entry))
 
-	if provider == "" && model == "" {
-		return b.GetClient(ctx, entry)
-	}
-
 	// Resolve the base config for the entry from current settings/config
 	domourCfg, err := appconfig.LoadDomourConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config for dynamic provider: %w", err)
 	}
 
-	cfg := proxy.ResolveConfig(entry, domourCfg)
+	build := func(ctx context.Context, e, p, m string) (*proxy.Client, error) {
+		cfg := proxy.ResolveConfig(e, domourCfg)
 
-	// Apply overrides
-	if provider != "" {
-		cfg.Provider = provider
-		// When overriding provider, also load its key/url/proxy if defined in config
-		cfg.APIKey = domourCfg.APIKeyForProvider(provider)
-		cfg.BaseURL = domourCfg.BaseURLForProvider(provider)
-		cfg.ProxyURL = domourCfg.ProxyForProvider(provider)
-		cfg.Model = domourCfg.ProviderModel(provider)
+		// Apply overrides
+		if p != "" {
+			cfg.Provider = p
+			// When overriding provider, also load its key/url/proxy if defined in config
+			cfg.APIKey = domourCfg.APIKeyForProvider(p)
+			cfg.BaseURL = domourCfg.BaseURLForProvider(p)
+			cfg.ProxyURL = domourCfg.ProxyForProvider(p)
+			cfg.Model = domourCfg.ProviderModel(p)
+		}
+		if m != "" {
+			cfg.Model = m
+		}
+
+		cacheKey := fmt.Sprintf("%s:%s:%s:%s", cfg.Provider, cfg.Model, cfg.APIKey, cfg.BaseURL)
+
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.dynamicCache == nil {
+			b.dynamicCache = make(map[string]*proxy.Client)
+		}
+		if client, ok := b.dynamicCache[cacheKey]; ok {
+			return client, nil
+		}
+		newClient, err := proxy.New(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		b.dynamicCache[cacheKey] = newClient
+		return newClient, nil
 	}
-	if model != "" {
-		cfg.Model = model
-	}
 
-	cacheKey := fmt.Sprintf("%s:%s:%s:%s", cfg.Provider, cfg.Model, cfg.APIKey, cfg.BaseURL)
-
-	b.mu.Lock()
-	if b.dynamicCache == nil {
-		b.dynamicCache = make(map[string]*proxy.Client)
-	}
-	client, exists := b.dynamicCache[cacheKey]
-	b.mu.Unlock()
-
-	if exists {
-		return client, nil
-	}
-
-	newClient, err := proxy.New(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	b.mu.Lock()
-	b.dynamicCache[cacheKey] = newClient
-	b.mu.Unlock()
-
-	return newClient, nil
+	return resolveWithFallback(ctx, entry, provider, model, domourCfg, build, func(ctx context.Context, c *proxy.Client) (bool, error) {
+		return c.IsReady(ctx)
+	})
 }
 
 // localExecutorClient implements ExecutorClient using the local tool manager.
@@ -292,18 +287,25 @@ func (b *reloadableCognitorClient) GetClientWithOverride(ctx context.Context, en
 	if err != nil {
 		return nil, fmt.Errorf("cognitor nil: failed to load config: %w", err)
 	}
-	resolved := proxy.ResolveConfig(entry, cfg)
-	if provider != "" {
-		resolved.Provider = provider
-		resolved.APIKey = cfg.APIKeyForProvider(provider)
-		resolved.BaseURL = cfg.BaseURLForProvider(provider)
-		resolved.ProxyURL = cfg.ProxyForProvider(provider)
-		resolved.Model = cfg.ProviderModel(provider)
+
+	build := func(ctx context.Context, e, p, m string) (*proxy.Client, error) {
+		resolved := proxy.ResolveConfig(e, cfg)
+		if p != "" {
+			resolved.Provider = p
+			resolved.APIKey = cfg.APIKeyForProvider(p)
+			resolved.BaseURL = cfg.BaseURLForProvider(p)
+			resolved.ProxyURL = cfg.ProxyForProvider(p)
+			resolved.Model = cfg.ProviderModel(p)
+		}
+		if m != "" {
+			resolved.Model = m
+		}
+		return proxy.New(ctx, resolved)
 	}
-	if model != "" {
-		resolved.Model = model
-	}
-	return proxy.New(ctx, resolved)
+
+	return resolveWithFallback(ctx, entry, provider, model, cfg, build, func(ctx context.Context, c *proxy.Client) (bool, error) {
+		return c.IsReady(ctx)
+	})
 }
 
 // NewConfiguredExecutorClient constructs ExecutorClient configured via env and config.
