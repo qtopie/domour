@@ -6,6 +6,7 @@ option go_package = "github.com/qtopie/domour/gen/assistant/copilot";
 import "assistant/common/media.proto";
 
 service CopilotService {
+  rpc Complete(CopilotRequest) returns (CopilotResponse);
   rpc Copilot(CopilotRequest) returns (stream CopilotResponse);
 }
 

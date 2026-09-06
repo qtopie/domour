@@ -14,4 +14,5 @@ message Attachment {
   string data_base64 = 5;
   int64 size_bytes = 6;
   google.protobuf.Struct metadata = 7;
+  bytes data = 8;
 }

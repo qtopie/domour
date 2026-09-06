@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CopilotService_Copilot_FullMethodName = "/assistant.copilot.CopilotService/Copilot"
+	CopilotService_Complete_FullMethodName = "/assistant.copilot.CopilotService/Complete"
+	CopilotService_Copilot_FullMethodName  = "/assistant.copilot.CopilotService/Copilot"
 )
 
 // CopilotServiceClient is the client API for CopilotService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CopilotServiceClient interface {
+	Complete(ctx context.Context, in *CopilotRequest, opts ...grpc.CallOption) (*CopilotResponse, error)
 	Copilot(ctx context.Context, in *CopilotRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CopilotResponse], error)
 }
 
@@ -35,6 +37,16 @@ type copilotServiceClient struct {
 
 func NewCopilotServiceClient(cc grpc.ClientConnInterface) CopilotServiceClient {
 	return &copilotServiceClient{cc}
+}
+
+func (c *copilotServiceClient) Complete(ctx context.Context, in *CopilotRequest, opts ...grpc.CallOption) (*CopilotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CopilotResponse)
+	err := c.cc.Invoke(ctx, CopilotService_Complete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *copilotServiceClient) Copilot(ctx context.Context, in *CopilotRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CopilotResponse], error) {
@@ -60,6 +72,7 @@ type CopilotService_CopilotClient = grpc.ServerStreamingClient[CopilotResponse]
 // All implementations must embed UnimplementedCopilotServiceServer
 // for forward compatibility.
 type CopilotServiceServer interface {
+	Complete(context.Context, *CopilotRequest) (*CopilotResponse, error)
 	Copilot(*CopilotRequest, grpc.ServerStreamingServer[CopilotResponse]) error
 	mustEmbedUnimplementedCopilotServiceServer()
 }
@@ -71,6 +84,9 @@ type CopilotServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedCopilotServiceServer struct{}
 
+func (UnimplementedCopilotServiceServer) Complete(context.Context, *CopilotRequest) (*CopilotResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Complete not implemented")
+}
 func (UnimplementedCopilotServiceServer) Copilot(*CopilotRequest, grpc.ServerStreamingServer[CopilotResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Copilot not implemented")
 }
@@ -95,6 +111,24 @@ func RegisterCopilotServiceServer(s grpc.ServiceRegistrar, srv CopilotServiceSer
 	s.RegisterService(&CopilotService_ServiceDesc, srv)
 }
 
+func _CopilotService_Complete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CopilotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotServiceServer).Complete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CopilotService_Complete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotServiceServer).Complete(ctx, req.(*CopilotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CopilotService_Copilot_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(CopilotRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -112,7 +146,12 @@ type CopilotService_CopilotServer = grpc.ServerStreamingServer[CopilotResponse]
 var CopilotService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "assistant.copilot.CopilotService",
 	HandlerType: (*CopilotServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Complete",
+			Handler:    _CopilotService_Complete_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Copilot",
