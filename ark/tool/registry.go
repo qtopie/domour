@@ -23,10 +23,16 @@ var (
 	tools []Tool
 )
 
-// Register registers a public tool.
+// Register registers a public tool. If a tool with the same Name already exists, it is replaced.
 func Register(t Tool) {
 	mu.Lock()
 	defer mu.Unlock()
+	for i, existing := range tools {
+		if existing.Name == t.Name {
+			tools[i] = t
+			return
+		}
+	}
 	tools = append(tools, t)
 }
 

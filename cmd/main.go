@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/qtopie/domour/ark/infra/llamacpp"
 	"github.com/qtopie/domour/ark/telemetry"
 	acpapi "github.com/qtopie/domour/internal/app/api/acp"
 	"github.com/qtopie/domour/internal/engine"
@@ -14,13 +15,22 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "acp" {
-		runACPServer()
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "acp":
+			runACPServer()
+			return
+		case "llamacpp":
+			if err := llamacpp.RunCLI(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 
 	fmt.Println("Welcome to Domour Local CLI!")
-	fmt.Println("Usage: domour [acp]")
+	fmt.Println("Usage: domour [acp | llamacpp <command>]")
 }
 
 func runACPServer() {
