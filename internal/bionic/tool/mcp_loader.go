@@ -195,8 +195,6 @@ func (m *Manager) loadMCPServers(ctx context.Context) error {
 			client = mcp.NewStdioClient(serverCfg.Command, serverCfg.Args, serverCfg.Env)
 		case "sse":
 			client = mcp.NewSSEClient(serverCfg.URL)
-		case "dapr":
-			client = mcp.NewDaprClient(serverCfg.AppID)
 		default:
 			slog.Warn("Unsupported MCP server type", "server", serverName, "type", serverCfg.Type)
 			continue

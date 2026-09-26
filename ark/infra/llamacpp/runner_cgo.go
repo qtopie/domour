@@ -3,8 +3,8 @@
 package llamacpp
 
 /*
-#cgo CFLAGS: -I/home/qtopierw/workspace/spacemit/llama.cpp/include -I/home/qtopierw/workspace/spacemit/llama.cpp/ggml/include
-#cgo LDFLAGS: -L/home/qtopierw/workspace/spacemit/llama.cpp/build-x86/bin -lllama -Wl,-rpath,/home/qtopierw/workspace/spacemit/llama.cpp/build-x86/bin
+#cgo CFLAGS: -I/home/qtopierw/workspace/spacemit/llama.cpp/include -I/home/qtopierw/workspace/spacemit/llama.cpp/ggml/include -I/root/llama-installed/include -I/root/llama.cpp/include -I/root/llama.cpp/ggml/include
+#cgo LDFLAGS: -L/home/qtopierw/workspace/spacemit/llama.cpp/build-x86/bin -L/root/llama-installed/lib -lllama -Wl,-rpath,/home/qtopierw/workspace/spacemit/llama.cpp/build-x86/bin -Wl,-rpath,/root/llama-installed/lib
 #include "bridge.h"
 #include <stdlib.h>
 */

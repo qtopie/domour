@@ -10,11 +10,14 @@ import (
 	"strings"
 
 	"github.com/qtopie/domour/ark/session"
+	domourskill "github.com/qtopie/domour/ark/skill"
+	infraspi "github.com/qtopie/domour/ark/spi/infra"
+	runtimespi "github.com/qtopie/domour/ark/spi/runtime"
 	"github.com/qtopie/domour/ark/telemetry"
+	domourtool "github.com/qtopie/domour/ark/tool"
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/config"
-	domourskill "github.com/qtopie/domour/ark/skill"
-	domourtool "github.com/qtopie/domour/ark/tool"
+	"github.com/qtopie/domour/internal/infra/eventbus"
 	"google.golang.org/grpc"
 )
 
@@ -86,6 +89,15 @@ func Run(ctx context.Context, opts ...Option) error {
 	if o.store != nil {
 		appOpts = append(appOpts, assistant.WithStore(o.store))
 	}
+	if o.orchestrator != nil {
+		appOpts = append(appOpts, assistant.WithOrchestrator(o.orchestrator))
+	}
+	if o.eventBus != nil {
+		appOpts = append(appOpts, assistant.WithEventBus(o.eventBus))
+	}
+	if o.router != nil {
+		appOpts = append(appOpts, assistant.WithRouter(o.router))
+	}
 
 	app, err := assistant.NewApp(&cfg, appOpts...)
 	if err != nil {
@@ -104,8 +116,11 @@ func Run(ctx context.Context, opts ...Option) error {
 type Option func(*options)
 
 type options struct {
-	grpcServer *grpc.Server
-	store      session.SessionStore
+	grpcServer   *grpc.Server
+	store        session.SessionStore
+	orchestrator infraspi.AgentOrchestrator
+	eventBus     eventbus.EventBus
+	router       runtimespi.Router
 }
 
 // WithGRPCServer allows passing an existing gRPC server to reuse.
@@ -122,11 +137,49 @@ func WithStore(store session.SessionStore) Option {
 	}
 }
 
+// WithOrchestrator allows passing a custom agent workflow orchestrator.
+func WithOrchestrator(orch infraspi.AgentOrchestrator) Option {
+	return func(o *options) {
+		o.orchestrator = orch
+	}
+}
+
+// WithEventBus allows passing a custom event bus.
+func WithEventBus(eb eventbus.EventBus) Option {
+	return func(o *options) {
+		o.eventBus = eb
+	}
+}
+
+// WithRouter allows passing a custom request router.
+func WithRouter(r runtimespi.Router) Option {
+	return func(o *options) {
+		o.router = r
+	}
+}
+
 // RegisterAssistantServices initializes the assistant and registers its gRPC services
 // onto the provided server. This allows embedding Domour into a host process.
-func RegisterAssistantServices(s *grpc.Server) error {
+func RegisterAssistantServices(s *grpc.Server, opts ...Option) error {
 	cfg, _ := config.LoadDomourConfig()
-	app, err := assistant.NewApp(&cfg)
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	var appOpts []assistant.AppOption
+	if o.store != nil {
+		appOpts = append(appOpts, assistant.WithStore(o.store))
+	}
+	if o.orchestrator != nil {
+		appOpts = append(appOpts, assistant.WithOrchestrator(o.orchestrator))
+	}
+	if o.eventBus != nil {
+		appOpts = append(appOpts, assistant.WithEventBus(o.eventBus))
+	}
+	if o.router != nil {
+		appOpts = append(appOpts, assistant.WithRouter(o.router))
+	}
+	app, err := assistant.NewApp(&cfg, appOpts...)
 	if err != nil {
 		return err
 	}

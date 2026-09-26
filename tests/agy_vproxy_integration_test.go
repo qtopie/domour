@@ -131,7 +131,7 @@ func TestAgyVProxyIntegration(t *testing.T) {
 	}
 	vproxyBin := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "vproxy", "bin", "vproxy")
 	if _, err := os.Stat(vproxyBin); err != nil {
-		t.Fatalf("vproxy binary not found at %s: %v. Please run go build in vproxy first.", vproxyBin, err)
+		t.Skipf("vproxy binary not found at %s: %v. Skipping integration test.", vproxyBin, err)
 	}
 
 	// Create symlink or copy of agy named agy-test-bin to bypass global vproxy daemon matching rules

@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
-	"github.com/qtopie/domour/internal/infra/dapr"
+	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/llm"
 )
 
@@ -107,7 +107,7 @@ func (s *AssistantService) Copilot(ctx context.Context, req shared.MotorCopilotR
 		return fmt.Errorf("subscribe stream: %w", err)
 	}
 
-	input := dapr.AgentWorkflowInput{
+	input := engine.AgentWorkflowInput{
 		SessionID:   sessionID,
 		Messages:    messages,
 		Provider:    brainClient.Provider(),

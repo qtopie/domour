@@ -6,8 +6,6 @@ require (
 	github.com/cloudwego/eino v0.9.12
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.8
 	github.com/cloudwego/eino-ext/components/model/qwen v0.1.5
-	github.com/dapr/dapr v1.17.0
-	github.com/dapr/go-sdk v1.13.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-viper/encoding/ini v0.1.1
@@ -16,7 +14,6 @@ require (
 	github.com/nats-io/nats.go v1.49.0
 	github.com/qtopie/sniphunt v0.1.1
 	github.com/spf13/viper v1.21.0
-	github.com/surrealdb/surrealdb.go v1.4.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.19.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.20.0
@@ -46,13 +43,11 @@ require (
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.1 // indirect
 	github.com/bytedance/sonic/loader v0.5.1 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.13 // indirect
-	github.com/dapr/durabletask-go v0.11.0 // indirect
-	github.com/dapr/kit v0.17.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
@@ -60,12 +55,10 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v5.7.0+incompatible // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/gammazero/deque v1.2.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
-	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
@@ -89,6 +82,7 @@ require (
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
@@ -99,7 +93,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
-	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0 // indirect

@@ -1,61 +1,75 @@
 # domour
 
-`domour` 是一个 **分布式仿生智能体运行时 (Distributed Bionic Agent Runtime)**。
-
-它为 AI Agent 提供了一个解耦、安全且可扩展的“生命支持系统”。不仅仅是一个 SDK，`domour` 更是一个让智能体能够“思考 (Think)”与“执行 (Act)”的标准化环境，支持从嵌入式边缘节点到云端集群的无缝部署。
-
-## 核心定位：Agent Runtime
-
-- **运行环境 (Runtime)**: 提供智能体的生命周期管理、状态持久化、多级记忆管理和跨节点通讯。
-- **仿生架构 (Bionic Architecture)**: 严格遵循“大脑 (Brain) - 小脑 (Motor) - 脑干 (Brainstem)”的解耦设计，实现认知与执行的物理隔离。
-- **分布式协同 (Distributed)**: 基于 Dapr 和网格计算思想，支持智能体节点间的智能化协同与任务路由。
-- **双模式接入**:
-  - **Embedded SDK**: 作为库集成进现有应用，为业务逻辑注入 Agent 能力。
-  - **Bootstrap Server**: 快速启动一个标准化的 Agent 节点，作为独立的运行时服务。
+**domour** is a lightweight, distributed bionic AI agent runtime written in Go. Designed for environments ranging from resource-constrained edge devices (e.g. Milk-V Duo S) to cloud clusters, it provides a decoupled, secure, and extensible operating environment for intelligent agents.
 
 ---
 
-## 快速启动
+## Key Highlights
 
-`domour` 默认可以启动一个最小可运行的 gRPC agent runtime 实例，无需复杂配置。
-
-启动服务端：
-
-```bash
-go run ./cmd/domour
-```
-
-默认监听 `127.0.0.1:1234`。
+- **Bionic Architecture**: Strict separation of concerns between **Brain** (non-deterministic cognition and planning) and **Motor** (deterministic tool execution, safety guards, and validation).
+- **Zero-Dependency 3-Tier SPI**: Pluggable Service Provider Interface (`runtime`, `capability`, `infra`). Runs out-of-the-box with in-memory state; seamlessly integrates with external backends (Dapr, SurrealDB) when needed.
+- **Embedded llama.cpp Runtime**: Native in-tree CGo bridge for local GGUF model inference with ChatML rendering, streaming UTF-8 buffering, and logits extraction.
+- **Protocol-First**: Built-in support for ACP (Agent Communication Protocol) and flexible chat interfaces.
 
 ---
 
-## 架构概览
+## Quick Start
 
-`domour` 的核心是将 Agent 的能力拆分为互不干扰的生理模块：
-
-- **大脑 (Brain)**: 认知中枢。负责语义理解、任务拆解、生成计划。它被视为“非确定性”层。
-- **小脑 (Motor)**: 执行中枢。负责工具调用、安全审查、最终输出。它是系统的“确定性”控制层，确保 Brain 的想法安全落地。
-- **脑干 (Brainstem)**: 基础设施层。负责节点通信、事件总线、存储调度。基于 Dapr 实现集群节点的发现与状态同步。
-- **间脑 (Diencephalon)**: 模型路由层。统一调度 Gemini, Claude, Llama.cpp 以及各类本地 CLI 模型。
-
-## 功能特性
-
-- **跨环境适配**: 无论是笔记本上的本地 LLM (Llama.cpp)，还是云端的高性能 API，亦或是边缘设备的简单规则，都能在同一套 Runtime 下运行。
-- **零信任安全**: 认知与执行物理隔离，Brain 无法直接操作敏感资源，必须经过 Motor 的二次校验。
-- **统一记忆系统**: 自动归并并持久化会话历史，支持延迟加载本地 CLI 日志，实现 Agent 记忆的无缝平移。
-- **多模态原生**: 内置多模态消息处理与轻量化 OCR 拦截，支持附件通道。
-
-## 配置与管理
-
-提供模型管理工具，支持动态切换运行时后端：
+### Installation & Build
 
 ```bash
-go run ./cmd/domour models list
-go run ./cmd/domour models set -entry chat -provider llamacpp -model qwen2.5-coder
+git clone https://github.com/qtopie/domour.git
+cd domour
+go build -o bin/domour ./cmd
 ```
 
-## License
+### CLI Usage
 
-This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE](LICENSE) file for details.
+```bash
+# Interactive agent chat CLI (in-memory default)
+./bin/domour chat
 
-Copyright (c) 2026 qtopie. All rights reserved.
+# One-shot prompt
+./bin/domour chat "Explain the bionic agent architecture in 2 sentences"
+
+# Run local GGUF model via in-tree llama.cpp
+./bin/domour llamacpp chat -m /path/to/model.gguf -p "Hello!"
+
+# Run ACP server in stdio mode
+./bin/domour acp
+```
+
+---
+
+## Architecture Overview
+
+```
+       ┌────────────────────────┐
+       │   Brain (Cognition)    │ ◄── Planning, Semantic Reasoning
+       └───────────┬────────────┘
+                   │ Intent & Tasks
+       ┌───────────▼────────────┐
+       │     Motor (Control)    │ ◄── Deterministic Tool Execution & Safety
+       └───────────┬────────────┘
+                   │
+    ┌──────────────┴──────────────┐
+    │ 3-Tier SPI (ark/spi)        │
+    ├─────────────┬───────────────┤
+    │ Runtime     │ Router, Cognitor, Lifecycle
+    │ Capability  │ ToolInvoker, SkillRegistry
+    │ Infra       │ SessionStore, EventBus, Orchestrator
+    └─────────────┴───────────────┘
+```
+
+---
+
+## Development & Verification
+
+Run the unified linting and Harness engineering test suite:
+
+```bash
+./scripts/check.sh
+```
+
+---
+

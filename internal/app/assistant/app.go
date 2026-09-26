@@ -14,16 +14,21 @@ import (
 	internalgrpc "github.com/qtopie/domour/internal/app/api/grpc"
 	internalhttp "github.com/qtopie/domour/internal/app/api/http"
 	"github.com/qtopie/domour/ark/session"
+	runtimespi "github.com/qtopie/domour/ark/spi/runtime"
 	"github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	db "github.com/qtopie/domour/internal/infra/db"
+	"github.com/qtopie/domour/internal/infra/eventbus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
 type App struct {
-	cfg   config.DomourConfig
-	store session.SessionStore
+	cfg          config.DomourConfig
+	store        session.SessionStore
+	orchestrator engine.AgentOrchestrator
+	eventBus     eventbus.EventBus
+	router       runtimespi.Router
 
 	grpcAddr string
 	httpAddr string
@@ -34,6 +39,24 @@ type AppOption func(*App)
 func WithStore(store session.SessionStore) AppOption {
 	return func(a *App) {
 		a.store = store
+	}
+}
+
+func WithOrchestrator(orch engine.AgentOrchestrator) AppOption {
+	return func(a *App) {
+		a.orchestrator = orch
+	}
+}
+
+func WithEventBus(eb eventbus.EventBus) AppOption {
+	return func(a *App) {
+		a.eventBus = eb
+	}
+}
+
+func WithRouter(r runtimespi.Router) AppOption {
+	return func(a *App) {
+		a.router = r
 	}
 }
 
@@ -53,15 +76,19 @@ func NewApp(cfg *config.DomourConfig, opts ...AppOption) (*App, error) {
 	// registry so tag-based mode selection (balanced → flash) can find them.
 	RegisterConfigProviderModels(&actualCfg)
 
-	store := InitStore(&actualCfg)
-
 	app := &App{
-		cfg:   actualCfg,
-		store: store,
+		cfg: actualCfg,
 	}
 
 	for _, opt := range opts {
 		opt(app)
+	}
+
+	if app.store == nil {
+		app.store = InitStore(&actualCfg)
+	}
+	if app.router == nil {
+		app.router = runtimespi.NewDefaultDualPathwayRouter()
 	}
 
 	return app, nil
@@ -70,16 +97,33 @@ func NewApp(cfg *config.DomourConfig, opts ...AppOption) (*App, error) {
 func (a *App) GRPCAddr() string { return a.grpcAddr }
 func (a *App) HTTPAddr() string { return a.httpAddr }
 
-func (a *App) RegisterGRPC(s *grpc.Server) error {
-	// NewReloadableCognitorClient never fails — if the provider is not yet
-	// running, it defers initialization until the first use (lazy init).
+// NewService constructs an AssistantService configured with the app's SPI dependencies.
+func (a *App) NewService() (*AssistantService, error) {
 	cognitorClient := engine.NewReloadableCognitorClient()
 	executorClient, err := engine.NewConfiguredExecutorClient()
 	if err != nil {
-		return fmt.Errorf("failed to init executor client: %w", err)
+		return nil, fmt.Errorf("failed to init executor client: %w", err)
 	}
 	eng := engine.NewEngine(cognitorClient, executorClient)
-	appService := NewAssistantService(eng, a.store)
+
+	var svcOpts []AssistantServiceOption
+	if a.orchestrator != nil {
+		svcOpts = append(svcOpts, WithServiceOrchestrator(a.orchestrator))
+	}
+	if a.eventBus != nil {
+		svcOpts = append(svcOpts, WithServiceEventBus(a.eventBus))
+	}
+	if a.router != nil {
+		svcOpts = append(svcOpts, WithServiceRouter(a.router))
+	}
+	return NewAssistantService(eng, a.store, svcOpts...), nil
+}
+
+func (a *App) RegisterGRPC(s *grpc.Server) error {
+	appService, err := a.NewService()
+	if err != nil {
+		return err
+	}
 
 	service, err := internalgrpc.NewServer(appService)
 	if err != nil {
@@ -212,21 +256,9 @@ func InitStore(cfg *config.DomourConfig) session.SessionStore {
 		loaded, _ := config.LoadDomourConfig()
 		cfg = &loaded
 	}
-	if os.Getenv("DOMOUR_USE_SURREAL") == "true" {
-		fmt.Println("[Bootstrap] Initializing SurrealDB Session Store with Dapr Discovery...")
-		surrealDB, err := db.NewSurrealDB(db.Config{
-			Address:     os.Getenv("DOMOUR_SURREAL_ADDR"),
-			User:        os.Getenv("DOMOUR_SURREAL_USER"),
-			Pass:        os.Getenv("DOMOUR_SURREAL_PASS"),
-			Namespace:   "domour",
-			Database:    "agent",
-			DaprAddress: cfg.DaprHTTPAddress(),
-		})
-		if err != nil {
-			fmt.Printf("Error: failed to connect to SurrealDB: %v. Falling back to BadgerDB.\n", err)
-		} else {
-			return db.NewSurrealStore(surrealDB)
-		}
+	if os.Getenv("DOMOUR_STORE") == "memory" {
+		fmt.Println("[Bootstrap] Using in-memory Session Store (zero-dependency mode)")
+		return db.NewMemoryStore()
 	}
 	// Default: BadgerDB — survives restarts.
 	badgerStore, err := db.NewBadgerStore("")

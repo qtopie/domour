@@ -125,7 +125,7 @@ func TestCacheTTL(t *testing.T) {
 	ctx := context.Background()
 
 	// Set with a moderate TTL
-	if err := cache.Set(ctx, "key_ttl", "expires_soon", 200*time.Millisecond); err != nil {
+	if err := cache.Set(ctx, "key_ttl", "expires_soon", 2*time.Second); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 
@@ -139,7 +139,7 @@ func TestCacheTTL(t *testing.T) {
 	}
 
 	// Wait for TTL to expire (badger checks TTL on read)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(2100 * time.Millisecond)
 
 	_, found, err = cache.Get(ctx, "key_ttl")
 	if err != nil {

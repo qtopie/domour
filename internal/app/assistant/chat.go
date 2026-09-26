@@ -12,7 +12,7 @@ import (
 	"github.com/qtopie/domour/internal/bionic/tool"
 	"github.com/qtopie/domour/internal/cognitor/proxy"
 	appconfig "github.com/qtopie/domour/internal/config"
-	"github.com/qtopie/domour/internal/infra/dapr"
+	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 	domourmodel "github.com/qtopie/domour/ark/cognitor"
@@ -184,7 +184,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 			return fmt.Errorf("subscribe stream: %w", err)
 		}
 
-		input := dapr.AgentWorkflowInput{
+		input := engine.AgentWorkflowInput{
 			SessionID:   sessionID,
 			Messages:    messages,
 			Provider:    brainClient.Provider(),

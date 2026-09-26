@@ -10,6 +10,7 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
 	"github.com/qtopie/domour/ark/session"
+	runtimespi "github.com/qtopie/domour/ark/spi/runtime"
 	appconfig "github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/eventbus"
@@ -22,11 +23,39 @@ type AssistantService struct {
 	interceptor  bioniccontext.ChatContextInterceptor
 	eb           eventbus.EventBus
 	orchestrator engine.AgentOrchestrator
+	router       runtimespi.Router
+}
+
+type AssistantServiceOption func(*AssistantService)
+
+func WithServiceOrchestrator(orch engine.AgentOrchestrator) AssistantServiceOption {
+	return func(s *AssistantService) {
+		if orch != nil {
+			s.orchestrator = orch
+		}
+	}
+}
+
+func WithServiceEventBus(eb eventbus.EventBus) AssistantServiceOption {
+	return func(s *AssistantService) {
+		if eb != nil {
+			s.eb = eb
+		}
+	}
+}
+
+func WithServiceRouter(r runtimespi.Router) AssistantServiceOption {
+	return func(s *AssistantService) {
+		if r != nil {
+			s.router = r
+		}
+	}
 }
 
 func NewAssistantService(
 	eng engine.Engine,
 	store session.Store,
+	opts ...AssistantServiceOption,
 ) *AssistantService {
 	var eb eventbus.EventBus
 	var orch engine.AgentOrchestrator
@@ -34,14 +63,23 @@ func NewAssistantService(
 		eb = eng.EventBus()
 		orch = eng.Orchestrator()
 	}
-	return &AssistantService{
+	s := &AssistantService{
 		engine:       eng,
 		store:        store,
 		locker:       session.NewLocalLocker(),
 		interceptor:  bioniccontext.NewChatContextInterceptor(),
 		eb:           eb,
 		orchestrator: orch,
+		router:       runtimespi.NewDefaultDualPathwayRouter(),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func (s *AssistantService) Router() runtimespi.Router {
+	return s.router
 }
 
 func (s *AssistantService) Engine() engine.Engine {

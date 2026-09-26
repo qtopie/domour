@@ -9,7 +9,6 @@ import (
 
 	"github.com/qtopie/domour/ark/infra/cache"
 	"github.com/qtopie/domour/ark/infra/eventbus"
-	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
 
 // DB defines the database interface needed by the session manager.
@@ -80,9 +79,8 @@ func (m *Manager) GetSession(ctx context.Context, id string) (Session, error) {
 		}
 	}
 
-	// 2. Check DB — pass RecordID object to handle hyphens and special characters
-	rid := models.NewRecordID("session", id)
-	res, err := m.db.Query(ctx, "SELECT * FROM $id", map[string]any{"id": rid})
+	// 2. Check DB
+	res, err := m.db.Query(ctx, "SELECT * FROM session WHERE id = $id", map[string]any{"id": id})
 	if err != nil {
 		return Session{}, fmt.Errorf("failed to get from db: %w", err)
 	}
