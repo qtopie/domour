@@ -518,8 +518,7 @@ func writeDomourConfig(path string, cfg DomourConfig) error {
 	if err != nil {
 		return fmt.Errorf("encode domour config: %w", err)
 	}
-	content = append(content, 
-)
+	content = append(content, '\n')
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		return fmt.Errorf("write domour config %s: %w", path, err)
 	}
