@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Harness & Spec Sandbox Validation
+        run: |
+          chmod +x ./scripts/*.sh
+          ./scripts/check.sh
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Run Tests (with race detection)
+        run: go test -v -race ./...
+
+  build:
+    name: Build Binaries
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build Domour CLI
+        run: |
+          mkdir -p bin
+          go build -v -o bin/domour ./cmd
+
+      - name: Smoke Test CLI Binary
+        run: |
+          ./bin/domour --help
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: domour-cli-linux-amd64
+          path: bin/domour
+          if-no-files-found: error
