@@ -111,6 +111,7 @@ func BuildChatSystemPrompt(ctx context.Context, toolMgr *tool.Manager, message s
 	}
 
 	if toolMgr != nil {
+		toolMgr.ClearActiveSkills()
 		if matched := toolMgr.DetectActiveSkill(ctx, message); matched != "" {
 			if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, matched); err == nil && activePrompt != "" {
 				prompt += "\n\n" + activePrompt

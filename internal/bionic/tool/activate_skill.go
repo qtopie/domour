@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/qtopie/domour/internal/bionic/skillmgr"
 )
 
@@ -13,7 +14,7 @@ import (
 // returns only a minimal confirmation — the full instructions are NOT returned as
 // the tool observation to avoid duplication in the conversation history.
 func (m *Manager) NewActivateSkillTool() ToolSpec {
-	return NewInternalTool("activate_skill", "Activate a registered skill by name. The skill's instructions and tools will be made available after activation.", func(ctx context.Context, command Command) (Result, error) {
+	spec := NewInternalTool("activate_skill", "Activate a registered skill by name. The skill's instructions and tools will be made available after activation.", func(ctx context.Context, command Command) (Result, error) {
 		name, _ := command.Input["skill_name"].(string)
 		if name == "" {
 			return Result{}, fmt.Errorf("skill_name is required")
@@ -22,6 +23,7 @@ func (m *Manager) NewActivateSkillTool() ToolSpec {
 		if err != nil {
 			return Result{}, err
 		}
+		m.SkillMgr.ActivateSkill(name)
 		m.SkillMgr.SetActiveSkillPrompt(instructions)
 		return Result{
 			Observation: "✓ Skill activated. Its tools and instructions are now available.",
@@ -31,6 +33,14 @@ func (m *Manager) NewActivateSkillTool() ToolSpec {
 			},
 		}, nil
 	})
+	spec.Params = schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+		"skill_name": {
+			Type:     schema.String,
+			Desc:     "The name or ID of the skill to activate",
+			Required: true,
+		},
+	})
+	return spec
 }
 
 // ListSkills delegates to SkillMgr.
@@ -71,4 +81,14 @@ func (m *Manager) SetActiveSkillPrompt(prompt string) {
 // ClearActiveSkillPrompt delegates to SkillMgr.
 func (m *Manager) ClearActiveSkillPrompt() {
 	m.SkillMgr.ClearActiveSkillPrompt()
+}
+
+// ActivateSkill delegates to SkillMgr.
+func (m *Manager) ActivateSkill(name string) {
+	m.SkillMgr.ActivateSkill(name)
+}
+
+// ClearActiveSkills delegates to SkillMgr.
+func (m *Manager) ClearActiveSkills() {
+	m.SkillMgr.ClearActiveSkills()
 }

@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -132,23 +133,7 @@ func NewDefaultManager() (*Manager, error) {
 		return nil, err
 	}
 	// Load registered public tools
-	for _, t := range publictool.List() {
-		actFunc := t.Act
-		spec := NewInternalTool(t.Name, t.Description, func(ctx context.Context, cmd Command) (Result, error) {
-			obs, err := actFunc(ctx, cmd.Input)
-			if err != nil {
-				return Result{}, err
-			}
-			return Result{
-				Observation: obs,
-				Done:        true,
-			}, nil
-		})
-		if err := manager.Register(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
-			manager.Close()
-			return nil, err
-		}
-	}
+	manager.SyncPublicTools()
 	if err := manager.SkillMgr.LoadDefaultSkillSources(); err != nil {
 		manager.Close()
 		return nil, err
@@ -157,6 +142,49 @@ func NewDefaultManager() (*Manager, error) {
 		slog.Warn("Failed to load configured MCP servers", "error", err)
 	}
 	return manager, nil
+}
+
+// SyncPublicTools synchronizes any newly registered or updated public tools from ark/tool into Manager,
+// including parsing their JSON Schema parameters into Eino ParamsOneOf.
+func (m *Manager) SyncPublicTools() {
+	for _, pubTool := range publictool.List() {
+		t := pubTool
+		if t.Act == nil {
+			continue
+		}
+		toolName := t.Name
+		spec := NewInternalTool(toolName, t.Description, func(ctx context.Context, cmd Command) (Result, error) {
+			current, ok := publictool.Get(toolName)
+			if !ok || current.Act == nil {
+				return Result{}, fmt.Errorf("public tool %q is not available", toolName)
+			}
+			obs, err := current.Act(ctx, cmd.Input)
+			if err != nil {
+				return Result{}, err
+			}
+			return Result{
+				Observation: obs,
+				Done:        true,
+			}, nil
+		})
+		if strings.TrimSpace(t.Parameters) != "" {
+			var schemaMap map[string]interface{}
+			if err := json.Unmarshal([]byte(t.Parameters), &schemaMap); err == nil {
+				spec.Params = ConvertJSONSchemaToEinoParams(schemaMap)
+			}
+		}
+		if err := m.Register(spec); err != nil {
+			// Already registered: update Description and Params in case the tool was replaced.
+			m.mu.Lock()
+			if state, exists := m.tools[spec.Name]; exists {
+				state.spec.Description = spec.Description
+				if spec.Params != nil {
+					state.spec.Params = spec.Params
+				}
+			}
+			m.mu.Unlock()
+		}
+	}
 }
 
 func (m *Manager) Register(spec ToolSpec) error {
@@ -178,6 +206,8 @@ func (m *Manager) Register(spec ToolSpec) error {
 }
 
 func (m *Manager) List() []ToolInfo {
+	m.SyncPublicTools()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -195,10 +225,32 @@ func (m *Manager) List() []ToolInfo {
 	return tools
 }
 
+// ListActiveTools returns only core/base tools (tools not claimed by any skill)
+// plus the tools belonging to currently active skills. This prevents inactive
+// skills from bloating the LLM tool context.
+func (m *Manager) ListActiveTools(ctx context.Context) []ToolInfo {
+	all := m.List()
+	if m.SkillMgr == nil {
+		return all
+	}
+	claimed, unlocked := m.SkillMgr.FilterToolNames(ctx)
+	if len(claimed) == 0 {
+		return all
+	}
+	filtered := make([]ToolInfo, 0, len(all))
+	for _, ti := range all {
+		if !claimed[ti.Name] || unlocked[ti.Name] {
+			filtered = append(filtered, ti)
+		}
+	}
+	return filtered
+}
+
 func (m *Manager) Execute(ctx context.Context, command Command) (Result, error) {
 	if strings.TrimSpace(command.Action) == "" {
 		return Result{}, fmt.Errorf("motor command action is required")
 	}
+	m.SyncPublicTools()
 
 	state, runtime, err := m.acquire(ctx, command.Action)
 	if err != nil {

@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	publicskill "github.com/qtopie/domour/ark/skill"
+	publictool "github.com/qtopie/domour/ark/tool"
 )
 
 func TestManagerExecutesInternalTool(t *testing.T) {
@@ -168,3 +171,122 @@ func TestManagerExecutesRuntimeInfoTool(t *testing.T) {
 		t.Fatalf("expected observation to contain 'go_version'")
 	}
 }
+
+func TestLazySkillToolFiltering(t *testing.T) {
+	rawSkill := `---
+id: "plugin:sample"
+name: "SamplePlugin"
+description: "Sample plugin skill for lazy tool gating"
+intent_tags:
+  - "sample_tag"
+  - "专属标签"
+tools:
+  - name: "sample.do_work"
+    description: "Perform sample plugin work"
+    parameters:
+      type: object
+      properties:
+        project:
+          type: string
+---
+# Sample Skill Instructions
+Use sample.do_work to handle tasks.
+`
+	parsed, err := publicskill.ParseSkill(rawSkill)
+	if err != nil {
+		t.Fatalf("ParseSkill failed: %v", err)
+	}
+	if len(parsed.Tools) != 1 || parsed.Tools[0].Name != "sample.do_work" {
+		t.Fatalf("expected parsed skill to preserve tool definition, got %+v", parsed.Tools)
+	}
+	publicskill.ReplaceByName(parsed)
+	publictool.Register(publictool.Tool{
+		Name:        "sample.do_work",
+		Description: "Perform sample plugin work",
+		Parameters:  string(parsed.Tools[0].Parameters),
+		Act: func(ctx context.Context, input map[string]any) (string, error) {
+			return "work-done", nil
+		},
+	})
+
+	manager, err := NewDefaultManager()
+	if err != nil {
+		t.Fatalf("NewDefaultManager: %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// 1. Before skill activation, List() contains sample.do_work, but ListActiveTools hides it.
+	allTools := manager.List()
+	hasSampleInAll := false
+	for _, ti := range allTools {
+		if ti.Name == "sample.do_work" {
+			hasSampleInAll = true
+			if ti.Params == nil {
+				t.Fatalf("expected JSON schema parameters to be converted into Eino ParamsOneOf")
+			}
+		}
+	}
+	if !hasSampleInAll {
+		t.Fatalf("expected sample.do_work in List()")
+	}
+
+	activeTools := manager.ListActiveTools(ctx)
+	for _, ti := range activeTools {
+		if ti.Name == "sample.do_work" {
+			t.Fatalf("expected sample.do_work to be gated (excluded) when SamplePlugin skill is inactive")
+		}
+	}
+
+	// 2. Calling activate_skill unlocks sample.do_work and sets ActiveSkillPrompt.
+	res, err := manager.Execute(ctx, Command{
+		Action: "activate_skill",
+		Input:  map[string]interface{}{"skill_name": "SamplePlugin"},
+	})
+	if err != nil {
+		t.Fatalf("execute activate_skill: %v", err)
+	}
+	if !strings.Contains(res.Observation, "activated") {
+		t.Fatalf("unexpected activate_skill observation: %q", res.Observation)
+	}
+	if !strings.Contains(manager.ActiveSkillPrompt(), "Sample Skill Instructions") {
+		t.Fatalf("expected ActiveSkillPrompt to contain skill instructions, got %q", manager.ActiveSkillPrompt())
+	}
+
+	activeToolsAfter := manager.ListActiveTools(ctx)
+	unlocked := false
+	for _, ti := range activeToolsAfter {
+		if ti.Name == "sample.do_work" {
+			unlocked = true
+			break
+		}
+	}
+	if !unlocked {
+		t.Fatalf("expected sample.do_work to be unlocked in ListActiveTools after activate_skill")
+	}
+
+	// 3. Clearing active skills gates it again, and DetectActiveSkill unlocks it on intent match.
+	manager.ClearActiveSkills()
+	for _, ti := range manager.ListActiveTools(ctx) {
+		if ti.Name == "sample.do_work" {
+			t.Fatalf("expected sample.do_work to be gated again after ClearActiveSkills()")
+		}
+	}
+
+	matched := manager.DetectActiveSkill(ctx, "请帮我处理一下专属标签任务")
+	if matched != "SamplePlugin" {
+		t.Fatalf("expected DetectActiveSkill to match SamplePlugin, got %q", matched)
+	}
+	unlockedByIntent := false
+	for _, ti := range manager.ListActiveTools(ctx) {
+		if ti.Name == "sample.do_work" {
+			unlockedByIntent = true
+			break
+		}
+	}
+	if !unlockedByIntent {
+		t.Fatalf("expected sample.do_work to be unlocked after DetectActiveSkill match")
+	}
+}
+

@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,12 +12,43 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ToolDefinition represents a tool declared inside a skill's YAML frontmatter.
+type ToolDefinition struct {
+	Name        string          `json:"name" yaml:"name"`
+	Description string          `json:"description,omitempty" yaml:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+}
+
+// UnmarshalYAML decodes YAML tool parameters into raw JSON bytes.
+func (t *ToolDefinition) UnmarshalYAML(value *yaml.Node) error {
+	var temp struct {
+		Name        string      `yaml:"name"`
+		Description string      `yaml:"description"`
+		Parameters  interface{} `yaml:"parameters,omitempty"`
+	}
+	if err := value.Decode(&temp); err != nil {
+		return err
+	}
+	t.Name = temp.Name
+	t.Description = temp.Description
+	if temp.Parameters != nil {
+		jsonBytes, err := json.Marshal(temp.Parameters)
+		if err != nil {
+			return fmt.Errorf("failed to marshal parameters to JSON: %w", err)
+		}
+		t.Parameters = jsonBytes
+	}
+	return nil
+}
+
 // Skill represents the public skill definition.
 type Skill struct {
-	Name         string   `json:"name" yaml:"name"`
-	Description  string   `json:"description,omitempty" yaml:"description,omitempty"`
-	Instructions string   `json:"instructions,omitempty" yaml:"instructions,omitempty"`
-	IntentTags   []string `json:"intent_tags,omitempty" yaml:"intent_tags,omitempty"`
+	ID           string           `json:"id,omitempty" yaml:"id,omitempty"`
+	Name         string           `json:"name" yaml:"name"`
+	Description  string           `json:"description,omitempty" yaml:"description,omitempty"`
+	Instructions string           `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	IntentTags   []string         `json:"intent_tags,omitempty" yaml:"intent_tags,omitempty"`
+	Tools        []ToolDefinition `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
 var (

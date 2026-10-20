@@ -71,6 +71,7 @@ type skillState struct {
 type SkillManager struct {
 	mu                   sync.Mutex
 	skills               map[string]*skillState
+	activeSkills         map[string]bool
 	activeSkillPrompt    string
 	activeSkillPromptSet chan struct{}
 }
@@ -79,6 +80,7 @@ type SkillManager struct {
 func NewSkillManager() *SkillManager {
 	return &SkillManager{
 		skills:               make(map[string]*skillState),
+		activeSkills:         make(map[string]bool),
 		activeSkillPromptSet: make(chan struct{}),
 	}
 }
@@ -131,8 +133,24 @@ func (m *SkillManager) ListSkills() []SkillInfo {
 
 // ResolveSkill loads (or returns cached) a skill by name.
 func (m *SkillManager) ResolveSkill(ctx context.Context, name string) (SkillSnapshot, error) {
+	trimmed := strings.TrimSpace(name)
 	m.mu.Lock()
-	state, ok := m.skills[strings.TrimSpace(name)]
+	state, ok := m.skills[trimmed]
+	if !ok {
+		trimmedLower := strings.ToLower(trimmed)
+		for k, st := range m.skills {
+			if strings.ToLower(k) == trimmedLower || strings.HasSuffix(strings.ToLower(k), ":"+trimmedLower) {
+				state = st
+				ok = true
+				break
+			}
+			if st.loaded != nil && (strings.ToLower(st.loaded.Name) == trimmedLower || strings.ToLower(st.loaded.ID) == trimmedLower) {
+				state = st
+				ok = true
+				break
+			}
+		}
+	}
 	if !ok {
 		m.mu.Unlock()
 		return SkillSnapshot{}, fmt.Errorf("skill %q is not registered", name)
@@ -313,8 +331,23 @@ func (m *SkillManager) loadDefaultSources() error {
 		}
 	}
 
-	// Load registered public skills
-	for _, s := range publicskill.List() {
+	m.SyncPublicSkills()
+	return nil
+}
+
+// SyncPublicSkills synchronizes any newly registered skills from ark/skill into SkillManager.
+func (m *SkillManager) SyncPublicSkills() {
+	for _, pubSkill := range publicskill.List() {
+		s := pubSkill
+		var convertedTools []skillpkg.ToolDefinition
+		for _, td := range s.Tools {
+			convertedTools = append(convertedTools, skillpkg.ToolDefinition{
+				Name:        td.Name,
+				Description: td.Description,
+				Parameters:  td.Parameters,
+			})
+		}
+		skillID := firstNonEmpty(s.ID, s.Name)
 		spec := SkillSpec{
 			Name:        s.Name,
 			Description: s.Description,
@@ -322,19 +355,84 @@ func (m *SkillManager) loadDefaultSources() error {
 			Format:      "skill-struct",
 			Load: func(ctx context.Context) (*skillpkg.Skill, error) {
 				return &skillpkg.Skill{
-					ID:           s.Name,
+					ID:           skillID,
 					Name:         s.Name,
 					Description:  s.Description,
 					Instructions: s.Instructions,
 					IntentTags:   s.IntentTags,
+					Tools:        convertedTools,
 				}, nil
 			},
 		}
-		if err := m.RegisterSkill(spec); err != nil && !strings.Contains(err.Error(), "already registered") {
-			return err
+		_ = m.RegisterSkill(spec)
+	}
+}
+
+// ActivateSkill marks a skill as active for the current context so its tools can be bound.
+func (m *SkillManager) ActivateSkill(name string) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeSkills == nil {
+		m.activeSkills = make(map[string]bool)
+	}
+	m.activeSkills[trimmed] = true
+	m.activeSkills[strings.ToLower(trimmed)] = true
+}
+
+// ClearActiveSkills resets the active skills set.
+func (m *SkillManager) ClearActiveSkills() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeSkills = make(map[string]bool)
+}
+
+// FilterToolNames returns the set of all tools claimed by any registered skill,
+// and the set of tools unlocked by currently active skills.
+// Tools not in `claimed` are core/base tools and always remain available;
+// tools in `claimed` are only available when also present in `unlocked`.
+func (m *SkillManager) FilterToolNames(ctx context.Context) (claimed map[string]bool, unlocked map[string]bool) {
+	m.SyncPublicSkills()
+
+	claimed = make(map[string]bool)
+	unlocked = make(map[string]bool)
+
+	m.mu.Lock()
+	names := make([]string, 0, len(m.skills))
+	for name := range m.skills {
+		names = append(names, name)
+	}
+	activeCopy := make(map[string]bool, len(m.activeSkills))
+	for k, v := range m.activeSkills {
+		activeCopy[k] = v
+	}
+	m.mu.Unlock()
+
+	for _, name := range names {
+		snapshot, err := m.ResolveSkill(ctx, name)
+		if err != nil || len(snapshot.Tools) == 0 {
+			continue
+		}
+		isActive := activeCopy[name] ||
+			activeCopy[strings.ToLower(name)] ||
+			activeCopy[snapshot.Name] ||
+			activeCopy[strings.ToLower(snapshot.Name)]
+
+		for _, td := range snapshot.Tools {
+			tName := strings.TrimSpace(td.Name)
+			if tName == "" {
+				continue
+			}
+			claimed[tName] = true
+			if isActive {
+				unlocked[tName] = true
+			}
 		}
 	}
-	return nil
+	return claimed, unlocked
 }
 
 // loadConfiguredDir loads skills from the configured SkillsDir.
@@ -380,6 +478,7 @@ func (m *SkillManager) ClearActiveSkillPrompt() {
 
 // BuildAvailableSkillsPrompt builds a sorted, deterministic prompt of available skills for injection.
 func (m *SkillManager) BuildAvailableSkillsPrompt(ctx context.Context) (string, error) {
+	m.SyncPublicSkills()
 	skills := m.ListSkills()
 	if len(skills) == 0 {
 		return "", nil
@@ -406,10 +505,13 @@ func (m *SkillManager) BuildAvailableSkillsPrompt(ctx context.Context) (string, 
 
 // BuildActiveSkillPrompt resolves an active skill and formats it as Markdown frontmatter wrapped in active_skill tags.
 func (m *SkillManager) BuildActiveSkillPrompt(ctx context.Context, name string) (string, error) {
+	m.SyncPublicSkills()
 	snapshot, err := m.ResolveSkill(ctx, name)
 	if err != nil {
 		return "", err
 	}
+	m.ActivateSkill(name)
+	m.ActivateSkill(snapshot.Name)
 
 	var builder strings.Builder
 	builder.WriteString("<active_skill>\n")
@@ -442,6 +544,9 @@ func (m *SkillManager) BuildActiveSkillPrompt(ctx context.Context, name string) 
 // DetectActiveSkill matches the user query against registered skills' intent tags and name.
 // Returns the matched skill name, or empty string if no match is found.
 func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) string {
+	m.SyncPublicSkills()
+	m.ClearActiveSkills()
+
 	m.mu.Lock()
 	names := make([]string, 0, len(m.skills))
 	for name := range m.skills {
@@ -474,6 +579,8 @@ func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) stri
 		// Check name
 		nameLower := strings.ToLower(loaded.Name)
 		if nameLower != "" && strings.Contains(queryLower, nameLower) {
+			m.ActivateSkill(name)
+			m.ActivateSkill(loaded.Name)
 			return name
 		}
 
@@ -481,6 +588,8 @@ func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) stri
 		for _, tag := range loaded.IntentTags {
 			tagLower := strings.ToLower(tag)
 			if tagLower != "" && strings.Contains(queryLower, tagLower) {
+				m.ActivateSkill(name)
+				m.ActivateSkill(loaded.Name)
 				return name
 			}
 		}

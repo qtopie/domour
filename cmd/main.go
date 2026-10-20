@@ -35,6 +35,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "supervisor":
+			if err := runSupervisorCLI(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "-h", "--help", "help":
 			printHelp()
 			return
@@ -49,9 +55,10 @@ func printHelp() {
 	fmt.Println("Usage: domour <command> [arguments]")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  chat      Interactive or one-shot conversational agent CLI")
-	fmt.Println("  acp       Start ACP (Agent Communication Protocol) server in stdio mode")
-	fmt.Println("  llamacpp  Local GGUF model runner CLI (smoke, generate, chat, forward)")
+	fmt.Println("  chat        Interactive or one-shot conversational agent CLI")
+	fmt.Println("  supervisor  Agent process supervisor & interactive coordinator (agy, claude, generic)")
+	fmt.Println("  acp         Start ACP (Agent Communication Protocol) server in stdio mode")
+	fmt.Println("  llamacpp    Local GGUF model runner CLI (smoke, generate, chat, forward)")
 	fmt.Println()
 	fmt.Println("Run 'domour <command> --help' for details on each command.")
 }

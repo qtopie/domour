@@ -214,19 +214,26 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 
 	var tools []tool.ToolInfo
 	if o.executor != nil {
-		tools, _ = o.executor.ListTools(ctx)
+		if toolMgr := o.executor.ToolManager(); toolMgr != nil {
+			tools = toolMgr.ListActiveTools(ctx)
+		} else {
+			tools, _ = o.executor.ListTools(ctx)
+		}
 	}
 	toolMapping := make(map[string]string)
-	if len(tools) > 0 && modelSupportsTools(brainClient.Provider(), brainClient.Model()) {
-		for _, t := range tools {
-			sanitized := tool.SanitizeToolName(t.Name)
-			toolMapping[sanitized] = t.Name
-		}
-		einoTools := tool.GetEinoToolSchemas(tools)
-		if bindErr := brainClient.BindTools(einoTools); bindErr != nil {
-			// Log/ignore bind errors
+	bindActiveTools := func(activeTools []tool.ToolInfo) {
+		if len(activeTools) > 0 && modelSupportsTools(brainClient.Provider(), brainClient.Model()) {
+			for _, t := range activeTools {
+				sanitized := tool.SanitizeToolName(t.Name)
+				toolMapping[sanitized] = t.Name
+			}
+			einoTools := tool.GetEinoToolSchemas(activeTools)
+			if bindErr := brainClient.BindTools(einoTools); bindErr != nil {
+				// Log/ignore bind errors
+			}
 		}
 	}
+	bindActiveTools(tools)
 
 	const maxLoops = 25
 	for loop := 0; loop < maxLoops; loop++ {
@@ -240,6 +247,9 @@ func (o *LocalOrchestrator) runReActLoop(ctx context.Context, workflowID string,
 						}
 					}
 					toolMgr.ClearActiveSkillPrompt()
+					// Re-bind tools now that the newly activated skill's tools are unlocked.
+					tools = toolMgr.ListActiveTools(ctx)
+					bindActiveTools(tools)
 				}
 			}
 		}

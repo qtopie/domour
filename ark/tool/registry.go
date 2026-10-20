@@ -45,6 +45,19 @@ func List() []Tool {
 	return out
 }
 
+// Get finds a registered tool by its name.
+func Get(name string) (Tool, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, t := range tools {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return Tool{}, false
+}
+
+
 // toolDef is a JSON-deserializable tool definition for loading from files.
 // The Act field is omitted — tools loaded from disk have no Go function
 // attached; they serve as definitions that tools registry can discover
