@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -131,5 +132,20 @@ func (p *GenericProvider) MatchSession(sessionID string) (string, bool) {
 // ReadRecentTurns 读取该会话最近的对话轮次
 func (p *GenericProvider) ReadRecentTurns(sessionID string, maxTurns int) ([]*supervisor.TranscriptRecord, error) {
 	return nil, fmt.Errorf("read recent turns not implemented for generic provider")
+}
+
+// DiscoverSessions 自动扫描当前系统归属通用 Provider 的活跃实例
+func (p *GenericProvider) DiscoverSessions() ([]*supervisor.AgentProcess, error) {
+	return []*supervisor.AgentProcess{}, nil
+}
+
+// SpawnSession 拉起全新的任务会话
+func (p *GenericProvider) SpawnSession(ctx context.Context, req supervisor.SpawnRequest) (*supervisor.SpawnResult, error) {
+	return nil, fmt.Errorf("spawn session not supported for generic provider")
+}
+
+// InstructSession 向会话下发后续指令
+func (p *GenericProvider) InstructSession(ctx context.Context, req supervisor.InstructRequest) (*supervisor.InstructResult, error) {
+	return nil, fmt.Errorf("instruct session not supported for generic provider")
 }
 

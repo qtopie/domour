@@ -1,0 +1,19 @@
+{
+  "conversation_id": "test-conv-12345",
+  "cwd": "/home/qtopierw/workspace/projects/domour",
+  "workspace": "/home/qtopierw/workspace/projects/domour",
+  "agent_state": "tool_use",
+  "tool_confirmation_pending": true,
+  "current_tool": "run_command",
+  "transcript_path": "/home/qtopierw/.gemini/antigravity-cli/brain/test-conv-12345/.system_generated/logs/transcript.jsonl",
+  "context_window": {
+    "total_token_limit": 1000000,
+    "current_token_count": 350000,
+    "percent_used": 35.0
+  },
+  "quota": {
+    "remaining_quota": 85,
+    "quota_limit": 100,
+    "usage_percentage": 15.0
+  }
+}

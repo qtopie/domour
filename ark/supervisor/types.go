@@ -41,6 +41,7 @@ type AgentProcess struct {
 	ID             string        `json:"id"`
 	PID            int           `json:"pid"`
 	Provider       string        `json:"provider"`
+	ClientType     string        `json:"client_type,omitempty"` // "cli" | "ide"
 	Workspace      string        `json:"workspace"`
 	Status         ProcessStatus `json:"status"`
 	ToolPending    bool          `json:"tool_pending"`
@@ -97,6 +98,44 @@ type LaunchOptions struct {
 	ExtraArgs                   []string          `json:"extra_args,omitempty"`
 }
 
+// SpawnRequest 统一拉起新任务的请求结构
+type SpawnRequest struct {
+	Provider  string `json:"provider,omitempty"`
+	Prompt    string `json:"prompt"`
+	Workspace string `json:"workspace,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Title     string `json:"title,omitempty"`
+	PreferIDE bool   `json:"prefer_ide,omitempty"`
+	PreferCLI bool   `json:"prefer_cli,omitempty"`
+}
+
+// SpawnResult 统一拉起新任务的结果结构
+type SpawnResult struct {
+	SessionID string   `json:"session_id"`
+	PID       int      `json:"pid,omitempty"`
+	Mode      string   `json:"mode"` // "agentapi_spawn", "cli_spawn", "ide_spawn"
+	Provider  string   `json:"provider"`
+	Args      []string `json:"args,omitempty"`
+}
+
+// InstructRequest 统一向会话下发后续指令的请求结构
+type InstructRequest struct {
+	SessionID   string `json:"session_id"`
+	Instruction string `json:"instruction"`
+	Provider    string `json:"provider,omitempty"`
+	Title       string `json:"title,omitempty"`
+}
+
+// InstructResult 统一指令下发结果结构
+type InstructResult struct {
+	SessionID   string `json:"session_id"`
+	Status      string `json:"status"` // "sent", "resumed"
+	Mode        string `json:"mode"`   // "stream_pipe", "agentapi_injected", "cli_spawn", "ide_spawn"
+	Instruction string `json:"instruction"`
+	PID         int    `json:"pid,omitempty"`
+	Exe         string `json:"exe,omitempty"`
+}
+
 // Supervisor 统一调度与管理门面契约
 type Supervisor interface {
 	RegisterProvider(p AgentProvider) error
@@ -105,10 +144,13 @@ type Supervisor interface {
 	Stop() error
 	ListProcesses() []*AgentProcess
 	GetProcess(id string) (*AgentProcess, error)
+	DiscoverSessions(ctx context.Context) ([]*AgentProcess, error)
+	InspectSession(ctx context.Context, explicitProvider string, sessionID string, maxTurns int) (*InspectResult, error)
+	SpawnSession(ctx context.Context, req SpawnRequest) (*SpawnResult, error)
+	InstructSession(ctx context.Context, req InstructRequest) (*InstructResult, error)
 	WatchTranscript(ctx context.Context, processID string) (<-chan *TranscriptRecord, error)
 	SubmitToolDecision(processID string, decision ToolDecision, reason string) error
 	SendInstruction(ctx context.Context, processID string, prompt string) error
-	InspectSession(ctx context.Context, explicitProvider string, sessionID string, maxTurns int) (*InspectResult, error)
 	Registry() *Registry
 	Controller() *Controller
 }

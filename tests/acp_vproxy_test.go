@@ -27,7 +27,7 @@ func TestAgyVProxyProxyMode(t *testing.T) {
 
 	// 1. Build the domour binary first to ensure we are testing the latest code
 	fmt.Println("[Step 1] Building domour binary...")
-	buildCmd := exec.Command("go", "build", "-o", "domour_test_bin", "../cmd/main.go")
+	buildCmd := exec.Command("go", "build", "-o", "domour_test_bin", "../cmd")
 	if err := buildCmd.Run(); err != nil {
 		t.Fatalf("Failed to build domour: %v", err)
 	}

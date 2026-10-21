@@ -60,6 +60,14 @@ func (s *defaultSupervisor) GetProvider(name string) (AgentProvider, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	p, ok := s.providers[name]
+	if !ok {
+		switch name {
+		case "codex", "openai":
+			p, ok = s.providers["chatgpt"]
+		case "agy":
+			p, ok = s.providers["antigravity"]
+		}
+	}
 	return p, ok
 }
 

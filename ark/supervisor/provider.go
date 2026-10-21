@@ -1,5 +1,9 @@
 package supervisor
 
+import (
+	"context"
+)
+
 // AgentProvider 定义各类 Agent 运行时（CLI、Daemon 或 SDK 封装）的标准适配接口
 type AgentProvider interface {
 	// Name 返回适配器标识名称，例如 "antigravity", "claude-code", "generic"
@@ -31,4 +35,13 @@ type AgentProvider interface {
 
 	// ReadRecentTurns 读取该会话最近的若干轮对话记录
 	ReadRecentTurns(sessionID string, maxTurns int) ([]*TranscriptRecord, error)
+
+	// DiscoverSessions 自动扫描当前系统归属该 Provider 的活跃实例
+	DiscoverSessions() ([]*AgentProcess, error)
+
+	// SpawnSession 拉起全新的任务会话
+	SpawnSession(ctx context.Context, req SpawnRequest) (*SpawnResult, error)
+
+	// InstructSession 向会话下发后续指令
+	InstructSession(ctx context.Context, req InstructRequest) (*InstructResult, error)
 }

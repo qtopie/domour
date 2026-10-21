@@ -1,9 +1,11 @@
 package antigravity
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -268,6 +270,100 @@ func (p *AntigravityProvider) BuildResumeArgs(sessionID string, prompt string, o
 	return args, nil
 }
 
+// DetectClientType 根据日志路径或环境探测客户端形态 ("cli" | "ide")
+func DetectClientType(transcriptPath string) string {
+	normalized := strings.ReplaceAll(transcriptPath, "\\", "/")
+	if strings.Contains(normalized, "/antigravity-cli/") {
+		return "cli"
+	}
+	if strings.Contains(normalized, "/antigravity-ide/") || strings.Contains(normalized, "/.gemini/antigravity/") {
+		return "ide"
+	}
+	return "cli"
+}
+
+// FindAgentAPI 自动探测系统中的 AgentAPI 脚本或语言服务二进制
+// 返回可执行路径、是否需要附加 "agentapi" 子命令，以及是否发现成功
+func FindAgentAPI() (exePath string, isSubcommand bool, ok bool) {
+	if envExe := os.Getenv("ANTIGRAVITY_AGENTAPI_EXE"); envExe != "" {
+		if _, err := os.Stat(envExe); err == nil {
+			isSubcmd := !strings.HasSuffix(filepath.Base(envExe), "agentapi")
+			return envExe, isSubcmd, true
+		}
+	}
+
+	// 1. 检查 PATH 中的 agy（agy CLI 原生支持完整的 agentapi 子命令体系）
+	if agyPath, err := exec.LookPath("agy"); err == nil {
+		return agyPath, true, true
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = os.Getenv("HOME")
+		if homeDir == "" {
+			homeDir = os.Getenv("USERPROFILE")
+		}
+	}
+
+	// 1. 检查 IDE 自带的 ~/.gemini/antigravity/bin/agentapi 包装脚本
+	if homeDir != "" {
+		scriptPath := filepath.Join(homeDir, ".gemini", "antigravity", "bin", "agentapi")
+		if _, err := os.Stat(scriptPath); err == nil {
+			return scriptPath, false, true
+		}
+	}
+
+	// 2. 检查 Linux /opt/Antigravity/resources/bin/language_server
+	linuxLS := "/opt/Antigravity/resources/bin/language_server"
+	if _, err := os.Stat(linuxLS); err == nil {
+		return linuxLS, true, true
+	}
+
+	// 3. 检查 Windows %LOCALAPPDATA%\Programs\antigravity\resources\bin\language_server.exe
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		winLS := filepath.Join(localAppData, "Programs", "antigravity", "resources", "bin", "language_server.exe")
+		if _, err := os.Stat(winLS); err == nil {
+			return winLS, true, true
+		}
+	} else if homeDir != "" {
+		winLS := filepath.Join(homeDir, "AppData", "Local", "Programs", "antigravity", "resources", "bin", "language_server.exe")
+		if _, err := os.Stat(winLS); err == nil {
+			return winLS, true, true
+		}
+	}
+
+	return "", false, false
+}
+
+// FindIDEExecutable 自动探测 Antigravity IDE 桌面程序安装路径
+func FindIDEExecutable() (string, bool) {
+	// 1. Linux
+	linuxIDE := "/opt/Antigravity/antigravity"
+	if _, err := os.Stat(linuxIDE); err == nil {
+		return linuxIDE, true
+	}
+
+	// 2. Windows
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		winIDE := filepath.Join(localAppData, "Programs", "antigravity", "Antigravity.exe")
+		if _, err := os.Stat(winIDE); err == nil {
+			return winIDE, true
+		}
+	}
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		homeDir = os.Getenv("USERPROFILE")
+	}
+	if homeDir != "" {
+		winIDE := filepath.Join(homeDir, "AppData", "Local", "Programs", "antigravity", "Antigravity.exe")
+		if _, err := os.Stat(winIDE); err == nil {
+			return winIDE, true
+		}
+	}
+
+	return "", false
+}
+
 // MatchSession 检查 sessionID 是否匹配 Antigravity 的 brain 会话目录
 func (p *AntigravityProvider) MatchSession(sessionID string) (string, bool) {
 	if sessionID == "" {
@@ -278,24 +374,32 @@ func (p *AntigravityProvider) MatchSession(sessionID string) (string, bool) {
 	if err != nil {
 		homeDir = os.Getenv("HOME")
 	}
-
-	brainDir := filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain")
-	directPath := filepath.Join(brainDir, sessionID, ".system_generated", "logs", "transcript.jsonl")
-	if _, err := os.Stat(directPath); err == nil {
-		return directPath, true
+	if homeDir == "" {
+		homeDir = os.Getenv("USERPROFILE")
 	}
 
-	// 支持前缀匹配
-	entries, err := os.ReadDir(brainDir)
-	if err != nil {
-		return "", false
+	candidateDirs := []string{
+		filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain"),
+		filepath.Join(homeDir, ".gemini", "antigravity", "brain"),
+		filepath.Join(homeDir, ".gemini", "antigravity-ide", "brain"),
 	}
 
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), sessionID) {
-			path := filepath.Join(brainDir, e.Name(), ".system_generated", "logs", "transcript.jsonl")
-			if _, err := os.Stat(path); err == nil {
-				return path, true
+	for _, brainDir := range candidateDirs {
+		directPath := filepath.Join(brainDir, sessionID, ".system_generated", "logs", "transcript.jsonl")
+		if _, err := os.Stat(directPath); err == nil {
+			return directPath, true
+		}
+
+		// 支持前缀匹配
+		entries, err := os.ReadDir(brainDir)
+		if err == nil {
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), sessionID) {
+					path := filepath.Join(brainDir, e.Name(), ".system_generated", "logs", "transcript.jsonl")
+					if _, err := os.Stat(path); err == nil {
+						return path, true
+					}
+				}
 			}
 		}
 	}
@@ -311,4 +415,166 @@ func (p *AntigravityProvider) ReadRecentTurns(sessionID string, maxTurns int) ([
 	}
 
 	return ReadSessionRecentTurns(transcriptPath, maxTurns)
+}
+
+// DiscoverSessions 自动扫描当前系统归属 Antigravity 的活跃实例
+func (p *AntigravityProvider) DiscoverSessions() ([]*supervisor.AgentProcess, error) {
+	infos, err := DiscoverRunningSessions()
+	if err != nil {
+		return nil, err
+	}
+	res := make([]*supervisor.AgentProcess, 0, len(infos))
+	for _, info := range infos {
+		if info != nil && info.Process != nil {
+			proc := info.Process
+			if proc.ClientType == "" && proc.TranscriptPath != "" {
+				proc.ClientType = DetectClientType(proc.TranscriptPath)
+			}
+			res = append(res, proc)
+		}
+	}
+	return res, nil
+}
+
+// SpawnSession 拉起全新的任务会话
+func (p *AntigravityProvider) SpawnSession(ctx context.Context, req supervisor.SpawnRequest) (*supervisor.SpawnResult, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, fmt.Errorf("prompt cannot be empty")
+	}
+
+	// 阶梯 1: 优先尝试活跃语言服务 AgentAPI new-conversation (若未强制 PreferCLI)
+	if !req.PreferCLI {
+		client := NewAgentAPIClient()
+		if client.IsAvailable() {
+			if newConv, err := client.NewConversation(ctx, req.Prompt, req.Model, req.Title); err == nil && newConv != nil {
+				return &supervisor.SpawnResult{
+					SessionID: newConv.ConversationID,
+					Mode:      "agentapi_spawn",
+					Provider:  ProviderName,
+				}, nil
+			}
+		}
+	}
+
+	// 阶梯 2: 尝试以本地原生 CLI (agy) 异步后台拉起 (网络由系统 vproxy 内核透明代理分流，无需命令行侵入)
+	if !req.PreferIDE {
+		if agyPath, err := exec.LookPath("agy"); err == nil {
+			args := []string{
+				"-p", req.Prompt,
+				"--dangerously-skip-permissions",
+			}
+			if req.Workspace != "" {
+				args = append(args, "--add-dir", req.Workspace)
+			}
+			if req.Model != "" {
+				args = append(args, "--model", req.Model)
+			}
+
+			cmd := exec.Command(agyPath, args...)
+			if err := cmd.Start(); err == nil {
+				pid := 0
+				if cmd.Process != nil {
+					pid = cmd.Process.Pid
+				}
+
+				return &supervisor.SpawnResult{
+					PID:      pid,
+					Mode:     "cli_spawn",
+					Provider: ProviderName,
+					Args:     args,
+				}, nil
+			}
+		}
+	}
+
+	// 阶梯 3: 降级为唤起 Antigravity IDE 桌面程序
+	if idePath, ok := FindIDEExecutable(); ok {
+		var args []string
+		if req.Workspace != "" {
+			args = append(args, req.Workspace)
+		}
+
+		cmd := exec.Command(idePath, args...)
+		if err := cmd.Start(); err == nil {
+			pid := 0
+			if cmd.Process != nil {
+				pid = cmd.Process.Pid
+			}
+			return &supervisor.SpawnResult{
+				PID:      pid,
+				Mode:     "ide_spawn",
+				Provider: ProviderName,
+				Args:     args,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to spawn antigravity session: neither agy CLI nor IDE executable available")
+}
+
+// InstructSession 向会话下发后续指令
+func (p *AntigravityProvider) InstructSession(ctx context.Context, req supervisor.InstructRequest) (*supervisor.InstructResult, error) {
+	if req.SessionID == "" {
+		return nil, fmt.Errorf("session_id cannot be empty")
+	}
+	if strings.TrimSpace(req.Instruction) == "" {
+		return nil, fmt.Errorf("instruction cannot be empty")
+	}
+
+	// 阶梯 1: 尝试通过 AgentAPI send-message 直接向语言服务注入指令
+	client := NewAgentAPIClient()
+	if client.IsAvailable() {
+		if _, err := client.SendMessage(ctx, req.SessionID, req.Instruction, req.Title); err == nil {
+			return &supervisor.InstructResult{
+				SessionID:   req.SessionID,
+				Status:      "sent",
+				Mode:        "agentapi_injected",
+				Instruction: req.Instruction,
+			}, nil
+		}
+	}
+
+	// 阶梯 2: 若本地存在 agy CLI，拉起原生 CLI 续接会话
+	if agyPath, err := exec.LookPath("agy"); err == nil {
+		resumeArgs, err := p.BuildResumeArgs(req.SessionID, req.Instruction, supervisor.LaunchOptions{
+			DangerouslySkipPermissions: true,
+		})
+		if err == nil {
+			cmd := exec.Command(agyPath, resumeArgs...)
+			if err := cmd.Start(); err == nil {
+				pid := 0
+				if cmd.Process != nil {
+					pid = cmd.Process.Pid
+				}
+				return &supervisor.InstructResult{
+					SessionID:   req.SessionID,
+					Status:      "resumed",
+					Mode:        "cli_spawn",
+					Instruction: req.Instruction,
+					PID:         pid,
+				}, nil
+			}
+		}
+	}
+
+	// 阶梯 3: 降级为唤起 Antigravity IDE 桌面程序
+	if idePath, ok := FindIDEExecutable(); ok {
+		cmd := exec.Command(idePath)
+		if err := cmd.Start(); err == nil {
+			pid := 0
+			if cmd.Process != nil {
+				pid = cmd.Process.Pid
+			}
+			return &supervisor.InstructResult{
+				SessionID:   req.SessionID,
+				Status:      "resumed",
+				Mode:        "ide_spawn",
+				Instruction: req.Instruction,
+				PID:         pid,
+				Exe:         idePath,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to instruct session %s: neither agentapi, agy CLI nor IDE available", req.SessionID)
 }

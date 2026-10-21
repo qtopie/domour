@@ -1,0 +1,13 @@
+{
+  "event": "PreToolUse",
+  "tool_name": "run_command",
+  "tool_call_id": "call-cmd-999",
+  "arguments": {
+    "CommandLine": "rm -rf /tmp/cache",
+    "Cwd": "/home/qtopierw/workspace/projects/domour"
+  },
+  "context": {
+    "conversation_id": "test-conv-12345",
+    "step_index": 4
+  }
+}
