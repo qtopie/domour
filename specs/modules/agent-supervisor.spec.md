@@ -248,3 +248,20 @@ type Supervisor interface {
 - **Then** 按照标准 JSON-RPC 2.0 格式进行请求封装与响应解析，支持非阻塞流式通知分发与命令审批放行
 - **Mapped Test:** `testings/supervisor/chatgpt_test.go:TestChatGPTProvider_AppServerRPC`
 
+---
+
+### Feature 7: VProxy Wrapper 透明代理包装扩展 (VProxy Wrapper Support)
+
+#### Scenario 20: [SPEC-SUPV-020] VProxy 命令包装与降级自适应 (Command Wrapping & Fallback)
+- **Given** 启动选项指定了 `UseVProxy: true`（或设置了 `DOMOUR_USE_VPROXY=true` 环境变量）
+- **When** 调用 `WrapCommandWithVProxy(ctx, targetBin, targetArgs, opts)`
+- **Then** 若系统中存在 `vproxy`（或传入自定义 `VProxyBin`），成功生成形如 `vproxy [flags] <targetBin> <targetArgs...>` 的包裹命令；若系统无 `vproxy`，安全降级返回原生直接命令，不导致进程拉起失败
+- **Mapped Test:** `testings/supervisor/wrapper_test.go:TestWrapCommandWithVProxy_ExecutionAndFallback`
+
+#### Scenario 21: [SPEC-SUPV-021] 统一 Supervisor 生命周期集成 (LaunchHeadless & SpawnSession with VProxy)
+- **Given** 通过 Supervisor `Controller.LaunchHeadless` 或 Provider `SpawnSession` 传入携带 `UseVProxy: true` 的选项
+- **When** 执行子进程拉起
+- **Then** 底层生成的实际执行命令被正确注入 `vproxy` 前缀，子进程被自动纳入 vproxy cgroup 空间，实现 Linux 下 eBPF 透明代理与环境变量保护
+- **Mapped Test:** `testings/supervisor/wrapper_test.go:TestSupervisor_VProxyLifecycleIntegration`
+
+

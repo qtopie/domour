@@ -456,9 +456,13 @@ func (p *AntigravityProvider) SpawnSession(ctx context.Context, req supervisor.S
 		}
 	}
 
-	// 阶梯 2: 尝试以本地原生 CLI (agy) 异步后台拉起 (网络由系统 vproxy 内核透明代理分流，无需命令行侵入)
+	// 阶梯 2: 尝试以本地原生 CLI (agy) 异步后台拉起 (可根据配置由 vproxy wrapper 纳管，支持 cgroup eBPF 拦截)
 	if !req.PreferIDE {
-		if agyPath, err := exec.LookPath("agy"); err == nil {
+		agyPath, err := exec.LookPath("agy")
+		if err != nil && req.VProxyBin != "" {
+			agyPath = "agy"
+		}
+		if agyPath != "" {
 			args := []string{
 				"-p", req.Prompt,
 				"--dangerously-skip-permissions",
@@ -470,7 +474,11 @@ func (p *AntigravityProvider) SpawnSession(ctx context.Context, req supervisor.S
 				args = append(args, "--model", req.Model)
 			}
 
-			cmd := exec.Command(agyPath, args...)
+			cmd, _ := supervisor.WrapCommandWithVProxy(ctx, agyPath, args, supervisor.LaunchOptions{
+				Workspace: req.Workspace,
+				UseVProxy: req.UseVProxy,
+				VProxyBin: req.VProxyBin,
+			})
 			if err := cmd.Start(); err == nil {
 				pid := 0
 				if cmd.Process != nil {

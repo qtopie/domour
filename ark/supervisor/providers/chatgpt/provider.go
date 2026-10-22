@@ -250,8 +250,11 @@ func (p *ChatGPTProvider) SpawnSession(ctx context.Context, req supervisor.Spawn
 		args = append(args, req.Prompt)
 	}
 
-	cmd := exec.CommandContext(ctx, codexBin, args...)
-	cmd.Dir = ws
+	cmd, _ := supervisor.WrapCommandWithVProxy(ctx, codexBin, args, supervisor.LaunchOptions{
+		Workspace: ws,
+		UseVProxy: req.UseVProxy,
+		VProxyBin: req.VProxyBin,
+	})
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to spawn codex/chatgpt session: %w", err)

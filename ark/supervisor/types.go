@@ -96,6 +96,8 @@ type LaunchOptions struct {
 	DangerouslySkipPermissions  bool              `json:"dangerously_skip_permissions"`
 	Env                         map[string]string `json:"env,omitempty"`
 	ExtraArgs                   []string          `json:"extra_args,omitempty"`
+	UseVProxy                   bool              `json:"use_vproxy,omitempty"`
+	VProxyBin                   string            `json:"vproxy_bin,omitempty"`
 }
 
 // SpawnRequest 统一拉起新任务的请求结构
@@ -107,6 +109,8 @@ type SpawnRequest struct {
 	Title     string `json:"title,omitempty"`
 	PreferIDE bool   `json:"prefer_ide,omitempty"`
 	PreferCLI bool   `json:"prefer_cli,omitempty"`
+	UseVProxy bool   `json:"use_vproxy,omitempty"`
+	VProxyBin string `json:"vproxy_bin,omitempty"`
 }
 
 // SpawnResult 统一拉起新任务的结果结构

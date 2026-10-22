@@ -84,6 +84,7 @@ func runAgentInteractive(args []string) error {
 	fs.StringVar(sessionFlag, "s", "", "Alias for --session")
 	skipPermFlag := fs.Bool("dangerously-skip-permissions", true, "Auto approve tool permissions")
 	commandFlag := fs.String("cmd", "", "Override binary command name (e.g. agy)")
+	vproxyFlag := fs.Bool("vproxy", false, "Wrap agent process with vproxy for transparent network interception")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: domour supervisor run [flags] [prompt]\n\nFlags:\n")
@@ -145,6 +146,7 @@ func runAgentInteractive(args []string) error {
 		Workspace:                  workspace,
 		SessionID:                  *sessionFlag,
 		DangerouslySkipPermissions: *skipPermFlag,
+		UseVProxy:                  *vproxyFlag,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to launch agent process: %w", err)

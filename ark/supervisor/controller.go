@@ -129,10 +129,7 @@ func (c *Controller) LaunchHeadless(ctx context.Context, provider AgentProvider,
 	}
 
 	subCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(subCtx, command, args...)
-	if opts.Workspace != "" {
-		cmd.Dir = opts.Workspace
-	}
+	cmd, _ := WrapCommandWithVProxy(subCtx, command, args, opts)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
