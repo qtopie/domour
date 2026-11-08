@@ -86,3 +86,59 @@ func TestBinaryBuildAndHelpExecution(t *testing.T) {
 		t.Errorf("Expected help banner, got:\n%s", string(out))
 	}
 }
+
+// SPEC-CI-004: 多操作系统跨平台构建矩阵 (Ubuntu & macOS Matrix)
+func TestCIWorkflowFile_MatrixOS(t *testing.T) {
+	workflowPath := filepath.Join("..", ".github", "workflows", "ci.yml")
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("Failed to read workflow file at %s: %v", workflowPath, err)
+	}
+
+	var parsed map[string]interface{}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Workflow YAML is invalid: %v", err)
+	}
+
+	jobs, ok := parsed["jobs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Missing 'jobs' in workflow")
+	}
+
+	verifyJob, ok := jobs["verify"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Missing 'verify' job in workflow")
+	}
+
+	strategy, ok := verifyJob["strategy"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Missing 'strategy' in verify job for matrix execution")
+	}
+
+	matrix, ok := strategy["matrix"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Missing 'matrix' in verify job strategy")
+	}
+
+	osList, ok := matrix["os"].([]interface{})
+	if !ok || len(osList) == 0 {
+		t.Fatalf("Missing or invalid 'os' list in matrix: %v", matrix["os"])
+	}
+
+	hasUbuntu := false
+	hasMacOS := false
+	for _, osItem := range osList {
+		osStr, _ := osItem.(string)
+		if strings.Contains(osStr, "ubuntu") {
+			hasUbuntu = true
+		}
+		if strings.Contains(osStr, "macos") {
+			hasMacOS = true
+		}
+	}
+
+	if !hasUbuntu || !hasMacOS {
+		t.Errorf("Expected matrix to contain both ubuntu and macos, got: %v", osList)
+	}
+}
+

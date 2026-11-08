@@ -118,6 +118,10 @@ func (p *testProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestAgyVProxyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live agy integration test in short mode")
+	}
+
 	// Locate real agy binary
 	realAgy, err := exec.LookPath("agy")
 	if err != nil {
@@ -306,6 +310,9 @@ func TestAgyVProxyIntegration(t *testing.T) {
 			break
 		}
 		if err != nil {
+			if strings.Contains(err.Error(), "exit status 3") || strings.Contains(err.Error(), "RESOURCE_EXHAUSTED") {
+				t.Skipf("skipping due to external agy quota exhaustion: %v", err)
+			}
 			t.Fatalf("error receiving from stream: %v", err)
 		}
 		t.Logf("Received content: %q", resp.GetContent())
