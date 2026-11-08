@@ -22,6 +22,10 @@ void domour_llama_backend_free(void) {
 
 domour_llama_t* domour_llama_load(const char* model_path, uint32_t n_ctx, int32_t n_threads) {
     struct llama_model_params mparams = llama_model_default_params();
+    const char* force_cpu = getenv("DOMOUR_FORCE_CPU");
+    if (force_cpu && force_cpu[0] == '1') {
+        mparams.n_gpu_layers = 0;
+    }
     struct llama_model * model = llama_model_load_from_file(model_path, mparams);
     if (!model) {
         return NULL;
@@ -30,10 +34,15 @@ domour_llama_t* domour_llama_load(const char* model_path, uint32_t n_ctx, int32_
     struct llama_context_params cparams = llama_context_default_params();
     if (n_ctx > 0) {
         cparams.n_ctx = n_ctx;
+    } else {
+        cparams.n_ctx = 2048;
     }
     if (n_threads > 0) {
         cparams.n_threads = n_threads;
     }
+    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    cparams.n_batch = 256;
+    cparams.n_ubatch = 256;
 
     struct llama_context * ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
@@ -124,6 +133,9 @@ int32_t domour_llama_forward(domour_llama_t* dl, const int32_t* tokens, int32_t 
     }
 
     int32_t ret = llama_decode(dl->ctx, batch);
+    if (ret != 0) {
+        fprintf(stderr, "DOMOUR_DEBUG: llama_decode forward failed with ret = %d\n", ret);
+    }
     llama_batch_free(batch);
     return ret;
 }
@@ -140,6 +152,9 @@ int32_t domour_llama_decode_step(domour_llama_t* dl, int32_t token, int32_t pos)
     batch.logits[0] = 1; // Always compute logits for the newly sampled token
 
     int32_t ret = llama_decode(dl->ctx, batch);
+    if (ret != 0) {
+        fprintf(stderr, "DOMOUR_DEBUG: llama_decode step failed with ret = %d\n", ret);
+    }
     llama_batch_free(batch);
     return ret;
 }

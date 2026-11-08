@@ -128,6 +128,7 @@ func runGenerateCLI(args []string, out io.Writer) error {
 	modelPath := fs.String("model", "", "Path to model GGUF (optional for stub)")
 	maxTokens := fs.Int("tokens", 32, "Max tokens to generate")
 	temp := fs.Float64("temp", 0.7, "Sampling temperature")
+	nCtx := fs.Int("ctx", 2048, "Context window size")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -139,6 +140,7 @@ func runGenerateCLI(args []string, out io.Writer) error {
 
 	engine, err := NewEngine(Config{
 		ModelPath: *modelPath,
+		NCtx:      uint32(*nCtx),
 		UseStub:   *modelPath == "",
 	})
 	if err != nil {
@@ -170,6 +172,7 @@ func runForwardCLI(args []string, out io.Writer) error {
 	prompt := fs.String("prompt", "", "Input prompt text")
 	markersStr := fs.String("markers", "0", "Comma-separated marker token indices (e.g. '0,2')")
 	modelPath := fs.String("model", "", "Path to model GGUF (optional for stub)")
+	nCtx := fs.Int("ctx", 2048, "Context window size")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -198,6 +201,7 @@ func runForwardCLI(args []string, out io.Writer) error {
 
 	engine, err := NewEngine(Config{
 		ModelPath: *modelPath,
+		NCtx:      uint32(*nCtx),
 		UseStub:   *modelPath == "",
 	})
 	if err != nil {
@@ -230,6 +234,7 @@ func runChatCLI(args []string, out io.Writer) error {
 	modelPath := fs.String("model", "", "Path to model GGUF (optional for stub)")
 	maxTokens := fs.Int("tokens", 64, "Max tokens to generate")
 	temp := fs.Float64("temp", 0.7, "Sampling temperature")
+	nCtx := fs.Int("ctx", 2048, "Context window size")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -241,6 +246,7 @@ func runChatCLI(args []string, out io.Writer) error {
 
 	engine, err := NewEngine(Config{
 		ModelPath: *modelPath,
+		NCtx:      uint32(*nCtx),
 		UseStub:   *modelPath == "",
 	})
 	if err != nil {

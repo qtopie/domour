@@ -1,10 +1,10 @@
-//go:build llamacpp
+//go:build llamacpp && darwin
 
 package llamacpp
 
 /*
-#cgo CFLAGS: -I/home/qtopierw/workspace/spacemit/llama.cpp/include -I/home/qtopierw/workspace/spacemit/llama.cpp/ggml/include -I/root/llama-installed/include -I/root/llama.cpp/include -I/root/llama.cpp/ggml/include
-#cgo LDFLAGS: -L/home/qtopierw/workspace/spacemit/llama.cpp/build-x86/bin -L/root/llama-installed/lib -lllama -Wl,-rpath,/home/qtopierw/workspace/spacemit/llama.cpp/build-x86/bin -Wl,-rpath,/root/llama-installed/lib
+#cgo CFLAGS: -I/opt/homebrew/include -I/usr/local/include
+#cgo LDFLAGS: -L/opt/homebrew/lib -L/usr/local/lib -lllama -framework Metal -framework Foundation -framework Accelerate
 #include "bridge.h"
 #include <stdlib.h>
 */
