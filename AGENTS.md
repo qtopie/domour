@@ -29,3 +29,9 @@ Welcome Agent! You are a core collaborator in this repository. You MUST strictly
 - **Prohibited Commands:** Never run `git push --force`, `rm -rf /`, or alter external systems.
 - **Mandatory Self-Validation:** Run `./scripts/check.sh` (or `./scripts/check-harness.sh`) before marking a task complete.
 - **Error Limit:** If test/compile fixes fail > 3 times, stop and ask the user for guidance.
+
+## 6. Unified OpenTelemetry & Zero-Impact Observability Rule (统一可观测性与零影响规范)
+- **W3C Standard Only:** 所有 gRPC / HTTP / EventBus / Workflow 链路追踪必须 100% 遵循 W3C `TraceContext` (`traceparent`) 标准传播，严禁使用私有 `x-trace-id` metadata。
+- **Host-Aware Embedded Mode:** 当 `domour` 作为库被宿主（`cosmos-star` / `cosmos-assistant`）内嵌调用时，`ark/telemetry.Setup` 必须检测并复用宿主已注册的全局 `TracerProvider` / `MeterProvider` / `slog` Logger，严禁覆盖宿主的全局实例。
+- **Unified Dual-Track Logging (`slog` Only):** 全面使用 `log/slog`（优先调用 `slog.InfoContext(ctx, ...)`），禁止直接向 `os.Stderr` 手拼日志文本；统一遵循「终端 Text + 文件 JSON Lines + 自动注入 `service`/`component`/`trace_id`/`span_id`」规范。
+- **100% Non-Blocking & Fail-Safe:** 任何 OTel Exporter 初始化、采样与 Shutdown 必须非阻塞并具备超时保护，可观测性组件异常或关闭时对核心推理与工具执行必须 100% 零影响。

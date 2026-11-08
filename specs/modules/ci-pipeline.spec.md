@@ -11,16 +11,16 @@
 - **Workflow Dispatch**: 支持手动触发执行。
 
 ### 2.2 Execution Matrix & Steps
-工作流包含三个阶段/作业：
+工作流包含跨平台矩阵验证与编译阶段：
 1. **verification (测试与质量验证门禁)**:
-   - Runner: `ubuntu-latest`
+   - Matrix: `os: [ubuntu-latest, macos-latest]`
    - Setup Go: `go-version-file: go.mod` (Go 1.25.x / 1.26.x 兼容)
    - Cache: Go modules & build cache (`actions/setup-go` 自动缓存)
    - Step 1: **Harness & Spec Sandbox Validation**: 执行 `./scripts/check.sh`
    - Step 2: **Unit & Integration Tests**: 执行 `go test -v -race -covermode=atomic ./...` (带竞态检测)
    - Step 3: **Go Vet Check**: 执行 `go vet ./...`
 2. **build (多目标二进制编译构建)**:
-   - Runner: `ubuntu-latest`
+   - Matrix: `os: [ubuntu-latest, macos-latest]`
    - Dependencies: `verification` 通关后执行
    - Build Targets:
      - CLI 主二进制: `cmd/main.go` -> `bin/domour`
@@ -49,3 +49,10 @@
 - **When** 执行 `go build -o bin/domour ./cmd`
 - **Then** 生成可执行二进制文件 `bin/domour`，运行 `bin/domour --help` 成功返回并退出码为 0
 - **Mapped Test:** `tests/ci_workflow_test.go:TestBinaryBuildAndHelpExecution`
+
+#### Scenario 4: [SPEC-CI-004] 多操作系统跨平台构建矩阵 (Ubuntu & macOS Matrix)
+- **Given** `.github/workflows/ci.yml` 配置文件
+- **When** 检查 `verify` 与 `build` job 的 runner 策略
+- **Then** 包含 `strategy.matrix.os` 定义并包含 `ubuntu-latest` 与 `macos-latest`，确保跨平台编译与测试门禁自动覆盖
+- **Mapped Test:** `tests/ci_workflow_test.go:TestCIWorkflowFile_MatrixOS`
+

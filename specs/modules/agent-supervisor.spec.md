@@ -264,4 +264,21 @@ type Supervisor interface {
 - **Then** 底层生成的实际执行命令被正确注入 `vproxy` 前缀，子进程被自动纳入 vproxy cgroup 空间，实现 Linux 下 eBPF 透明代理与环境变量保护
 - **Mapped Test:** `testings/supervisor/wrapper_test.go:TestSupervisor_VProxyLifecycleIntegration`
 
+---
+
+### Feature 8: macOS 平台适配与进程探测 (macOS & Darwin Platform Support)
+
+#### Scenario 22: [SPEC-SUPV-022] macOS Application Bundle 与语言服务器探测
+- **Given** macOS (Darwin) 环境下已安装 Antigravity IDE（位于 `/Applications/Antigravity.app` 或 `~/Applications/Antigravity.app`）
+- **When** 调用 `FindIDEExecutable()` 与 `FindExecutable()`
+- **Then** 正确探测并返回 macOS app bundle 内的二进制可执行文件路径（如 `Contents/MacOS/Antigravity` 与 `Contents/Resources/app/resources/bin/language_server`），若文件不存在则安全返回空并降级
+- **Mapped Test:** `testings/supervisor/macos_test.go:TestAntigravity_MacOSPathsDiscovery`
+
+#### Scenario 23: [SPEC-SUPV-023] Darwin 无 /proc 环境下的活跃进程与 PID 自动发现
+- **Given** macOS 系统环境（`/proc` 目录不存在）
+- **When** 调用 `FindRunningPIDs()`（针对 ChatGPT/Codex）或 `DiscoverRunningSessions()`（针对 Antigravity）
+- **Then** 系统自动使用 POSIX `ps`/`pgrep` 跨平台指令回退机制提取正在运行的进程 PID 与关联信息，返回非空映射或会话列表，不发生 panic 或报错中断
+- **Mapped Test:** `testings/supervisor/macos_test.go:TestDarwin_ProcessDiscoveryFallback`
+
+
 

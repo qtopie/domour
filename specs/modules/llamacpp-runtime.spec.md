@@ -192,6 +192,17 @@ domour llamacpp forward --prompt="The sky is [MASK]" --markers=3 [--model=/path/
 
 ---
 
+### Feature: Multi-OS Build Tags & Darwin Metal Acceleration
+
+#### Scenario 8: [SPEC-LLAMA-008] Darwin / macOS CGo Build & Linking Isolation
+- **Given** the `ark/infra/llamacpp` in-tree CGo bridge
+- **When** compiled under `//go:build llamacpp && darwin`
+- **Then** CGo resolves standard macOS include paths (e.g. `/opt/homebrew/include`, `/usr/local/include`) and links against Apple frameworks (`-framework Metal -framework Foundation -framework Accelerate -lllama`), completely isolated from Linux-specific paths.
+- **Mapped Test:** `ark/infra/llamacpp/platform_test.go:TestCGo_PlatformBuildDirectives`
+
+
+---
+
 ## 4. Notes & Non-Goals
 
 - **Non-goal**: Cognitive decision logic, Question/Choice/Boolean mapping, and entropy math belong to `rezrov` and are strictly excluded from this package.
