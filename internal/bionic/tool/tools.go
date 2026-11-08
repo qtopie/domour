@@ -60,6 +60,7 @@ type toolState struct {
 	runtime  ToolRuntime
 	lastUsed time.Time
 	inFlight int
+	isPublic bool
 	loading  bool
 	cond     *sync.Cond
 }
@@ -144,15 +145,22 @@ func NewDefaultManager() (*Manager, error) {
 	return manager, nil
 }
 
-// SyncPublicTools synchronizes any newly registered or updated public tools from ark/tool into Manager,
+// SyncPublicTools synchronizes any newly registered, updated, or removed public tools from ark/tool into Manager,
 // including parsing their JSON Schema parameters into Eino ParamsOneOf.
 func (m *Manager) SyncPublicTools() {
-	for _, pubTool := range publictool.List() {
+	pubList := publictool.List()
+	seenPublic := make(map[string]bool, len(pubList))
+
+	for _, pubTool := range pubList {
 		t := pubTool
 		if t.Act == nil {
 			continue
 		}
-		toolName := t.Name
+		toolName := strings.TrimSpace(t.Name)
+		if toolName == "" {
+			continue
+		}
+		seenPublic[toolName] = true
 		spec := NewInternalTool(toolName, t.Description, func(ctx context.Context, cmd Command) (Result, error) {
 			current, ok := publictool.Get(toolName)
 			if !ok || current.Act == nil {
@@ -177,14 +185,30 @@ func (m *Manager) SyncPublicTools() {
 			// Already registered: update Description and Params in case the tool was replaced.
 			m.mu.Lock()
 			if state, exists := m.tools[spec.Name]; exists {
+				state.isPublic = true
 				state.spec.Description = spec.Description
 				if spec.Params != nil {
 					state.spec.Params = spec.Params
 				}
 			}
 			m.mu.Unlock()
+		} else {
+			m.mu.Lock()
+			if state, exists := m.tools[spec.Name]; exists {
+				state.isPublic = true
+			}
+			m.mu.Unlock()
 		}
 	}
+
+	// Prune public tools that were unregistered from ark/tool
+	m.mu.Lock()
+	for name, state := range m.tools {
+		if state.isPublic && !seenPublic[name] && state.inFlight == 0 {
+			delete(m.tools, name)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *Manager) Register(spec ToolSpec) error {

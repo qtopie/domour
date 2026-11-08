@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	publicskill "github.com/qtopie/domour/ark/skill"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 )
 
 func TestManagerLoadsSkillsFromDir(t *testing.T) {
@@ -405,5 +408,140 @@ Instructions for A`), 0o600)
 	}
 	if !strings.Contains(activePrompt, "<active_skill>") || !strings.Contains(activePrompt, "Instructions for Z") || !strings.Contains(activePrompt, "id: domour:z-pod-manager") {
 		t.Fatalf("unexpected active prompt content: %s", activePrompt)
+	}
+}
+
+func TestSyncPublicSkills_HotUpdateAndUnregister(t *testing.T) {
+	mgr := NewSkillManager()
+	skillName := "DynamicHotSkill"
+	defer publicskill.Unregister(skillName)
+
+	publicskill.ReplaceByName(publicskill.Skill{
+		ID:           "dyn-1",
+		Name:         skillName,
+		Description:  "v1 description",
+		Instructions: "v1 instructions",
+		Tools: []publicskill.ToolDefinition{
+			{Name: "dyn.tool_v1", Description: "v1 tool"},
+		},
+	})
+	mgr.SyncPublicSkills()
+
+	snap1, err := mgr.ResolveSkill(context.Background(), skillName)
+	if err != nil {
+		t.Fatalf("ResolveSkill v1 failed: %v", err)
+	}
+	if snap1.Instructions != "v1 instructions" || len(snap1.Tools) != 1 || snap1.Tools[0].Name != "dyn.tool_v1" {
+		t.Fatalf("unexpected v1 snapshot: %+v", snap1)
+	}
+
+	// Hot-update via ReplaceByName
+	publicskill.ReplaceByName(publicskill.Skill{
+		ID:           "dyn-1",
+		Name:         skillName,
+		Description:  "v2 description",
+		Instructions: "v2 updated instructions",
+		Tools: []publicskill.ToolDefinition{
+			{Name: "dyn.tool_v2", Description: "v2 tool"},
+		},
+	})
+	mgr.SyncPublicSkills()
+
+	snap2, err := mgr.ResolveSkill(context.Background(), skillName)
+	if err != nil {
+		t.Fatalf("ResolveSkill v2 failed: %v", err)
+	}
+	if snap2.Instructions != "v2 updated instructions" || snap2.Description != "v2 description" || len(snap2.Tools) != 1 || snap2.Tools[0].Name != "dyn.tool_v2" {
+		t.Fatalf("expected hot-updated v2 snapshot, got: %+v", snap2)
+	}
+
+	// Unregister and sync -> should be pruned
+	publicskill.Unregister(skillName)
+	mgr.SyncPublicSkills()
+
+	if _, err := mgr.ResolveSkill(context.Background(), skillName); err == nil {
+		t.Fatalf("expected unregistered public skill %q to be pruned from SkillManager", skillName)
+	}
+}
+
+func TestResolveSkill_FileMtimeHotReload(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "hot-file-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	v1 := "---\nname: Hot File Skill\ndescription: v1\n---\nInstructions v1"
+	if err := os.WriteFile(skillPath, []byte(v1), 0o600); err != nil {
+		t.Fatalf("write v1: %v", err)
+	}
+
+	mgr := NewSkillManager()
+	if err := mgr.LoadSkillsFromDir(root); err != nil {
+		t.Fatalf("LoadSkillsFromDir: %v", err)
+	}
+
+	snap1, err := mgr.ResolveSkill(context.Background(), "domour:hot-file-skill")
+	if err != nil {
+		t.Fatalf("ResolveSkill v1: %v", err)
+	}
+	if snap1.Instructions != "Instructions v1" {
+		t.Fatalf("expected 'Instructions v1', got %q", snap1.Instructions)
+	}
+
+	// Update file content and advance mtime
+	v2 := "---\nname: Hot File Skill\ndescription: v2\n---\nInstructions v2 hot reloaded"
+	if err := os.WriteFile(skillPath, []byte(v2), 0o600); err != nil {
+		t.Fatalf("write v2: %v", err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	_ = os.Chtimes(skillPath, future, future)
+
+	snap2, err := mgr.ResolveSkill(context.Background(), "domour:hot-file-skill")
+	if err != nil {
+		t.Fatalf("ResolveSkill v2: %v", err)
+	}
+	if snap2.Instructions != "Instructions v2 hot reloaded" {
+		t.Fatalf("expected 'Instructions v2 hot reloaded', got %q", snap2.Instructions)
+	}
+}
+
+func TestSessionScopedActiveSkillsIsolation(t *testing.T) {
+	mgr := NewSkillManager()
+	defer publicskill.Unregister("SkillAlpha")
+	defer publicskill.Unregister("SkillBeta")
+
+	publicskill.ReplaceByName(publicskill.Skill{
+		Name:        "SkillAlpha",
+		Description: "Alpha",
+		IntentTags:  []string{"alpha_intent"},
+		Tools:       []publicskill.ToolDefinition{{Name: "alpha.run"}},
+	})
+	publicskill.ReplaceByName(publicskill.Skill{
+		Name:        "SkillBeta",
+		Description: "Beta",
+		IntentTags:  []string{"beta_intent"},
+		Tools:       []publicskill.ToolDefinition{{Name: "beta.run"}},
+	})
+
+	ctxA := providerruntime.WithRequestMetadata(context.Background(), providerruntime.RequestMetadata{SessionID: "session-A"})
+	ctxB := providerruntime.WithRequestMetadata(context.Background(), providerruntime.RequestMetadata{SessionID: "session-B"})
+
+	if matched := mgr.DetectActiveSkill(ctxA, "trigger alpha_intent please"); matched != "SkillAlpha" {
+		t.Fatalf("expected SkillAlpha for session A, got %q", matched)
+	}
+	// Session B detects a different skill (or none) and must NOT clear Session A's active skill!
+	if matched := mgr.DetectActiveSkill(ctxB, "trigger beta_intent please"); matched != "SkillBeta" {
+		t.Fatalf("expected SkillBeta for session B, got %q", matched)
+	}
+
+	_, unlockedA := mgr.FilterToolNames(ctxA)
+	_, unlockedB := mgr.FilterToolNames(ctxB)
+
+	if !unlockedA["alpha.run"] || unlockedA["beta.run"] {
+		t.Fatalf("session A unlocked tools mismatch: %+v", unlockedA)
+	}
+	if !unlockedB["beta.run"] || unlockedB["alpha.run"] {
+		t.Fatalf("session B unlocked tools mismatch: %+v", unlockedB)
 	}
 }

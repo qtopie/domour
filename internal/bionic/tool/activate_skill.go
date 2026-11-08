@@ -23,8 +23,8 @@ func (m *Manager) NewActivateSkillTool() ToolSpec {
 		if err != nil {
 			return Result{}, err
 		}
-		m.SkillMgr.ActivateSkill(name)
-		m.SkillMgr.SetActiveSkillPrompt(instructions)
+		m.SkillMgr.ActivateSkillForContext(ctx, name)
+		m.SkillMgr.SetActiveSkillPromptForContext(ctx, instructions)
 		return Result{
 			Observation: "✓ Skill activated. Its tools and instructions are now available.",
 			Done:        true,
@@ -73,9 +73,19 @@ func (m *Manager) ActiveSkillPrompt() string {
 	return m.SkillMgr.ActiveSkillPrompt()
 }
 
+// ActiveSkillPromptForContext delegates to SkillMgr.
+func (m *Manager) ActiveSkillPromptForContext(ctx context.Context) string {
+	return m.SkillMgr.ActiveSkillPromptForContext(ctx)
+}
+
 // SetActiveSkillPrompt delegates to SkillMgr.
 func (m *Manager) SetActiveSkillPrompt(prompt string) {
 	m.SkillMgr.SetActiveSkillPrompt(prompt)
+}
+
+// SetActiveSkillPromptForContext delegates to SkillMgr.
+func (m *Manager) SetActiveSkillPromptForContext(ctx context.Context, prompt string) {
+	m.SkillMgr.SetActiveSkillPromptForContext(ctx, prompt)
 }
 
 // ClearActiveSkillPrompt delegates to SkillMgr.
@@ -83,12 +93,32 @@ func (m *Manager) ClearActiveSkillPrompt() {
 	m.SkillMgr.ClearActiveSkillPrompt()
 }
 
+// ClearActiveSkillPromptForContext delegates to SkillMgr.
+func (m *Manager) ClearActiveSkillPromptForContext(ctx context.Context) {
+	m.SkillMgr.ClearActiveSkillPromptForContext(ctx)
+}
+
 // ActivateSkill delegates to SkillMgr.
 func (m *Manager) ActivateSkill(name string) {
 	m.SkillMgr.ActivateSkill(name)
 }
 
+// ActivateSkillForContext delegates to SkillMgr.
+func (m *Manager) ActivateSkillForContext(ctx context.Context, name string) {
+	m.SkillMgr.ActivateSkillForContext(ctx, name)
+}
+
 // ClearActiveSkills delegates to SkillMgr.
 func (m *Manager) ClearActiveSkills() {
 	m.SkillMgr.ClearActiveSkills()
+}
+
+// ClearActiveSkillsForContext delegates to SkillMgr.
+func (m *Manager) ClearActiveSkillsForContext(ctx context.Context) {
+	m.SkillMgr.ClearActiveSkillsForContext(ctx)
+}
+
+// HasActiveSkills delegates to SkillMgr.
+func (m *Manager) HasActiveSkills(ctx context.Context) bool {
+	return m.SkillMgr.HasActiveSkills(ctx)
 }

@@ -288,5 +288,44 @@ Use sample.do_work to handle tasks.
 	if !unlockedByIntent {
 		t.Fatalf("expected sample.do_work to be unlocked after DetectActiveSkill match")
 	}
+
+	publicskill.Unregister("SamplePlugin")
+	publictool.Unregister("sample.do_work")
+}
+
+func TestSyncPublicTools_UnregisterReconciliation(t *testing.T) {
+	manager := NewManager(WithCleanupInterval(0))
+	defer manager.Close()
+
+	toolName := "ephemeral.cluster.tool"
+	defer publictool.Unregister(toolName)
+
+	publictool.Register(publictool.Tool{
+		Name:        toolName,
+		Description: "v1 cluster tool",
+		Parameters:  `{"type":"object"}`,
+		Act: func(ctx context.Context, input map[string]any) (string, error) {
+			return "v1-ok", nil
+		},
+	})
+
+	found := false
+	for _, ti := range manager.List() {
+		if ti.Name == toolName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected %s to appear in manager.List() after registration", toolName)
+	}
+
+	// Unregister from publictool -> should be pruned on next List()/SyncPublicTools()
+	publictool.Unregister(toolName)
+	for _, ti := range manager.List() {
+		if ti.Name == toolName {
+			t.Fatalf("expected unregistered public tool %s to be pruned from manager.List()", toolName)
+		}
+	}
 }
 

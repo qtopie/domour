@@ -13,9 +13,10 @@ import (
 	"sync"
 	"time"
 
+	publicskill "github.com/qtopie/domour/ark/skill"
 	skillpkg "github.com/qtopie/domour/internal/bionic/skill"
 	"github.com/qtopie/domour/internal/config"
-	publicskill "github.com/qtopie/domour/ark/skill"
+	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 )
 
 const (
@@ -63,6 +64,8 @@ type skillState struct {
 	spec     SkillSpec
 	loaded   *skillpkg.Skill
 	lastUsed time.Time
+	modTime  time.Time
+	isPublic bool
 	loading  bool
 	cond     *sync.Cond
 }
@@ -72,7 +75,9 @@ type SkillManager struct {
 	mu                   sync.Mutex
 	skills               map[string]*skillState
 	activeSkills         map[string]bool
+	sessionActiveSkills  map[string]map[string]bool
 	activeSkillPrompt    string
+	sessionActivePrompts map[string]string
 	activeSkillPromptSet chan struct{}
 }
 
@@ -81,6 +86,8 @@ func NewSkillManager() *SkillManager {
 	return &SkillManager{
 		skills:               make(map[string]*skillState),
 		activeSkills:         make(map[string]bool),
+		sessionActiveSkills:  make(map[string]map[string]bool),
+		sessionActivePrompts: make(map[string]string),
 		activeSkillPromptSet: make(chan struct{}),
 	}
 }
@@ -158,11 +165,23 @@ func (m *SkillManager) ResolveSkill(ctx context.Context, name string) (SkillSnap
 	for state.loading {
 		state.cond.Wait()
 	}
+	if state.loaded != nil && state.spec.SourcePath != "" {
+		if info, statErr := os.Stat(state.spec.SourcePath); statErr == nil && !state.modTime.IsZero() && info.ModTime().After(state.modTime) {
+			state.loaded = nil
+		}
+	}
 	if state.loaded == nil {
 		load := state.spec.Load
+		srcPath := state.spec.SourcePath
 		state.loading = true
 		m.mu.Unlock()
 		loaded, err := load(ctx)
+		var modTime time.Time
+		if err == nil && srcPath != "" {
+			if info, statErr := os.Stat(srcPath); statErr == nil {
+				modTime = info.ModTime()
+			}
+		}
 		m.mu.Lock()
 		state.loading = false
 		state.cond.Broadcast()
@@ -171,6 +190,7 @@ func (m *SkillManager) ResolveSkill(ctx context.Context, name string) (SkillSnap
 			return SkillSnapshot{}, err
 		}
 		state.loaded = loaded
+		state.modTime = modTime
 	}
 
 	state.lastUsed = time.Now()
@@ -335,9 +355,12 @@ func (m *SkillManager) loadDefaultSources() error {
 	return nil
 }
 
-// SyncPublicSkills synchronizes any newly registered skills from ark/skill into SkillManager.
+// SyncPublicSkills synchronizes any newly registered, updated, or removed skills from ark/skill into SkillManager.
 func (m *SkillManager) SyncPublicSkills() {
-	for _, pubSkill := range publicskill.List() {
+	pubList := publicskill.List()
+	seenPublic := make(map[string]bool, len(pubList))
+
+	for _, pubSkill := range pubList {
 		s := pubSkill
 		var convertedTools []skillpkg.ToolDefinition
 		for _, td := range s.Tools {
@@ -348,7 +371,7 @@ func (m *SkillManager) SyncPublicSkills() {
 			})
 		}
 		skillID := firstNonEmpty(s.ID, s.Name)
-		spec := SkillSpec{
+		spec := normalizeSkillSpec(SkillSpec{
 			Name:        s.Name,
 			Description: s.Description,
 			Provider:    "internal",
@@ -363,31 +386,129 @@ func (m *SkillManager) SyncPublicSkills() {
 					Tools:        convertedTools,
 				}, nil
 			},
+		})
+		if spec.Name == "" {
+			continue
 		}
-		_ = m.RegisterSkill(spec)
+		seenPublic[spec.Name] = true
+
+		m.mu.Lock()
+		if existing, exists := m.skills[spec.Name]; exists {
+			changed := existing.spec.Description != spec.Description
+			if !changed && existing.loaded != nil {
+				if existing.loaded.Instructions != s.Instructions ||
+					existing.loaded.Description != s.Description ||
+					len(existing.loaded.Tools) != len(convertedTools) ||
+					len(existing.loaded.IntentTags) != len(s.IntentTags) {
+					changed = true
+				} else {
+					for i := range convertedTools {
+						if existing.loaded.Tools[i].Name != convertedTools[i].Name ||
+							existing.loaded.Tools[i].Description != convertedTools[i].Description ||
+							string(existing.loaded.Tools[i].Parameters) != string(convertedTools[i].Parameters) {
+							changed = true
+							break
+						}
+					}
+				}
+			}
+			existing.spec = spec
+			existing.isPublic = true
+			if changed {
+				existing.loaded = nil
+			}
+		} else {
+			state := &skillState{
+				spec:     spec,
+				isPublic: true,
+			}
+			state.cond = sync.NewCond(&m.mu)
+			m.skills[spec.Name] = state
+		}
+		m.mu.Unlock()
 	}
+
+	// Prune public skills that were unregistered from ark/skill
+	m.mu.Lock()
+	for name, state := range m.skills {
+		if state.isPublic && !seenPublic[name] {
+			delete(m.skills, name)
+		}
+	}
+	m.mu.Unlock()
 }
 
-// ActivateSkill marks a skill as active for the current context so its tools can be bound.
+func sessionKeyFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	return strings.TrimSpace(providerruntime.RequestMetadataFromContext(ctx).SessionID)
+}
+
+// ActivateSkill marks a skill as active for the default context so its tools can be bound.
 func (m *SkillManager) ActivateSkill(name string) {
+	m.ActivateSkillForContext(context.Background(), name)
+}
+
+// ActivateSkillForContext marks a skill as active for the session in ctx (or default scope when SessionID is empty).
+func (m *SkillManager) ActivateSkillForContext(ctx context.Context, name string) {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return
 	}
+	sid := sessionKeyFromContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.activeSkills == nil {
-		m.activeSkills = make(map[string]bool)
+	if sid == "" {
+		if m.activeSkills == nil {
+			m.activeSkills = make(map[string]bool)
+		}
+		m.activeSkills[trimmed] = true
+		m.activeSkills[strings.ToLower(trimmed)] = true
+		return
 	}
-	m.activeSkills[trimmed] = true
-	m.activeSkills[strings.ToLower(trimmed)] = true
+	if m.sessionActiveSkills == nil {
+		m.sessionActiveSkills = make(map[string]map[string]bool)
+	}
+	sessMap, ok := m.sessionActiveSkills[sid]
+	if !ok {
+		sessMap = make(map[string]bool)
+		m.sessionActiveSkills[sid] = sessMap
+	}
+	sessMap[trimmed] = true
+	sessMap[strings.ToLower(trimmed)] = true
 }
 
-// ClearActiveSkills resets the active skills set.
+// ClearActiveSkills resets the default active skills set.
 func (m *SkillManager) ClearActiveSkills() {
+	m.ClearActiveSkillsForContext(context.Background())
+}
+
+// ClearActiveSkillsForContext resets the active skills set for the session in ctx.
+func (m *SkillManager) ClearActiveSkillsForContext(ctx context.Context) {
+	sid := sessionKeyFromContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.activeSkills = make(map[string]bool)
+	if sid == "" {
+		m.activeSkills = make(map[string]bool)
+		return
+	}
+	if m.sessionActiveSkills != nil {
+		delete(m.sessionActiveSkills, sid)
+	}
+}
+
+// HasActiveSkills reports whether any skill is currently active for the session in ctx.
+func (m *SkillManager) HasActiveSkills(ctx context.Context) bool {
+	sid := sessionKeyFromContext(ctx)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sid != "" && m.sessionActiveSkills != nil {
+		if len(m.sessionActiveSkills[sid]) > 0 {
+			return true
+		}
+	}
+	return len(m.activeSkills) > 0
 }
 
 // FilterToolNames returns the set of all tools claimed by any registered skill,
@@ -399,15 +520,23 @@ func (m *SkillManager) FilterToolNames(ctx context.Context) (claimed map[string]
 
 	claimed = make(map[string]bool)
 	unlocked = make(map[string]bool)
+	sid := sessionKeyFromContext(ctx)
 
 	m.mu.Lock()
 	names := make([]string, 0, len(m.skills))
 	for name := range m.skills {
 		names = append(names, name)
 	}
-	activeCopy := make(map[string]bool, len(m.activeSkills))
-	for k, v := range m.activeSkills {
-		activeCopy[k] = v
+	activeCopy := make(map[string]bool)
+	if sid != "" && m.sessionActiveSkills != nil {
+		for k, v := range m.sessionActiveSkills[sid] {
+			activeCopy[k] = v
+		}
+	}
+	if sid == "" || len(activeCopy) == 0 {
+		for k, v := range m.activeSkills {
+			activeCopy[k] = v
+		}
 	}
 	m.mu.Unlock()
 
@@ -450,11 +579,24 @@ func (m *SkillManager) loadConfiguredDir() error {
 	return nil
 }
 
-// SetActiveSkillPrompt stores the active skill instructions.
+// SetActiveSkillPrompt stores the active skill instructions for the default context.
 func (m *SkillManager) SetActiveSkillPrompt(prompt string) {
+	m.SetActiveSkillPromptForContext(context.Background(), prompt)
+}
+
+// SetActiveSkillPromptForContext stores the active skill instructions for the session in ctx.
+func (m *SkillManager) SetActiveSkillPromptForContext(ctx context.Context, prompt string) {
+	sid := sessionKeyFromContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.activeSkillPrompt = prompt
+	if sid == "" {
+		m.activeSkillPrompt = prompt
+	} else {
+		if m.sessionActivePrompts == nil {
+			m.sessionActivePrompts = make(map[string]string)
+		}
+		m.sessionActivePrompts[sid] = prompt
+	}
 	select {
 	case <-m.activeSkillPromptSet:
 	default:
@@ -464,15 +606,36 @@ func (m *SkillManager) SetActiveSkillPrompt(prompt string) {
 
 // ActiveSkillPrompt returns the currently active skill instructions, or empty string.
 func (m *SkillManager) ActiveSkillPrompt() string {
+	return m.ActiveSkillPromptForContext(context.Background())
+}
+
+// ActiveSkillPromptForContext returns the active skill instructions for the session in ctx.
+func (m *SkillManager) ActiveSkillPromptForContext(ctx context.Context) string {
+	sid := sessionKeyFromContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if sid != "" && m.sessionActivePrompts != nil {
+		if p := m.sessionActivePrompts[sid]; p != "" {
+			return p
+		}
+	}
 	return m.activeSkillPrompt
 }
 
-// ClearActiveSkillPrompt clears any stored active skill prompt.
+// ClearActiveSkillPrompt clears any stored active skill prompt in default scope.
 func (m *SkillManager) ClearActiveSkillPrompt() {
+	m.ClearActiveSkillPromptForContext(context.Background())
+}
+
+// ClearActiveSkillPromptForContext clears any stored active skill prompt for the session in ctx.
+func (m *SkillManager) ClearActiveSkillPromptForContext(ctx context.Context) {
+	sid := sessionKeyFromContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if sid != "" && m.sessionActivePrompts != nil {
+		delete(m.sessionActivePrompts, sid)
+		return
+	}
 	m.activeSkillPrompt = ""
 }
 
@@ -510,8 +673,8 @@ func (m *SkillManager) BuildActiveSkillPrompt(ctx context.Context, name string) 
 	if err != nil {
 		return "", err
 	}
-	m.ActivateSkill(name)
-	m.ActivateSkill(snapshot.Name)
+	m.ActivateSkillForContext(ctx, name)
+	m.ActivateSkillForContext(ctx, snapshot.Name)
 
 	var builder strings.Builder
 	builder.WriteString("<active_skill>\n")
@@ -545,7 +708,7 @@ func (m *SkillManager) BuildActiveSkillPrompt(ctx context.Context, name string) 
 // Returns the matched skill name, or empty string if no match is found.
 func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) string {
 	m.SyncPublicSkills()
-	m.ClearActiveSkills()
+	m.ClearActiveSkillsForContext(ctx)
 
 	m.mu.Lock()
 	names := make([]string, 0, len(m.skills))
@@ -569,7 +732,10 @@ func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) stri
 
 		m.mu.Lock()
 		state := m.skills[name]
-		loaded := state.loaded
+		var loaded *skillpkg.Skill
+		if state != nil {
+			loaded = state.loaded
+		}
 		m.mu.Unlock()
 
 		if loaded == nil {
@@ -579,8 +745,8 @@ func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) stri
 		// Check name
 		nameLower := strings.ToLower(loaded.Name)
 		if nameLower != "" && strings.Contains(queryLower, nameLower) {
-			m.ActivateSkill(name)
-			m.ActivateSkill(loaded.Name)
+			m.ActivateSkillForContext(ctx, name)
+			m.ActivateSkillForContext(ctx, loaded.Name)
 			return name
 		}
 
@@ -588,8 +754,8 @@ func (m *SkillManager) DetectActiveSkill(ctx context.Context, query string) stri
 		for _, tag := range loaded.IntentTags {
 			tagLower := strings.ToLower(tag)
 			if tagLower != "" && strings.Contains(queryLower, tagLower) {
-				m.ActivateSkill(name)
-				m.ActivateSkill(loaded.Name)
+				m.ActivateSkillForContext(ctx, name)
+				m.ActivateSkillForContext(ctx, loaded.Name)
 				return name
 			}
 		}
