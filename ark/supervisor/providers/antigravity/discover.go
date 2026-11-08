@@ -22,8 +22,34 @@ type ActiveSessionInfo struct {
 	LastUpdated  time.Time
 }
 
+// ParsePOSIXProcesses 解析 POSIX ps -eo pid,command 输出，筛选包含 agy, antigravity 或 language_server 的进程 PID
+func ParsePOSIXProcesses(output string) []int {
+	pids := make([]int, 0)
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(strings.ToUpper(trimmed), "PID") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil || pid <= 0 {
+			continue
+		}
+		cmdline := strings.ToLower(strings.Join(fields[1:], " "))
+		if strings.Contains(cmdline, "agy") || strings.Contains(cmdline, "antigravity") || strings.Contains(cmdline, "language_server") {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
 // DiscoverRunningSessions 自动发现当前系统中所有正在运行的 Antigravity (agy) 实例与会话
 func DiscoverRunningSessions() ([]*ActiveSessionInfo, error) {
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		homeDir = os.Getenv("HOME")

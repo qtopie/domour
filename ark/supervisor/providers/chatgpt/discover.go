@@ -93,14 +93,76 @@ func QueryThreads(dbPath string) ([]ThreadRecord, error) {
 	return results, nil
 }
 
+// ParsePOSIXProcesses 解析 POSIX ps -eo pid,command 输出，筛选包含指定关键字的进程 PID
+func ParsePOSIXProcesses(output string, matchPattern string) []int {
+	pids := make([]int, 0)
+	pattern := strings.ToLower(matchPattern)
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(strings.ToUpper(trimmed), "PID") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil || pid <= 0 {
+			continue
+		}
+		cmdline := strings.ToLower(strings.Join(fields[1:], " "))
+		if pattern == "" || strings.Contains(cmdline, pattern) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+func findRunningPIDsPOSIX() map[string]int {
+	pidsByCWD := make(map[string]int)
+	cmd := exec.Command("ps", "-eo", "pid,command")
+	out, err := cmd.Output()
+	if err != nil {
+		return pidsByCWD
+	}
+
+	pids := ParsePOSIXProcesses(string(out), "codex")
+	for _, pid := range pids {
+		cwd := getProcessCWD(pid)
+		if cwd != "" {
+			pidsByCWD[cwd] = pid
+		} else {
+			pidsByCWD[fmt.Sprintf("pid-%d", pid)] = pid
+		}
+	}
+	return pidsByCWD
+}
+
+func getProcessCWD(pid int) string {
+	// 尝试 lsof -a -p <pid> -d cwd -Fn
+	cmd := exec.Command("lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn")
+	out, err := cmd.Output()
+	if err == nil {
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "n") {
+				return strings.TrimPrefix(line, "n")
+			}
+		}
+	}
+	return ""
+}
+
 // FindRunningPIDs 扫描 /proc 查找当前运行的 codex 进程
 func FindRunningPIDs() map[string]int {
 	pidsByCWD := make(map[string]int)
 
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return pidsByCWD
+		return findRunningPIDsPOSIX()
 	}
+
 
 	for _, entry := range entries {
 		if !entry.IsDir() {

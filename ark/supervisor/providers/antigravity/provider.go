@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -285,16 +286,16 @@ func DetectClientType(transcriptPath string) string {
 // FindAgentAPI 自动探测系统中的 AgentAPI 脚本或语言服务二进制
 // 返回可执行路径、是否需要附加 "agentapi" 子命令，以及是否发现成功
 func FindAgentAPI() (exePath string, isSubcommand bool, ok bool) {
+	return FindAgentAPIForOS(runtime.GOOS)
+}
+
+// FindAgentAPIForOS 根据目标操作系统自动探测系统中的 AgentAPI 脚本或语言服务二进制
+func FindAgentAPIForOS(targetOS string) (exePath string, isSubcommand bool, ok bool) {
 	if envExe := os.Getenv("ANTIGRAVITY_AGENTAPI_EXE"); envExe != "" {
 		if _, err := os.Stat(envExe); err == nil {
 			isSubcmd := !strings.HasSuffix(filepath.Base(envExe), "agentapi")
 			return envExe, isSubcmd, true
 		}
-	}
-
-	// 1. 检查 PATH 中的 agy（agy CLI 原生支持完整的 agentapi 子命令体系）
-	if agyPath, err := exec.LookPath("agy"); err == nil {
-		return agyPath, true, true
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -305,7 +306,29 @@ func FindAgentAPI() (exePath string, isSubcommand bool, ok bool) {
 		}
 	}
 
-	// 1. 检查 IDE 自带的 ~/.gemini/antigravity/bin/agentapi 包装脚本
+	// 针对 Darwin (macOS)，优先检查 macOS App Bundle 中的语言服务器
+	if targetOS == "darwin" {
+		macOSCandidates := []string{
+			"/Applications/Antigravity.app/Contents/Resources/app/resources/bin/language_server",
+		}
+		if homeDir != "" {
+			macOSCandidates = append(macOSCandidates,
+				filepath.Join(homeDir, "Applications", "Antigravity.app", "Contents", "Resources", "app", "resources", "bin", "language_server"),
+			)
+		}
+		for _, candidate := range macOSCandidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, true, true
+			}
+		}
+	}
+
+	// 1. 检查 PATH 中的 agy（agy CLI 原生支持完整的 agentapi 子命令体系）
+	if agyPath, err := exec.LookPath("agy"); err == nil {
+		return agyPath, true, true
+	}
+
+	// 2. 检查 IDE 自带的 ~/.gemini/antigravity/bin/agentapi 包装脚本
 	if homeDir != "" {
 		scriptPath := filepath.Join(homeDir, ".gemini", "antigravity", "bin", "agentapi")
 		if _, err := os.Stat(scriptPath); err == nil {
@@ -313,13 +336,28 @@ func FindAgentAPI() (exePath string, isSubcommand bool, ok bool) {
 		}
 	}
 
-	// 2. 检查 Linux /opt/Antigravity/resources/bin/language_server
+	// 3. 检查 Linux /opt/Antigravity/resources/bin/language_server
 	linuxLS := "/opt/Antigravity/resources/bin/language_server"
 	if _, err := os.Stat(linuxLS); err == nil {
 		return linuxLS, true, true
 	}
 
-	// 3. 检查 Windows %LOCALAPPDATA%\Programs\antigravity\resources\bin\language_server.exe
+	// 4. 检查 macOS Applications 目录中的 Antigravity.app（通用回退）
+	macOSCandidates := []string{
+		"/Applications/Antigravity.app/Contents/Resources/app/resources/bin/language_server",
+	}
+	if homeDir != "" {
+		macOSCandidates = append(macOSCandidates,
+			filepath.Join(homeDir, "Applications", "Antigravity.app", "Contents", "Resources", "app", "resources", "bin", "language_server"),
+		)
+	}
+	for _, candidate := range macOSCandidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, true, true
+		}
+	}
+
+	// 5. 检查 Windows %LOCALAPPDATA%\Programs\antigravity\resources\bin\language_server.exe
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
 		winLS := filepath.Join(localAppData, "Programs", "antigravity", "resources", "bin", "language_server.exe")
 		if _, err := os.Stat(winLS); err == nil {
@@ -337,10 +375,52 @@ func FindAgentAPI() (exePath string, isSubcommand bool, ok bool) {
 
 // FindIDEExecutable 自动探测 Antigravity IDE 桌面程序安装路径
 func FindIDEExecutable() (string, bool) {
+	return FindIDEExecutableForOS(runtime.GOOS)
+}
+
+// FindIDEExecutableForOS 根据目标操作系统自动探测 Antigravity IDE 桌面程序安装路径
+func FindIDEExecutableForOS(targetOS string) (string, bool) {
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		homeDir = os.Getenv("HOME")
+	}
+
+	// 针对 Darwin (macOS)，优先检查 macOS App Bundle
+	if targetOS == "darwin" {
+		macOSCandidates := []string{
+			"/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+		}
+		if homeDir != "" {
+			macOSCandidates = append(macOSCandidates,
+				filepath.Join(homeDir, "Applications", "Antigravity.app", "Contents", "MacOS", "Antigravity"),
+			)
+		}
+		for _, candidate := range macOSCandidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, true
+			}
+		}
+	}
+
 	// 1. Linux
 	linuxIDE := "/opt/Antigravity/antigravity"
 	if _, err := os.Stat(linuxIDE); err == nil {
 		return linuxIDE, true
+	}
+
+	// 1.1 macOS Applications（通用回退）
+	macOSCandidates := []string{
+		"/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+	}
+	if homeDir != "" {
+		macOSCandidates = append(macOSCandidates,
+			filepath.Join(homeDir, "Applications", "Antigravity.app", "Contents", "MacOS", "Antigravity"),
+		)
+	}
+	for _, candidate := range macOSCandidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, true
+		}
 	}
 
 	// 2. Windows
@@ -350,7 +430,6 @@ func FindIDEExecutable() (string, bool) {
 			return winIDE, true
 		}
 	}
-	homeDir, _ := os.UserHomeDir()
 	if homeDir == "" {
 		homeDir = os.Getenv("USERPROFILE")
 	}
@@ -363,6 +442,8 @@ func FindIDEExecutable() (string, bool) {
 
 	return "", false
 }
+
+
 
 // MatchSession 检查 sessionID 是否匹配 Antigravity 的 brain 会话目录
 func (p *AntigravityProvider) MatchSession(sessionID string) (string, bool) {
