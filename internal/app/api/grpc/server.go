@@ -10,6 +10,7 @@ import (
 	copilotpb "github.com/qtopie/domour/gen/assistant/copilot"
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/ark/session"
+	"github.com/qtopie/domour/ark/telemetry"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
 	"google.golang.org/grpc/metadata"
 )
@@ -55,6 +56,7 @@ func firstNonEmpty(value, fallback string) string {
 }
 
 func withRuntimeMetadata(ctx context.Context, sessionID, workspace string) context.Context {
+	ctx = telemetry.ExtractGRPCContext(ctx)
 	mode := "balanced"
 	var systemPromptExtras string
 	if md, ok := metadata.FromIncomingContext(ctx); ok {

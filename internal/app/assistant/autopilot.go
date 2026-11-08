@@ -15,19 +15,19 @@ import (
 
 func (s *AssistantService) Autopilot(ctx context.Context, req shared.MotorAutopilotRequest, provider, model string, attachments []shared.BrainAttachment) (shared.MotorAutopilotResponse, error) {
 	sessionID := req.SessionID
+	ctx = ensureSessionContext(ctx, sessionID, req.Workspace)
 
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return shared.MotorAutopilotResponse{}, fmt.Errorf("get session: %w", err)
 	}
 
-	// Session stickiness: prefer using the session's active provider if healthy and no override is specified
-	if provider == "" && sess.ActiveProvider != "" {
-		if proxy.IsProviderHealthy(sess.ActiveProvider) {
-			provider = sess.ActiveProvider
-			model = sess.ActiveModel
-		}
+	goal := strings.TrimSpace(req.Goal)
+	if goal == "" {
+		goal = "Clarify the user goal before running automation."
 	}
+
+	routeDec, provider, model := s.routeAndResolveModel(ctx, sessionID, goal, "autopilot", sess, provider, model)
 
 	// Resolve Brain LLM Client
 	brainClient, err := s.engine.Cognitor().GetClientWithOverride(ctx, "autopilot", provider, model)
@@ -43,10 +43,6 @@ func (s *AssistantService) Autopilot(ctx context.Context, req shared.MotorAutopi
 		return shared.MotorAutopilotResponse{}, fmt.Errorf("provider %s is not ready", brainClient.Provider())
 	}
 
-	goal := strings.TrimSpace(req.Goal)
-	if goal == "" {
-		goal = "Clarify the user goal before running automation."
-	}
 	_ = s.AppendHistory(ctx, sessionID, "user", goal)
 
 	// Safety Check / Veto on the goal
@@ -110,6 +106,11 @@ func (s *AssistantService) Autopilot(ctx context.Context, req shared.MotorAutopi
 		return shared.MotorAutopilotResponse{}, fmt.Errorf("subscribe stream: %w", err)
 	}
 
+	autopilotReasoning := "react"
+	if routeDec.Mode == "planner" {
+		autopilotReasoning = "planner"
+	}
+
 	input := engine.AgentWorkflowInput{
 		SessionID:   sessionID,
 		Messages:    messages,
@@ -117,6 +118,7 @@ func (s *AssistantService) Autopilot(ctx context.Context, req shared.MotorAutopi
 		Model:       brainClient.Model(),
 		StreamFinal: false,
 		Stage:       "autopilot",
+		Reasoning:   autopilotReasoning,
 	}
 
 	_, err = s.orchestrator.StartWorkflow(ctx, workflowID, input)

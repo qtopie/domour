@@ -7,17 +7,31 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 )
 
 func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStreamingServer[copilotpb.CopilotResponse]) error {
 	sessionID := normalizeSessionID(req.GetSessionId())
-	s.logCall(stream.Context(), "Copilot", sessionID)
-
 	ctx := withRuntimeMetadata(stream.Context(), sessionID, req.GetWorkspace())
+	ctx, span := otel.Tracer("domour/grpc").Start(ctx, "domour.grpc.Copilot", trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("session.id", sessionID),
+		attribute.String("llm.provider", req.GetProvider()),
+		attribute.String("llm.model", req.GetModel()),
+	)
+
+	s.logCall(ctx, "Copilot", sessionID)
+
 	unlock, err := s.app.Locker().Lock(ctx, sessionID)
 	if err != nil {
-		s.logError(stream.Context(), "Copilot.Lock", sessionID, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		s.logError(ctx, "Copilot.Lock", sessionID, err)
 		return err
 	}
 	defer unlock()
@@ -44,11 +58,13 @@ func (s *Server) Copilot(req *copilotpb.CopilotRequest, stream grpc.ServerStream
 			Seq:       req.GetSeq(),
 			Patch:     event.Content,
 			Complete:  event.Done,
-			Meta:      mergeCopilotMeta(stream.Context(), sessionID, event.Meta),
+			Meta:      mergeCopilotMeta(ctx, sessionID, event.Meta),
 		})
 	})
 	if err != nil {
-		s.logError(stream.Context(), "Copilot", sessionID, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		s.logError(ctx, "Copilot", sessionID, err)
 		return err
 	}
 

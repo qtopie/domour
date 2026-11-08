@@ -7,17 +7,31 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 )
 
 func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer[chatpb.ChatResponse]) error {
 	sessionID := normalizeSessionID(req.GetSessionId())
-	s.logCall(stream.Context(), "Chat", sessionID)
-
 	ctx := withRuntimeMetadata(stream.Context(), sessionID, req.GetWorkspace())
+	ctx, span := otel.Tracer("domour/grpc").Start(ctx, "domour.grpc.Chat", trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("session.id", sessionID),
+		attribute.String("llm.provider", req.GetProvider()),
+		attribute.String("llm.model", req.GetModel()),
+	)
+
+	s.logCall(ctx, "Chat", sessionID)
+
 	unlock, err := s.app.Locker().Lock(ctx, sessionID)
 	if err != nil {
-		s.logError(stream.Context(), "Chat.Lock", sessionID, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		s.logError(ctx, "Chat.Lock", sessionID, err)
 		return err
 	}
 	defer unlock()
@@ -42,7 +56,7 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 			MessageId:      req.GetSeq(),
 			Type:           typ,
 			Content:        event.Content,
-			Meta:           mergeChatMeta(stream.Context(), sessionID, event.Meta, event.Stage),
+			Meta:           mergeChatMeta(ctx, sessionID, event.Meta, event.Stage),
 			ChunkSeq:       event.ChunkSeq,
 			MaxSeqChecksum: event.MaxSeqChecksum,
 		}
@@ -82,7 +96,9 @@ func (s *Server) Chat(req *chatpb.ChatRequest, stream grpc.ServerStreamingServer
 		return stream.Send(resp)
 	})
 	if err != nil {
-		s.logError(stream.Context(), "Chat", sessionID, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		s.logError(ctx, "Chat", sessionID, err)
 		return err
 	}
 

@@ -15,19 +15,19 @@ import (
 
 func (s *AssistantService) Copilot(ctx context.Context, req shared.MotorCopilotRequest, provider, model string, attachments []shared.BrainAttachment, yield func(event shared.MotorStreamEvent) error) error {
 	sessionID := req.SessionID
+	ctx = ensureSessionContext(ctx, sessionID, req.Workspace)
 
 	sess, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("get session: %w", err)
 	}
 
-	// Session stickiness: prefer using the session's active provider if healthy and no override is specified
-	if provider == "" && sess.ActiveProvider != "" {
-		if proxy.IsProviderHealthy(sess.ActiveProvider) {
-			provider = sess.ActiveProvider
-			model = sess.ActiveModel
-		}
+	userMessage := strings.TrimSpace(req.Message)
+	if userMessage == "" {
+		userMessage = "Please describe the change you want to make."
 	}
+
+	routeDec, provider, model := s.routeAndResolveModel(ctx, sessionID, userMessage, "copilot", sess, provider, model)
 
 	// Resolve Brain LLM Client
 	brainClient, err := s.engine.Cognitor().GetClientWithOverride(ctx, "copilot", provider, model)
@@ -43,10 +43,6 @@ func (s *AssistantService) Copilot(ctx context.Context, req shared.MotorCopilotR
 		return fmt.Errorf("provider %s is not ready", brainClient.Provider())
 	}
 
-	userMessage := strings.TrimSpace(req.Message)
-	if userMessage == "" {
-		userMessage = "Please describe the change you want to make."
-	}
 	_ = s.AppendHistory(ctx, sessionID, "user", userMessage)
 
 	mode := req.Mode
@@ -114,6 +110,7 @@ func (s *AssistantService) Copilot(ctx context.Context, req shared.MotorCopilotR
 		Model:       brainClient.Model(),
 		StreamFinal: true,
 		Stage:       "copilot",
+		Reasoning:   routeDec.Mode,
 	}
 
 	_, err = s.orchestrator.StartWorkflow(ctx, workflowID, input)

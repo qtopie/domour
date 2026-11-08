@@ -2,14 +2,11 @@ package grpc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"time"
+	"log/slog"
 
+	"github.com/qtopie/domour/ark/telemetry"
 	appconfig "github.com/qtopie/domour/internal/config"
-	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc/metadata"
 )
 
 func (s *Server) logCall(ctx context.Context, method string, sessionID string) {
@@ -33,37 +30,24 @@ func (s *Server) writeLog(ctx context.Context, level, msg, method, sessionID str
 	}
 
 	traceID := getTraceID(ctx)
-	now := time.Now().Format(time.RFC3339)
-	scope := "cosmos.domour"
+	attrs := []any{
+		slog.String("service", "domour"),
+		slog.String("component", "grpc"),
+		slog.String("method", method),
+		slog.String("session_id", sessionID),
+		slog.String("trace_id", traceID),
+	}
 
-	if cfg.IsLogAsJSON() {
-		logEntry := map[string]interface{}{
-			"time":       now,
-			"level":      level,
-			"msg":        msg,
-			"scope":      scope,
-			"type":       "log",
-			"trace_id":   traceID,
-			"method":     method,
-			"session_id": sessionID,
-		}
-		data, _ := json.Marshal(logEntry)
-		fmt.Fprintln(os.Stderr, string(data))
-	} else {
-		fmt.Fprintf(os.Stderr, "time=\"%s\" level=%s msg=\"%s\" scope=%s type=log trace_id=%s method=%s session_id=%s\n",
-			now, level, msg, scope, traceID, method, sessionID)
+	switch level {
+	case "error":
+		slog.ErrorContext(ctx, msg, attrs...)
+	case "debug":
+		slog.DebugContext(ctx, msg, attrs...)
+	default:
+		slog.InfoContext(ctx, msg, attrs...)
 	}
 }
 
 func getTraceID(ctx context.Context) string {
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.IsValid() {
-		return spanCtx.TraceID().String()
-	}
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if ids := md.Get("x-trace-id"); len(ids) > 0 {
-			return ids[0]
-		}
-	}
-	return "00000000000000000000000000000000"
+	return telemetry.TraceIDFromContext(ctx)
 }

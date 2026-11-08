@@ -10,16 +10,14 @@ import (
 	"github.com/qtopie/domour/internal/app/assistant/shared"
 	bioniccontext "github.com/qtopie/domour/internal/bionic/context"
 	"github.com/qtopie/domour/internal/bionic/tool"
-	"github.com/qtopie/domour/internal/cognitor/proxy"
-	appconfig "github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	"github.com/qtopie/domour/internal/infra/llm"
 	providerruntime "github.com/qtopie/domour/internal/infra/llm/runtime"
-	domourmodel "github.com/qtopie/domour/ark/cognitor"
 )
 
 func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest, provider, model string, yield func(event shared.MotorStreamEvent) error) error {
 	sessionID := req.SessionID
+	ctx = ensureSessionContext(ctx, sessionID, req.Workspace)
 	var chunkSeq int32
 	yieldWithSeq := func(event shared.MotorStreamEvent) error {
 		chunkSeq++
@@ -33,34 +31,13 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		return fmt.Errorf("get session: %w", err)
 	}
 
-	// Session stickiness: prefer using the session's active provider if healthy and no override is specified
-	if provider == "" && sess.ActiveProvider != "" {
-		if proxy.IsProviderHealthy(sess.ActiveProvider) {
-			provider = sess.ActiveProvider
-			model = sess.ActiveModel
-		}
+	userMessage := strings.TrimSpace(req.Message)
+	if userMessage == "" {
+		userMessage = "Hello from Domour Copilot! How can I assist you today?"
 	}
 
-	// Resolve Brain LLM Client via System Mode Model Selection
 	rmeta := providerruntime.RequestMetadataFromContext(ctx)
-
-	// Mode→Model registration lookup: if provider or model is still empty
-	// (not overridden by caller or session), query the model registry using
-	// the current system mode's tag rules.
-	if provider == "" || model == "" {
-		cfg, cfgErr := appconfig.LoadDomourConfig()
-		if cfgErr == nil {
-			mm := cfg.ModeMapping(rmeta.Mode)
-			if p, m, qErr := domourmodel.DefaultRegistry().QueryBestModel(mm.Require, mm.Prefer, mm.Exclude); qErr == nil && p != "" {
-				if provider == "" {
-					provider = p
-				}
-				if model == "" {
-					model = m
-				}
-			}
-		}
-	}
+	routeDec, provider, model := s.routeAndResolveModel(ctx, sessionID, userMessage, "chat", sess, provider, model)
 
 	brainClient, err := s.engine.Cognitor().GetClientWithOverride(ctx, "chat", provider, model)
 	if err != nil {
@@ -75,10 +52,6 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 		return fmt.Errorf("provider %s is not ready", brainClient.Provider())
 	}
 
-	userMessage := strings.TrimSpace(req.Message)
-	if userMessage == "" {
-		userMessage = "Hello from Domour Copilot! How can I assist you today?"
-	}
 	_ = s.AppendHistory(ctx, sessionID, "user", userMessage)
 
 	// Spin up fast OCR-style interception pass in background
@@ -184,6 +157,14 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 			return fmt.Errorf("subscribe stream: %w", err)
 		}
 
+		reasoningMode := routeDec.Mode
+		if reasoningMode == "" {
+			reasoningMode = "react"
+		}
+		if reasoningMode == "simple" && toolMgr != nil && toolMgr.HasActiveSkills(ctx) {
+			reasoningMode = "react"
+		}
+
 		input := engine.AgentWorkflowInput{
 			SessionID:   sessionID,
 			Messages:    messages,
@@ -191,6 +172,7 @@ func (s *AssistantService) Chat(ctx context.Context, req shared.MotorChatRequest
 			Model:       brainClient.Model(),
 			StreamFinal: true,
 			Stage:       "reply",
+			Reasoning:   reasoningMode,
 		}
 
 		_, err = s.orchestrator.StartWorkflow(ctx, workflowID, input)

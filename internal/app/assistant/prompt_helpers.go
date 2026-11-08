@@ -93,30 +93,29 @@ func guessLanguage(path string) string {
 }
 
 func BuildChatSystemPrompt(ctx context.Context, toolMgr *tool.Manager, message string, interception *shared.ChatInterception, systemPromptOverride ...string) string {
+	prompt := "You are Domour Chat. Reply clearly and directly to the user. Use the provided workspace context when useful."
 	// systemPromptOverride (from ChatRequest.SystemPromptOverride) replaces the
-	// default system prompt entirely. The caller (e.g. cosmos-star) injects
-	// channel-specific instructions such as multimedia formatting rules.
-	if len(systemPromptOverride) > 0 && systemPromptOverride[0] != "" {
-		return systemPromptOverride[0]
+	// default persona while still preserving interception notes, extras, and skill detection.
+	if len(systemPromptOverride) > 0 && strings.TrimSpace(systemPromptOverride[0]) != "" {
+		prompt = systemPromptOverride[0]
 	}
 
-	prompt := "You are Domour Chat. Reply clearly and directly to the user. Use the provided workspace context when useful."
 	prompt += bioniccontext.BuildInterceptionSystemNote(interception)
 
 	// Host-injected system prompt extras (e.g. channel-specific formatting rules
 	// from cosmos-star / wechatclawbot). Passed via gRPC metadata header
 	// "x-domour-system-extras" on the request.
-	if extras := providerruntime.RequestMetadataFromContext(ctx).SystemPromptExtras; extras != "" {
+	if extras := providerruntime.RequestMetadataFromContext(ctx).SystemPromptExtras; extras != "" && !strings.Contains(prompt, extras) {
 		prompt += "\n\n" + extras
 	}
 
 	if toolMgr != nil {
-		toolMgr.ClearActiveSkills()
+		toolMgr.ClearActiveSkillsForContext(ctx)
 		if matched := toolMgr.DetectActiveSkill(ctx, message); matched != "" {
-			if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, matched); err == nil && activePrompt != "" {
+			if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, matched); err == nil && activePrompt != "" && !strings.Contains(prompt, activePrompt) {
 				prompt += "\n\n" + activePrompt
 			}
-		} else {
+		} else if !strings.Contains(prompt, "<available_skills>") && !strings.Contains(prompt, "<active_skill>") {
 			if availablePrompt, err := toolMgr.BuildAvailableSkillsPrompt(ctx); err == nil && availablePrompt != "" {
 				prompt += "\n\n" + availablePrompt
 			}
@@ -126,7 +125,7 @@ func BuildChatSystemPrompt(ctx context.Context, toolMgr *tool.Manager, message s
 	// Active when in diagnostic mode, placed at the very end.
 	rmeta := providerruntime.RequestMetadataFromContext(ctx)
 	if rmeta.Mode == "diagnostic" && toolMgr != nil {
-		if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, "cosmos-star:diagnostic"); err == nil && activePrompt != "" {
+		if activePrompt, err := toolMgr.BuildActiveSkillPrompt(ctx, "cosmos-star:diagnostic"); err == nil && activePrompt != "" && !strings.Contains(prompt, activePrompt) {
 			prompt += "\n\n" + activePrompt
 		}
 	}

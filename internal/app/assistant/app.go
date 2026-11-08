@@ -15,6 +15,7 @@ import (
 	internalhttp "github.com/qtopie/domour/internal/app/api/http"
 	"github.com/qtopie/domour/ark/session"
 	runtimespi "github.com/qtopie/domour/ark/spi/runtime"
+	"github.com/qtopie/domour/ark/telemetry"
 	"github.com/qtopie/domour/internal/config"
 	"github.com/qtopie/domour/internal/engine"
 	db "github.com/qtopie/domour/internal/infra/db"
@@ -29,6 +30,7 @@ type App struct {
 	orchestrator engine.AgentOrchestrator
 	eventBus     eventbus.EventBus
 	router       runtimespi.Router
+	service      *AssistantService
 
 	grpcAddr string
 	httpAddr string
@@ -94,8 +96,9 @@ func NewApp(cfg *config.DomourConfig, opts ...AppOption) (*App, error) {
 	return app, nil
 }
 
-func (a *App) GRPCAddr() string { return a.grpcAddr }
-func (a *App) HTTPAddr() string { return a.httpAddr }
+func (a *App) GRPCAddr() string           { return a.grpcAddr }
+func (a *App) HTTPAddr() string           { return a.httpAddr }
+func (a *App) Service() *AssistantService { return a.service }
 
 // NewService constructs an AssistantService configured with the app's SPI dependencies.
 func (a *App) NewService() (*AssistantService, error) {
@@ -124,6 +127,7 @@ func (a *App) RegisterGRPC(s *grpc.Server) error {
 	if err != nil {
 		return err
 	}
+	a.service = appService
 
 	service, err := internalgrpc.NewServer(appService)
 	if err != nil {
@@ -188,7 +192,10 @@ func (a *App) RunBackground(ctx context.Context) error {
 }
 
 func (a *App) RunWithNotify(ctx context.Context, ready chan<- struct{}) error {
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(telemetry.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(telemetry.StreamServerInterceptor()),
+	)
 	if err := a.RegisterGRPC(grpcServer); err != nil {
 		return err
 	}
