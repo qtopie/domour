@@ -57,6 +57,19 @@ func Get(name string) (Tool, bool) {
 	return Tool{}, false
 }
 
+// Unregister removes a registered tool by its name.
+func Unregister(name string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i, t := range tools {
+		if t.Name == name {
+			tools = append(tools[:i], tools[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 
 // toolDef is a JSON-deserializable tool definition for loading from files.
 // The Act field is omitted — tools loaded from disk have no Go function

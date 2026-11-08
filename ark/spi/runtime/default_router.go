@@ -7,8 +7,9 @@ import (
 
 // DefaultDualPathwayRouter implements the Router interface based on a biological dual-pathway heuristic.
 type DefaultDualPathwayRouter struct {
-	fastKeywords []string
-	deepKeywords []string
+	fastKeywords    []string
+	deepKeywords    []string
+	plannerKeywords []string
 }
 
 // NewDefaultDualPathwayRouter creates a new instance of the default dual-pathway router.
@@ -22,6 +23,9 @@ func NewDefaultDualPathwayRouter() *DefaultDualPathwayRouter {
 			"plan", "nested", "think", "analyze", "architect", "refactor",
 			"debug", "investigate", "设计", "重构", "分析", "规划", "深度思考",
 		},
+		plannerKeywords: []string{
+			"plan", "architect", "设计", "规划", "分步", "step by step", "step-by-step",
+		},
 	}
 }
 
@@ -31,6 +35,16 @@ func (r *DefaultDualPathwayRouter) Route(ctx context.Context, sessionID, message
 
 	// 1. Force override via metadata if provided
 	if meta != nil {
+		if mode := strings.ToLower(strings.TrimSpace(meta["reasoning"])); mode == "planner" {
+			return RouteDecision{
+				TargetCore:   CorePrimary,
+				FastPath:     false,
+				Mode:         "planner",
+				RequiredTags: []string{"reasoning"},
+				PreferTags:   []string{"deep", "pro"},
+				Meta:         meta,
+			}, nil
+		}
 		if target := meta["target_core"]; target != "" {
 			if CoreTarget(target) == CoreSecondary {
 				return RouteDecision{
@@ -53,13 +67,20 @@ func (r *DefaultDualPathwayRouter) Route(ctx context.Context, sessionID, message
 		}
 	}
 
-	// 2. Check explicitly for deep thinking triggers (High Road)
+	// 2. Check explicitly for deep thinking / multi-step planning triggers (High Road)
 	for _, kw := range r.deepKeywords {
 		if strings.Contains(lowerMsg, kw) {
+			mode := "react"
+			for _, pkw := range r.plannerKeywords {
+				if strings.Contains(lowerMsg, pkw) {
+					mode = "planner"
+					break
+				}
+			}
 			return RouteDecision{
 				TargetCore:   CorePrimary,
 				FastPath:     false,
-				Mode:         "react",
+				Mode:         mode,
 				RequiredTags: []string{"reasoning"},
 				PreferTags:   []string{"deep", "pro"},
 				Meta:         meta,

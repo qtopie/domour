@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/qtopie/domour/ark/session"
 	domourskill "github.com/qtopie/domour/ark/skill"
@@ -17,9 +18,25 @@ import (
 	domourtool "github.com/qtopie/domour/ark/tool"
 	"github.com/qtopie/domour/internal/app/assistant"
 	"github.com/qtopie/domour/internal/config"
+	db "github.com/qtopie/domour/internal/infra/db"
 	"github.com/qtopie/domour/internal/infra/eventbus"
 	"google.golang.org/grpc"
 )
+
+var activeServices sync.Map
+
+// ActiveServiceForServer returns the AssistantService registered on s via RegisterAssistantServices, if any.
+func ActiveServiceForServer(s *grpc.Server) *assistant.AssistantService {
+	if s == nil {
+		return nil
+	}
+	if val, ok := activeServices.Load(s); ok {
+		if svc, ok := val.(*assistant.AssistantService); ok {
+			return svc
+		}
+	}
+	return nil
+}
 
 // Run initializes the application by loading configuration, assembling 
 // bionic components, and starting all background neural event loops.
@@ -105,6 +122,19 @@ func Run(ctx context.Context, opts ...Option) error {
 	}
 
 	if o.grpcServer != nil {
+		if svc := ActiveServiceForServer(o.grpcServer); svc != nil {
+			var svcOpts []assistant.AssistantServiceOption
+			if o.orchestrator != nil {
+				svcOpts = append(svcOpts, assistant.WithServiceOrchestrator(o.orchestrator))
+			}
+			if o.eventBus != nil {
+				svcOpts = append(svcOpts, assistant.WithServiceEventBus(o.eventBus))
+			}
+			if o.router != nil {
+				svcOpts = append(svcOpts, assistant.WithServiceRouter(o.router))
+			}
+			svc.RebindOptions(o.store, svcOpts...)
+		}
 		// If using shared gRPC server, we only need to start background loops (HTTP, engine)
 		return app.RunBackground(ctx)
 	}
@@ -169,6 +199,9 @@ func RegisterAssistantServices(s *grpc.Server, opts ...Option) error {
 	var appOpts []assistant.AppOption
 	if o.store != nil {
 		appOpts = append(appOpts, assistant.WithStore(o.store))
+	} else {
+		// Use lightweight in-memory store until bootstrap.Run injects the host's store
+		appOpts = append(appOpts, assistant.WithStore(db.NewMemoryStore()))
 	}
 	if o.orchestrator != nil {
 		appOpts = append(appOpts, assistant.WithOrchestrator(o.orchestrator))
@@ -183,5 +216,11 @@ func RegisterAssistantServices(s *grpc.Server, opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	return app.RegisterGRPC(s)
+	if err := app.RegisterGRPC(s); err != nil {
+		return err
+	}
+	if svc := app.Service(); svc != nil {
+		activeServices.Store(s, svc)
+	}
+	return nil
 }

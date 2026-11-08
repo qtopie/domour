@@ -86,6 +86,31 @@ func List() []Skill {
 	return out
 }
 
+// Get finds a registered skill by its name.
+func Get(name string) (Skill, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, s := range skills {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return Skill{}, false
+}
+
+// Unregister removes a registered skill by its name.
+func Unregister(name string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i, s := range skills {
+		if s.Name == name {
+			skills = append(skills[:i], skills[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // ParseSkill parses a skill from markdown content with YAML frontmatter.
 func ParseSkill(content string) (Skill, error) {
 	trimmed := strings.TrimSpace(content)
