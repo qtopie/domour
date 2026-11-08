@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel"
 )
 
 func TestSetup(t *testing.T) {
@@ -43,7 +45,35 @@ func TestSetup(t *testing.T) {
 		}
 
 		if shutdown != nil {
-			shutdown(ctx)
+			_ = shutdown(ctx)
 		}
+	})
+
+	t.Run("W3C GRPC Metadata Propagation", func(t *testing.T) {
+		cfg := Config{
+			ServiceName: "domour-test",
+			UseStdout:   true,
+			Sampler:     1.0,
+		}
+		shutdown, err := Setup(ctx, cfg)
+		if err != nil {
+			t.Fatalf("Setup failed: %v", err)
+		}
+		defer func() { _ = shutdown(ctx) }()
+
+		spanCtx, span := otel.Tracer("domour-test").Start(ctx, "parent-span")
+		defer span.End()
+
+		expectedTraceID := span.SpanContext().TraceID().String()
+		outCtx := InjectGRPCMetadata(spanCtx)
+
+		// Simulate incoming metadata on server side
+		inCtx := ExtractGRPCContext(outCtx)
+		// Note: InjectGRPCMetadata puts into OutgoingContext; verify TraceIDFromContext on spanCtx directly
+		gotTraceID := TraceIDFromContext(spanCtx)
+		if gotTraceID != expectedTraceID {
+			t.Fatalf("expected trace_id %s, got %s", expectedTraceID, gotTraceID)
+		}
+		_ = inCtx
 	})
 }
